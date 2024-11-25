@@ -1,0 +1,54 @@
+services:
+  postgres:
+    build: ./postgres-dev/
+    container_name: postgres
+    restart: always
+    ports:
+      - 5432:5432
+    volumes:
+      - ./db_data/:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+      POSTGRES_DB_LIST: $POSTGRES_DATABASE_LIST
+      POSTGRES_USER: $POSTGRES_USERNAME
+
+  redis:
+    image: redis/redis-stack-server
+    container_name: redis
+    restart: always
+    ports:
+      - 6379:6379
+
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - $MACHINE_ADMINER_PORT:$ADMINER_PORT
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+
+  sagawise:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: sagawise
+    restart: always
+    ports:
+      - 5000:5000
+    environment:
+      REDIS_CONNECTION_STRING: $REDIS_CONNECTION_STRING
+      REDIS_HOST: redis
+      REDIS_PORT: $REDIS_PORT
+      REDIS_PASSWORD: $REDIS_PASSWORD
+      SERVER_ENV: development
+      POSTGRES_USERNAME: $POSTGRES_USERNAME
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: $POSTGRES_PORT
+      POSTGRES_DB: $POSTGRES_DB
+    depends_on:
+      - redis
+      - postgres

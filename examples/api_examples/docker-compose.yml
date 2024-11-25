@@ -1,0 +1,179 @@
+services:
+  auth:
+    build: auth/
+    container_name: auth
+    command: sh ./docker-entrypoint.sh
+    hostname: $AUTH_HOSTNAME
+    restart: always
+    volumes:
+      - ./devkeys:/tmp/secrets
+    ports:
+      - $AUTH_PORT:$AUTH_PORT
+    env_file:
+      - .event-names.env
+    depends_on:
+      - init-kafka
+    environment:
+      PORT: $AUTH_PORT
+      NODE_ENV: development
+      POSTGRES_USERNAME: $POSTGRES_USERNAME
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+      POSTGRES_HOST: ${POSTGRES_HOST}:${POSTGRES_PORT}
+      POSTGRES_DATABASE: $AUTH_DB
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_USER_NAME: $KAFKA_USER_NAME
+      KAFKA_PASSWORD: $KAFKA_PASSWORD
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_AUTH_GROUP_ID: ${UUID}${KAFKA_AUTH_GROUP_ID}
+      TESTFUSE_WEB_ORIGIN: $TESTFUSE_WEB_ORIGIN
+      SAGAWISE_URL: http://sagawise:5000
+    networks:
+      - shared_network
+
+
+  notification:
+    build: notification/
+    container_name: notification
+    command: sh ./docker-entrypoint.sh
+    restart: always
+    ports:
+      - $NOTIFICATION_PORT:$NOTIFICATION_PORT
+    depends_on:
+      - init-kafka
+      - auth
+    env_file:
+      - .event-names.env
+    environment:
+      PORT: $NOTIFICATION_PORT
+      NOTIFICATION_PORT: $NOTIFICATION_PORT
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_USER_NAME: $KAFKA_USER_NAME
+      KAFKA_PASSWORD: $KAFKA_PASSWORD
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      KAFKA_NOTIFICATION_GROUP_ID: ${UUID}${KAFKA_NOTIFICATION_GROUP_ID}
+      KAFKA_NOTIFICATION_EVENT_CLIENT: ${UUID}${KAFKA_NOTIFICATION_EVENT_CLIENT}
+      SAGAWISE_URL: http://sagawise:5000
+    networks:
+      - shared_network
+
+
+  final:
+    build: final/
+    container_name: final
+    command: sh ./docker-entrypoint.sh
+    restart: always
+    ports:
+      - $FINAL_PORT:$FINAL_PORT
+    depends_on:
+      - init-kafka
+      - auth
+      - notification
+    env_file:
+      - .event-names.env
+    environment:
+      PORT: $FINAL_PORT
+      POSTGRES_USERNAME: $POSTGRES_USERNAME
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+      POSTGRES_HOST: ${POSTGRES_HOST}:${POSTGRES_PORT}
+      POSTGRES_DATABASE: $FINAL_DB
+      FINAL_PORT: $FINAL_PORT
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_USER_NAME: $KAFKA_USER_NAME
+      KAFKA_PASSWORD: $KAFKA_PASSWORD
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      KAFKA_FINAL_GROUP_ID: ${UUID}${KAFKA_FINAL_GROUP_ID}
+      KAFKA_FINAL_EVENT_CLIENT: ${UUID}${KAFKA_FINAL_EVENT_CLIENT}
+      SAGAWISE_URL: http://sagawise:5000
+    networks:
+      - shared_network
+
+
+  intermediate:
+    build: intermediate/
+    container_name: intermediate
+    command: sh ./docker-entrypoint.sh
+    restart: always
+    ports:
+      - $INTERMEDIATE_PORT:$INTERMEDIATE_PORT
+    depends_on:
+      - init-kafka
+      - auth
+      - notification
+      - final
+    env_file:
+      - .event-names.env
+    environment:
+      PORT: $INTERMEDIATE_PORT
+      POSTGRES_USERNAME: $POSTGRES_USERNAME
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+      POSTGRES_HOST: ${POSTGRES_HOST}:${POSTGRES_PORT}
+      POSTGRES_DATABASE: $INTERMEDIATE_DB
+      INTERMEDIATE_PORT: $INTERMEDIATE_PORT
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_USER_NAME: $KAFKA_USER_NAME
+      KAFKA_PASSWORD: $KAFKA_PASSWORD
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      KAFKA_INTERMEDIATE_GROUP_ID: ${UUID}${KAFKA_INTERMEDIATE_GROUP_ID}
+      KAFKA_INTERMEDIATE_EVENT_CLIENT: ${UUID}${KAFKA_INTERMEDIATE_EVENT_CLIENT}
+      SAGAWISE_URL: http://sagawise:5000
+    networks:
+      - shared_network
+
+
+  init-kafka:
+    image: bitnami/kafka:latest
+    entrypoint: /bin/bash
+    networks:
+      - shared_network
+    depends_on:
+      - kafka
+    command: >
+      -c "sleep 10 &&
+            kafka-topics.sh --create --if-not-exists --topic  "$KAFKA_EVENT_TOPIC" --replication-factor=1 --partitions=3 --bootstrap-server kafka:9092";
+
+
+  kafka:
+    image: docker.io/bitnami/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+    volumes:
+      - kafka-local:/bitnami/kafka/data
+    networks:
+      - shared_network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8085:8080
+    environment:
+      KAFKA_CLUSTERS_0_NAME: Kafka Local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    depends_on:
+      - kafka
+    networks:
+      - shared_network
+
+
+volumes:
+  kafka-local:
+    driver: local
+
+
+networks:
+  shared_network:
+    external: true

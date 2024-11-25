@@ -1,0 +1,136 @@
+# Default values for sagawise.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+
+image:
+  # The name of the repository for the docker image used in sagawise deployment.
+  repository: venturenox/sagawise
+  # The pull policy for docker image used in sagawise deployment.
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+# A list of references to Kubernetes Secret objects that contain credentials
+# for pulling images from private registries.
+imagePullSecrets: []
+
+# Allows to override the name of a resource defined in the chart without affecting other resources.
+nameOverride: ""
+
+# Allows you to completely override the full name of the resources created by the chart.
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Allows you to add custom annotations to the Pod
+podAnnotations: {}
+
+# Defines security settings at the Pod level, which apply to all containers within the Pod.
+podSecurityContext:
+  {}
+  # fsGroup: 2000
+
+# Configures security-related settings at the container level
+# impacting how a container operates and interacts with the underlying node’s resources.
+securityContext:
+  {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # cert-manager.io/acme-challenge-type: dns01
+    # cert-manager.io/acme-dns01-provider: cloudflare
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+    # nginx.ingress.kubernetes.io/enable-cors: "false"
+    # nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  hosts:
+    - host: api-sagawise.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: sagawise.tls
+      hosts:
+        - api-sagawise.example.com
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+replicaCount: 1
+
+resources:
+  {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# PostgreSQL Configuration
+postgresql:
+  enabled: true                                   # Enable or disable the deployment of an internal PostgreSQL database.
+  auth:
+    postgresPassword: "password"                  # (Optional) Specify the password for the PostgreSQL superuser. Required if 'enabled' is true.
+    database: sagawise                            # (Optional) Specify the name of the database to create within PostgreSQL.
+  
+  ## @param passwordUpdateJob.enabled Enable password update job
+  ##
+  passwordUpdateJob:
+    enabled: false
+
+# External PostgreSQL Configuration
+externalPostgresql:
+  host:                      # Hostname or IP address of an external PostgreSQL database.
+  username:                  # Username to access the external PostgreSQL database.
+  password:                  # Password for the specified username to access the external PostgreSQL database.
+  database:                  # Name of the database in the external PostgreSQL instance.
+
+# Redis Configuration
+redis:
+  enabled: true              # Enable or disable the deployment of an internal Redis instance.
+  auth:
+    enabled: false           # Enable or disable authentication for the internal Redis instance.
+  replica:
+    replicaCount: 1          # Number of Redis replicas to deploy if 'enabled' is true. Only applies when Redis is deployed internally.
+
+# External Redis Configuration
+externalRedis:
+  host:                      # Hostname or IP address of an external Redis instance.
+  password:                  # Password for accessing the external Redis instance. Required if authentication is enabled.
+
