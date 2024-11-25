@@ -7,9 +7,9 @@
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/venturenox/wtfsaga.git"
+		"url": "https://github.com/venturenox/sagawise"
 	},
-	"homepage": "https://github.com/venturenox/wtfsaga/tree/main/sdk/nodejs",
+	"homepage": "https://github.com/venturenox/sagawise/blob/main/sdk/nodejs/",
 	"dependencies": {
 		"axios": "^1.7.2"
 	}
