@@ -40,7 +40,7 @@
    - For production and other environments, ensure variables are defined as per environment-specific settings.
 
 2. **Define Workflows in DSL Files**
-   - Workflow DSL files are stored in `/backend/sagawise/` as JSON files.
+   - Workflow DSL files are stored in [dsl files](/backend/sagawise/) as JSON files.
    - The format and rules for these files are explained below - [DSL Files](#dsl-files).
 
 3. **Run the Project**
@@ -104,26 +104,26 @@ This file defines the participating services. Each object must follow this forma
 
 ## Docker Deployment
 
-For docker based deployment check readme [here]()
+For docker based deployment check [`docker-compose.yml`](./docker-compose.yml)
 
 ---
 
 ## Helm Chart
 
-For Helm based deployment check readme [here]()
+For Helm based deployment check readme [here](./kubernetes/helm/sagawise/README.md)
 
 ---
 
 ## Postman Collection
 
-PostMan collection with all the raw APIs and documentation are avaiable in the `docs` directory. [Collection](/docs/WTFSaga.postman_collection.json) - [Enviroment](/docs/WTFSaga-Env.postman_environment.json)
+PostMan collection with all the raw APIs and documentation are avaiable in the `docs` [directory](./docs/).
 
 ---
 
 ## Examples
 
 ### Raw API
-Implementation with Raw API can be observered [here](https://github.com/venturenox/wtfsaga/tree/main/examples/api_examples)
+Implementation with Raw API can be observered [here](./examples/api_examples/README.md)
 
 ---
 
