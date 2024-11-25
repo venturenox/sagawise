@@ -110,20 +110,20 @@ For docker based deployment check [`docker-compose.yml`](./docker-compose.yml)
 
 ## Helm Chart
 
-For Helm based deployment check readme [here](./kubernetes/helm/sagawise/README.md)
+For Helm based deployment check [README](./kubernetes/helm/sagawise/README.md)
 
 ---
 
 ## Postman Collection
 
-PostMan collection with all the raw APIs and documentation are avaiable in the `docs` [directory](./docs/).
+PostMan collection with all the raw APIs and documentation are avaiable in the [docs directory](./docs/).
 
 ---
 
 ## Examples
 
 ### Raw API
-Implementation with Raw API can be observered [here](./examples/api_examples/README.md)
+Implementation with Raw API can be observered in [README](./examples/api_examples/README.md)
 
 ---
 
