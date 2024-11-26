@@ -131,7 +131,8 @@ docker exec -it sagawise /bin/bash
 Sagawise deployment using docker-compose
 
 ```yaml
-sagawise:
+services:
+  sagawise:
   build:
     context: .
     dockerfile: backend/Dockerfile
@@ -152,104 +153,33 @@ sagawise:
     POSTGRES_DB: $POSTGRES_DB
 ```
 
----
+### **Environment Variables**
 
-## **Getting Started**
-
-### **Pull the Image**
-
-````bash
-docker pull [username]/[image-name]:[tag]
-
-
-To run the container, use the following command:
-
-```bash
-docker run --name [container-name] -d [username]/[image-name]:[tag]
-
-
-
----
-
-## **Usage**
-```markdown
-To interact with the running container, use:
-
-```bash
-docker exec -it [container-name] bash
-
-
-
----
-
-## **Environment Variables**
-```markdown
+```````markdown
 The image supports the following environment variables:
 
-| Variable          | Description                       | Default       |
-|--------------------|-----------------------------------|---------------|
-| `APP_ENV`         | Set application environment      | `production`  |
-| `APP_PORT`        | Port for the application         | `3000`        |
+| Variable                  | Description                          | Default Values |
+| ------------------------- | ------------------------------------ | -------------- |
+| `REDIS_CONNECTION_STRING` | Connection string for Redis database | `nill`         |
+| `REDIS_HOST`              | Host for Redis database              | `nill`         |
+| `REDIS_PASSWORD`          | Password for Redis database          | `nil`          |
+| `REDIS_PORT`              | Port for Redis database              | `6379`         |
+| `POSTGRES_USERNAME`       | Username for Postgres database       | `3000`         |
+| `POSTGRES_PASSWORD`       | Password for Postgres database       | `nil`          |
+| `POSTGRES_HOST`           | Host for Postgres database           | `6379`         |
+| `POSTGRES_PORT`           | Port for Postgres database           | `5432`         |
+| `POSTGRES_DATABASE`       | Database to be used sagawise         | `sagawise`     |
 
-To set environment variables during container startup, use the `-e` flag:
-```bash
-docker run -e APP_ENV=development -e APP_PORT=8080 [username]/[image-name]:[tag]
+### **Volumes**
 
-
-
----
-
-## **Volumes**
-```markdown
+``````markdown
 The image supports mounting the following volumes:
 
-| Path in Container      | Description                     |
-|-------------------------|---------------------------------|
-| `/app/data`            | Stores application data         |
-
-To mount a volume, use:
-```bash
-docker run -v /host/path:/container/path [username]/[image-name]:[tag]
-
-
-
-
-
+| Database service in compose | Description             | Path in Container          |
+| --------------------------- | ----------------------- | -------------------------- |
+| Postgres                    | Stores application data | `/var/lib/postgresql/data` |
 
 ---
-
-## **Exposed Ports**
-```markdown
-The image exposes the following ports:
-
-| Port       | Description              |
-|------------|--------------------------|
-| `80`       | HTTP traffic             |
-| `443`      | HTTPS traffic            |
-
-To map the ports to the host, use the `-p` flag:
-```bash
-docker run -p 8080:80 -p 8443:443 [username]/[image-name]:[tag]
-
-
-
----
-
-## **Examples**
-Provide practical usage examples:
-
-### **Running with Custom Configuration**
-```bash
-docker run -e APP_ENV=development -p 8080:80 [username]/[image-name]:[tag]
-
-
-
-```
-
-
-
-
-
 
 For docker based deployment check [`docker-compose.yml`](./docker-compose.yml)
 
@@ -270,6 +200,7 @@ PostMan collection with all the raw APIs and documentation are avaiable in the [
 ## Examples
 
 ### Raw API
+
 Implementation with Raw API can be observered in [README](./examples/api_examples/README.md)
 
 ---
@@ -291,6 +222,7 @@ This project is under Apache license. [license](/LICENSE.txt)
 ## Roadmap
 
 The following features are currently in th pipeline:
+
 - [ ] Dashboard Frontend
 - [ ] AsyncAPI for Workflow definition
 - [ ] zero trust service authentication with mTLS using spiffe protocol
@@ -317,4 +249,15 @@ The following features are currently in th pipeline:
     <img src="https://avatars.githubusercontent.com/u/44703244?v=4" width="100" style="border-radius: 50%;" alt="Nob 786">
   </a>
 </div>
+```
+````
+`````
+``````
+```````
+
+````
+
+```
+
+```
 ````

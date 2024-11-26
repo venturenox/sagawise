@@ -81,7 +81,7 @@ func ConnectPostgres() *pgx.Conn {
 
 	conn_str := "postgres://" + os.Getenv("POSTGRES_USERNAME") + ":" +
 		url.QueryEscape(os.Getenv("POSTGRES_PASSWORD")) + "@" + os.Getenv("POSTGRES_HOST") +
-		":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DB")
+		":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DATABASE")
 
 	conn, err = pgx.Connect(context.Background(), conn_str)
 	if err != nil {
