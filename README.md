@@ -160,7 +160,7 @@ The image supports the following environment variables:
 
 | Variable                  | Description                                                      | Default Values                           |
 | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
-| `REDIS_CONNECTION_STRING` | Connection string for Redis database                             | `redis://default:password@redis:6379` |
+| `REDIS_CONNECTION_STRING` | Connection string for Redis database                             | `redis://default:password@redis:6379`    |
 | `REDIS_HOST`              | Host for Redis database                                          | `redis`                                  |
 | `REDIS_PORT`              | Port for Redis database                                          | `6379`                                   |
 | `REDIS_PASSWORD`          | Password for Redis database                                      | `password`                               |
