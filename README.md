@@ -155,7 +155,7 @@ services:
 
 ### **Environment Variables**
 
-```````markdown
+```markdown
 The image supports the following environment variables:
 
 | Variable                  | Description                          | Default Values |
@@ -169,17 +169,17 @@ The image supports the following environment variables:
 | `POSTGRES_HOST`           | Host for Postgres database           | `6379`         |
 | `POSTGRES_PORT`           | Port for Postgres database           | `5432`         |
 | `POSTGRES_DATABASE`       | Database to be used sagawise         | `sagawise`     |
+```
 
 ### **Volumes**
 
-``````markdown
+```markdown
 The image supports mounting the following volumes:
 
 | Database service in compose | Description             | Path in Container          |
 | --------------------------- | ----------------------- | -------------------------- |
 | Postgres                    | Stores application data | `/var/lib/postgresql/data` |
-
----
+```
 
 For docker based deployment check [`docker-compose.yml`](./docker-compose.yml)
 
@@ -251,9 +251,12 @@ The following features are currently in th pipeline:
 </div>
 ```
 ````
+
+```
+
+```
+
 `````
-``````
-```````
 
 ````
 
@@ -261,3 +264,4 @@ The following features are currently in th pipeline:
 
 ```
 ````
+`````
