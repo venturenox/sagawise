@@ -1,6 +1,18 @@
 # Saga wise
+<p align="center">
 
-![sagawise platform logo](sdk/sagawise-platform-logo-1024x641-removebg-preview.png)
+   ![sagawise platform logo](sdk/sagawise-platform-logo-1024x641-removebg-preview.png)
+</p>
+
+<!-- <p align="center">
+
+   [![Helm Chart](https://img.shields.io/badge/Helm-0F1689?logo=helm&logoColor=fff)](https://artifacthub.io/packages/helm/venturenox/sagawise)
+   [![Join Slack](https://img.shields.io/badge/join%20slack-sagawise-brightgreen.svg)](https://venturenox.slack.com/)
+   [![Documentation link](https://img.shields.io/badge/Documentation-link-blue?logo=gitbook)](https://github.com/venturenox/sagawise/tree/main)
+   [![Docker Pulls](https://img.shields.io/docker/pulls/venturenox/sagawise)](https://hub.docker.com/r/venturenox/sagawise/tags)
+   [![PyPI](https://img.shields.io/badge/PyPI-3775A9?logo=pypi&logoColor=fff)](https://pypi.org/project/postgres)
+   [![Postgres](https://img.shields.io/pepy/dt/postgres)](https://pypi.org/project/postgres)
+</p> -->
 
 **Saga wise** is a distributed transaction management tool based on the Saga pattern for managing long-running transactions. It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions. The project is built using **Go-Lang**, **Redis**, and **PostgreSQL** to handle scalability and durability.
 
