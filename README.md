@@ -158,18 +158,18 @@ services:
 ```markdown
 The image supports the following environment variables:
 
-| Variable                  | Description                                                                                                       | Default Values                              |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `REDIS_CONNECTION_STRING` | Connection string for Redis database                                                                              | `redis://default:password@sagawise:6379`    |
-| `REDIS_HOST`              | Host for Redis database                                                                                           | `redis`                                     |
-| `REDIS_PORT`              | Port for Redis database                                                                                           | `6379`                                      |
-| `REDIS_PASSWORD`          | Password for Redis database                                                                                       | `password`                                  |
-| `POSTGRES_HOST`           | Host for Postgres database                                                                                        | `postgres`                                  |
-| `POSTGRES_PORT`           | Port for Postgres database                                                                                        | `5432`                                      |
-| `POSTGRES_USERNAME`       | Username for Postgres database                                                                                    | `postgres`                                  |
-| `POSTGRES_PASSWORD`       | Password for Postgres database                                                                                    | `password`                                  |
-| `POSTGRES_DATABASE`       | Database to be used sagawise                                                                                      | `sagawise`                                  |
-| `SERVER_ENV`              | Specifies the environment running the Sagawise app ( **optional** ), as it is not being used in the code for now. | `development, preview, staging, production` |
+| Variable                  | Description                                                      | Default Values                           |
+| ------------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
+| `REDIS_CONNECTION_STRING` | Connection string for Redis database                             | `redis://default:password@redis:6379` |
+| `REDIS_HOST`              | Host for Redis database                                          | `redis`                                  |
+| `REDIS_PORT`              | Port for Redis database                                          | `6379`                                   |
+| `REDIS_PASSWORD`          | Password for Redis database                                      | `password`                               |
+| `POSTGRES_HOST`           | Host for Postgres database                                       | `postgres`                               |
+| `POSTGRES_PORT`           | Port for Postgres database                                       | `5432`                                   |
+| `POSTGRES_USERNAME`       | Username for Postgres database                                   | `postgres`                               |
+| `POSTGRES_PASSWORD`       | Password for Postgres database                                   | `password`                               |
+| `POSTGRES_DATABASE`       | Database to be used sagawise                                     | `sagawise`                               |
+| `SERVER_ENV`              | Specifies the environment running the Sagawise app ( optional ). | `development, preview,stagin,production` |
 ```
 
 ### **Volumes**
@@ -182,7 +182,7 @@ The image supports mounting the following volumes:
 | Postgres                    | Stores application data | `/var/lib/postgresql/data` |
 ```
 
-For a quick deployment you can use the docker-compose file from the root directory [`docker-compose.yml`](./docker-compose.yml)
+For quick deployment you can use the docker-compose file from the root directory [`docker-compose.yml`](./docker-compose.yml)
 
 ---
 
