@@ -119,7 +119,17 @@ This file defines the participating services. Each object must follow this forma
 Start the sagawise container
 
 ```bash
-docker run -d --name sagawise -p 5000:5000 -e REDIS_HOST="redis host" -e REDIS_PASSWORD="redis password" -e REDIS_PORT=6379 -e POSTGRES_USERNAME="postgres username" -e POSTGRES_PASSWORD="postgres password" -e POSTGRES_HOST="postgres host" -e POSTGRES_PORT=5432 -e POSTGRES_DATABASE="sagawise" venturenox/sagawise
+docker run --detach \
+--name sagawise --port 5000:5000 \
+--env=REDIS_HOST="redis host" \
+--env=REDIS_PORT=6379 \
+--env=REDIS_PASSWORD="redis password" \
+--env=POSTGRES_HOST="postgres host" \
+--env=POSTGRES_PORT=5432 \
+--env=POSTGRES_USERNAME="postgres" \
+--env=POSTGRES_PASSWORD="postgres password" \
+--env=POSTGRES_DB="sagawise" \
+venturenox/sagawise:latest
 ```
 
 Open a shell in the sagawise container
