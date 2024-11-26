@@ -55,7 +55,7 @@ pnpm add sagawise
 
 Once the package is installed, you can import the library using `require` approach. **Only default export is available**:
 
-```
+```javascript
 const sagawise = require('sagawise');
 ```
 
@@ -77,7 +77,7 @@ The `start_workflow` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```javascript
 const workflow_instance_id = await sagawise.start_workflow({
 	workflow_name: 'user_creation',
 	workflow_version: '1.0'
@@ -107,7 +107,7 @@ The `publish_message` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```javascript
 await sagawise.publish_message({
 	workflow_instance_id,
 	workflow_version: '1.0', 
@@ -139,7 +139,7 @@ The `consume_message` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```javascript
 await sagawise.consume_message({ 
 	workflow_instance_id: data.workflow_instance_id,
 	workflow_version: '1.0', 
@@ -171,7 +171,7 @@ The `fail_message` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```javascript
 await sagawise.fail_message({ 
 	workflow_instance_id: data.workflow_instance_id,
 	workflow_version: '1.0', 

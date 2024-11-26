@@ -59,7 +59,7 @@ pip install sagawise
 
 Once the package is installed, you can import the library using `import` approach.
 
-```
+```python
 from sagawise import Sagawise
 
 sagawise_instance = Sagawise()
@@ -83,7 +83,7 @@ The `start_workflow` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```python
 workflow_instance_id = sagawise_instance.start_workflow('workflow_name', 'workflow_version')
 ```
 
@@ -110,7 +110,7 @@ The `publish_message` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```python
 sagawise_instance.publish_message(
 	workflow_instance_id,
 	'1.0', 
@@ -142,7 +142,7 @@ The `consume_message` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```python
 sagawise_instance.consume_message( 
 	data.workflow_instance_id,
 	'1.0', 
@@ -174,7 +174,7 @@ The `fail_message` function may return any of these:
 - Error - in case of any problem with sagawise server
 
 ### Example
-```
+```python
 sagawise_instance.fail_message(
 	data.workflow_instance_id,
 	'1.0', 
