@@ -119,7 +119,7 @@ This file defines the participating services. Each object must follow this forma
 Start the sagawise container
 
 ```bash
-docker run -d --name sagawise --port 5000:5000 -e REDIS_HOST="redis host" -e REDIS_PASSWORD="redis password" -e REDIS_PORT=6379 -e POSTGRES_USERNAME="postgres username" -e POSTGRES_PASSWORD="postgres password" -e POSTGRES_HOST="postgres host" -e POSTGRES_PORT=5432 -e POSTGRES_DB="sagawise"
+docker run -d --name sagawise --port 5000:5000 -e REDIS_HOST="redis host" -e REDIS_PASSWORD="redis password" -e REDIS_PORT=6379 -e POSTGRES_USERNAME="postgres username" -e POSTGRES_PASSWORD="postgres password" -e POSTGRES_HOST="postgres host" -e POSTGRES_PORT=5432 -e POSTGRES_DATABASE="sagawise" venturenox/sagawise
 ```
 
 Open a shell in the sagawise container
@@ -158,17 +158,18 @@ services:
 ```markdown
 The image supports the following environment variables:
 
-| Variable                  | Description                          | Default Values |
-| ------------------------- | ------------------------------------ | -------------- |
-| `REDIS_CONNECTION_STRING` | Connection string for Redis database | `nill`         |
-| `REDIS_HOST`              | Host for Redis database              | `nill`         |
-| `REDIS_PASSWORD`          | Password for Redis database          | `nil`          |
-| `REDIS_PORT`              | Port for Redis database              | `6379`         |
-| `POSTGRES_USERNAME`       | Username for Postgres database       | `3000`         |
-| `POSTGRES_PASSWORD`       | Password for Postgres database       | `nil`          |
-| `POSTGRES_HOST`           | Host for Postgres database           | `6379`         |
-| `POSTGRES_PORT`           | Port for Postgres database           | `5432`         |
-| `POSTGRES_DATABASE`       | Database to be used sagawise         | `sagawise`     |
+| Variable                  | Description                                                                                                       | Default Values                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| `REDIS_CONNECTION_STRING` | Connection string for Redis database                                                                              | `redis://default:password@sagawise:6379`    |
+| `REDIS_HOST`              | Host for Redis database                                                                                           | `redis`                                     |
+| `REDIS_PORT`              | Port for Redis database                                                                                           | `6379`                                      |
+| `REDIS_PASSWORD`          | Password for Redis database                                                                                       | `password`                                  |
+| `POSTGRES_HOST`           | Host for Postgres database                                                                                        | `postgres`                                  |
+| `POSTGRES_PORT`           | Port for Postgres database                                                                                        | `5432`                                      |
+| `POSTGRES_USERNAME`       | Username for Postgres database                                                                                    | `postgres`                                  |
+| `POSTGRES_PASSWORD`       | Password for Postgres database                                                                                    | `password`                                  |
+| `POSTGRES_DATABASE`       | Database to be used sagawise                                                                                      | `sagawise`                                  |
+| `SERVER_ENV`              | Specifies the environment running the Sagawise app ( **optional** ), as it is not being used in the code for now. | `development, preview, staging, production` |
 ```
 
 ### **Volumes**
@@ -181,7 +182,7 @@ The image supports mounting the following volumes:
 | Postgres                    | Stores application data | `/var/lib/postgresql/data` |
 ```
 
-For docker based deployment check [`docker-compose.yml`](./docker-compose.yml)
+For a quick deployment you can use the docker-compose file from the root directory [`docker-compose.yml`](./docker-compose.yml)
 
 ---
 

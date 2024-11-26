@@ -38,8 +38,6 @@
 
 
 {{- define "snippet.postgresql.env" -}}
-- name: POSTGRES_CONNECTION_STRING
-  value: {{ include "snippet.postgresql.connection.string" . | quote }}
 - name: POSTGRES_HOST
   value: {{ include "snippet.postgresql.host" . }}
 - name: POSTGRES_PORT
