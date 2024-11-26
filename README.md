@@ -114,21 +114,43 @@ This file defines the participating services. Each object must follow this forma
 
 ## Docker
 
-# Quick Start
-
-Run sagawise as a docker container
+### Quick Start
 
 Start the sagawise container
 
 ```bash
-docker run -d --name sagawise -e REDIS_HOST="redis host" -e REDIS_PASSWORD="redis password" -e REDIS_PORT=6379 -e POSTGRES_USERNAME="postgres username" -e POSTGRES_PASSWORD="postgres password" -e POSTGRES_HOST="postgres host" -e POSTGRES_PORT=5432 -e POSTGRES_DB="sagawise"
+docker run -d --name sagawise --port 5000:5000 -e REDIS_HOST="redis host" -e REDIS_PASSWORD="redis password" -e REDIS_PORT=6379 -e POSTGRES_USERNAME="postgres username" -e POSTGRES_PASSWORD="postgres password" -e POSTGRES_HOST="postgres host" -e POSTGRES_PORT=5432 -e POSTGRES_DB="sagawise"
 ```
 
 Open a shell in the sagawise container
 
+```bash
 docker exec -it sagawise /bin/bash
+```
 
-Using docker-compose to deploy sagawise in a virtual machine
+Sagawise deployment using docker-compose
+
+```yaml
+sagawise:
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  container_name: sagawise
+  restart: always
+  ports:
+    - 5000:5000
+  environment:
+    SERVER_ENV: development
+    REDIS_CONNECTION_STRING: $REDIS_CONNECTION_STRING
+    REDIS_HOST: $REDIS_HOST
+    REDIS_PASSWORD: $REDIS_PASSWORD
+    REDIS_PORT: $REDIS_PORT
+    POSTGRES_USERNAME: $POSTGRES_USERNAME
+    POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: $POSTGRES_PORT
+    POSTGRES_DB: $POSTGRES_DB
+```
 
 ---
 
@@ -221,14 +243,7 @@ Provide practical usage examples:
 docker run -e APP_ENV=development -p 8080:80 [username]/[image-name]:[tag]
 
 
-version: '3.8'
-services:
-  app:
-    image: [username]/[image-name]:[tag]
-    ports:
-      - "8080:80"
-    environment:
-      - APP_ENV=development
+
 ```
 
 
