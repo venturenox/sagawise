@@ -9,6 +9,7 @@
 ![Sagawise Example Visualization](https://venturenox.com/wp-content/uploads/2024/05/Sagawise-architecture-1024x592.png)
 
 ## Table of Contents
+
 <!-- @NOTE: to be added after release of packages at NPM and PyPi -->
 <!-- - [SDKs:](#)
 	- [SDK - Node JS](#)
@@ -25,7 +26,7 @@
 - [Helm Chart](#helm-chart)
 - [PostMan Collection](#postman-collection)
 - [Examples](#examples)
-	- [Raw API ](#raw-api)
+  - [Raw API ](#raw-api)
 - [Tech Stack](#tech-stack)
 - [Roadmap](#roadmap)
 - [License](#license)
@@ -36,29 +37,37 @@
 ## Getting Started
 
 1. **Set Environment Variables**
+
    - For the `dev` environment, configure variables inside the `.env` file.
    - For production and other environments, ensure variables are defined as per environment-specific settings.
 
 2. **Define Workflows in DSL Files**
+
    - Workflow DSL files are stored in [dsl files](/backend/sagawise/) as JSON files.
    - The format and rules for these files are explained below - [DSL Files](#dsl-files).
 
 3. **Run the Project**
+
    - Start the containers and necessary services by using the `make` command.
 
 4. **Start Workflow Instance**
+
    - Use the `start_instance` endpoint of **Saga wise** to initialize a workflow from the publishing service.
 
 5. **Publish Event**
+
    - Inform **Saga wise** about a `publish` event by sending a request to the "Publish Event" endpoint from the publishing service.
 
 6. **Consume Event**
+
    - Inform **Saga wise** about a `consume` event by sending a request to the "Consume Event" endpoint from the publishing service.
 
 7. **Failure Reporting**
+
    - Ensure every service has a failure report webhook registered to handle task failures. This should follow the format: `/v1/sagawise/failure_report/`.
 
 8. **Dashboard Monitoring**
+
    - Use **Saga wise** API dashboard to get an overview of workflows and track events.
 
 9. **Logging and Debugging**
@@ -67,24 +76,25 @@
 ---
 
 ## DSL Files
+
 The purpose of the DSL is to define a workflow(s) of Sagas among different services so that they can registered with SagaWise in order to monitored.
 
 Consider the following requirements while creating your DSL Files:
 
 1. Each Workflow should have it's own DSL file.
 2. File naming convention should be: `workflow_name.json`
- 	Note: Workflow names should NOT container spaces. Spaces must be converted into underscores `_`
-4. First root key must be `workflow`
-5. Inside `workflow` key, there must be following keys:
-	1. `version` defines version of workflow.
-	2. `schema_version` defines version of the schema to be used by the DSL files. Current value `1.0`
-	3. `name` defines the name of workflow (without spaces).
-6. Last key inside the root "workflow" object, must be the `tasks` key, which is an array of objects.
-7. Inside each task object, there must be these keys:
-	1. `topic` defines the Kafka topic on which this task is publishing and consuming messages.
-	2. `from` defines the name of service which producer the message in this task (see below heading).
-	3. `to` defines the name of service which (is supposed to) consume the message in this task (see below heading).
-	4. `timeout` defines the timeout for the consuming service to consume task, or the time the task should be completed in. Value is integer type and time is in `milliseconds`.
+   Note: Workflow names should NOT container spaces. Spaces must be converted into underscores `_`
+3. First root key must be `workflow`
+4. Inside `workflow` key, there must be following keys:
+   1. `version` defines version of workflow.
+   2. `schema_version` defines version of the schema to be used by the DSL files. Current value `1.0`
+   3. `name` defines the name of workflow (without spaces).
+5. Last key inside the root "workflow" object, must be the `tasks` key, which is an array of objects.
+6. Inside each task object, there must be these keys:
+   1. `topic` defines the Kafka topic on which this task is publishing and consuming messages.
+   2. `from` defines the name of service which producer the message in this task (see below heading).
+   3. `to` defines the name of service which (is supposed to) consume the message in this task (see below heading).
+   4. `timeout` defines the timeout for the consuming service to consume task, or the time the task should be completed in. Value is integer type and time is in `milliseconds`.
 
 ---
 
@@ -94,15 +104,137 @@ This file defines the participating services. Each object must follow this forma
 
 1. Service names MUST be defined in `services.json` file as array of objects.
 2. Each object defined in "services.json" file MUST follow this syntax:
-	1. `service_name` defines the name of service.
-	2. `failure_url` defines the url of failure endpoint.
+   1. `service_name` defines the name of service.
+   2. `failure_url` defines the url of failure endpoint.
 3. Following rules apply to the service name:
-	1. It should NOT contain **whitespaces**.
-	2. It MUST be **small-case**.
+   1. It should NOT contain **whitespaces**.
+   2. It MUST be **small-case**.
 
 ---
 
-## Docker Deployment
+## Docker
+
+# Quick Start
+
+Run sagawise as a docker container
+
+Start the sagawise container
+
+```bash
+docker run -d --name sagawise -e REDIS_HOST="redis host" -e REDIS_PASSWORD="redis password" -e REDIS_PORT=6379 -e POSTGRES_USERNAME="postgres username" -e POSTGRES_PASSWORD="postgres password" -e POSTGRES_HOST="postgres host" -e POSTGRES_PORT=5432 -e POSTGRES_DB="sagawise"
+```
+
+Open a shell in the sagawise container
+
+docker exec -it sagawise /bin/bash
+
+Using docker-compose to deploy sagawise in a virtual machine
+
+---
+
+## **Getting Started**
+
+### **Pull the Image**
+
+````bash
+docker pull [username]/[image-name]:[tag]
+
+
+To run the container, use the following command:
+
+```bash
+docker run --name [container-name] -d [username]/[image-name]:[tag]
+
+
+
+---
+
+## **Usage**
+```markdown
+To interact with the running container, use:
+
+```bash
+docker exec -it [container-name] bash
+
+
+
+---
+
+## **Environment Variables**
+```markdown
+The image supports the following environment variables:
+
+| Variable          | Description                       | Default       |
+|--------------------|-----------------------------------|---------------|
+| `APP_ENV`         | Set application environment      | `production`  |
+| `APP_PORT`        | Port for the application         | `3000`        |
+
+To set environment variables during container startup, use the `-e` flag:
+```bash
+docker run -e APP_ENV=development -e APP_PORT=8080 [username]/[image-name]:[tag]
+
+
+
+---
+
+## **Volumes**
+```markdown
+The image supports mounting the following volumes:
+
+| Path in Container      | Description                     |
+|-------------------------|---------------------------------|
+| `/app/data`            | Stores application data         |
+
+To mount a volume, use:
+```bash
+docker run -v /host/path:/container/path [username]/[image-name]:[tag]
+
+
+
+
+
+
+---
+
+## **Exposed Ports**
+```markdown
+The image exposes the following ports:
+
+| Port       | Description              |
+|------------|--------------------------|
+| `80`       | HTTP traffic             |
+| `443`      | HTTPS traffic            |
+
+To map the ports to the host, use the `-p` flag:
+```bash
+docker run -p 8080:80 -p 8443:443 [username]/[image-name]:[tag]
+
+
+
+---
+
+## **Examples**
+Provide practical usage examples:
+
+### **Running with Custom Configuration**
+```bash
+docker run -e APP_ENV=development -p 8080:80 [username]/[image-name]:[tag]
+
+
+version: '3.8'
+services:
+  app:
+    image: [username]/[image-name]:[tag]
+    ports:
+      - "8080:80"
+    environment:
+      - APP_ENV=development
+```
+
+
+
+
+
 
 For docker based deployment check [`docker-compose.yml`](./docker-compose.yml)
 
@@ -170,3 +302,4 @@ The following features are currently in th pipeline:
     <img src="https://avatars.githubusercontent.com/u/44703244?v=4" width="100" style="border-radius: 50%;" alt="Nob 786">
   </a>
 </div>
+````
