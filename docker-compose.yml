@@ -13,7 +13,7 @@ services:
       POSTGRESQL_DATABASE: $POSTGRES_DATABASE
 
   redis:
-    image: redis/redis-stack-server
+    image: bitnami/redis
     container_name: redis
     restart: always
     ports:
