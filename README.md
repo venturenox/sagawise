@@ -140,7 +140,7 @@ docker run --detach \
 --env=POSTGRES_PORT=5432 \
 --env=POSTGRES_USERNAME="postgres" \
 --env=POSTGRES_PASSWORD="postgres password" \
---env=POSTGRES_DB="sagawise" \
+--env=POSTGRES_DATABASE="sagawise" \
 venturenox/sagawise:latest
 ```
 
