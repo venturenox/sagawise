@@ -1,7 +1,9 @@
 # Saga wise
+
 <p align="center">
 
-   ![sagawise platform logo](sdk/sagawise-platform-logo-1024x641-removebg-preview.png)
+![sagawise platform logo](sdk/sagawise-platform-logo-1024x641-removebg-preview.png)
+
 </p>
 
 <!-- <p align="center">
@@ -14,7 +16,9 @@
    [![Postgres](https://img.shields.io/pepy/dt/postgres)](https://pypi.org/project/postgres)
 </p> -->
 
-**Saga wise** is a distributed transaction management tool based on the Saga pattern for managing long-running transactions. It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions. The project is built using **Go-Lang**, **Redis**, and **PostgreSQL** to handle scalability and durability.
+**Saga wise** is a distributed transaction management tool based on the Saga pattern for managing long-running transactions.
+It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions.
+The project is built using **Go-Lang**, **Redis**, and **PostgreSQL** to handle scalability and durability.
 
 [Website](https://venturenox.com/work/sagawise/) • [Documentation](https://github.com/venturenox/wtfsaga/tree/main)
 
@@ -128,7 +132,7 @@ This file defines the participating services. Each object must follow this forma
 
 ### Quick Start
 
-Start the sagawise container
+Instantly start the sagawise container by configuring environment variables of Redis and Postgres.
 
 ```bash
 docker run --detach \
@@ -147,12 +151,13 @@ venturenox/sagawise:latest
 Open a shell in the sagawise container
 
 ```bash
-docker exec -it sagawise /bin/bash
+docker exec -it sagawise /bin/sh
 ```
 
-Sagawise deployment using docker-compose
+Minimalistic docker compose configuration for running sagawise with self/externally managed databases.
 
 ```yaml
+version: "3.8"
 services:
   sagawise:
   build:
@@ -166,14 +171,33 @@ services:
     SERVER_ENV: development
     REDIS_CONNECTION_STRING: $REDIS_CONNECTION_STRING
     REDIS_HOST: $REDIS_HOST
-    REDIS_PASSWORD: $REDIS_PASSWORD
     REDIS_PORT: $REDIS_PORT
     POSTGRES_USERNAME: $POSTGRES_USERNAME
     POSTGRES_PASSWORD: $POSTGRES_PASSWORD
     POSTGRES_HOST: postgres
     POSTGRES_PORT: $POSTGRES_PORT
-    POSTGRES_DB: $POSTGRES_DB
+    POSTGRES_DATABASEB: $POSTGRES_DATABASE
+
+  adminer:
+    image: adminer
+    container_name: adminer
+    restart: always
+    ports:
+      - $MACHINE_ADMINER_PORT:$ADMINER_PORT
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+
+  redisinsight:
+    image: redis/redisinsight
+    container_name: redosinsight
+    restart: always
+    ports:
+      - $REDIS_INSIGHT_MACHINE_PORT:$REDIS_INSIGHT_PORT
 ```
+
+## NOTE
+
+If docker compose is used, the environment variables can be set from the **.env** file in the root directory.
 
 ### **Environment Variables**
 
@@ -182,10 +206,10 @@ The image supports the following environment variables:
 
 | Variable                  | Description                                                      | Default Values                           |
 | ------------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
-| `REDIS_CONNECTION_STRING` | Connection string for Redis database                             | `redis://default:password@redis:6379`    |
+| `REDIS_CONNECTION_STRING` | Connection string for Redis database                             | `redis://redis:6379`                     |
 | `REDIS_HOST`              | Host for Redis database                                          | `redis`                                  |
 | `REDIS_PORT`              | Port for Redis database                                          | `6379`                                   |
-| `REDIS_PASSWORD`          | Password for Redis database                                      | `password`                               |
+| `REDIS_PASSWORD`          | Password for Redis database                                      | `nill`                                   |
 | `POSTGRES_HOST`           | Host for Postgres database                                       | `postgres`                               |
 | `POSTGRES_PORT`           | Port for Postgres database                                       | `5432`                                   |
 | `POSTGRES_USERNAME`       | Username for Postgres database                                   | `postgres`                               |
@@ -204,9 +228,9 @@ The image supports mounting the following volumes:
 | Postgres                    | Stores application data | `/var/lib/postgresql/data` |
 ```
 
-For quick deployment you can use the docker-compose file from the root directory [`docker-compose.yml`](./docker-compose.yml)
+For quick deployment you can use the docker-compose file from the root directory [`docker-compose.yml`](./docker-compose.yml).
 
----
+[Visit our official Dockerhub repository](https://hub.docker.com/r/venturenox/sagawise)
 
 ## Helm Chart
 
@@ -228,11 +252,13 @@ Implementation with Raw API can be observered in [README](./examples/api_example
 
 ---
 
-## Tech Stack
+## Tech Stack & Open Source tools
 
-- **Go-Lang**: Core programming language for building high-performance services.
-- **Redis**: In-memory datastore for fast data access.
-- **PostgreSQL**: Relational database for managing transactions and persistent data.
+- [**Go-Lang**](https://github.com/golang/go): Core programming language for building high-performance services.
+- [**Redis**](https://hub.docker.com/r/redis/redis-stack-server): In-memory datastore for fast data access.
+- [**PostgreSQL**](https://hub.docker.com/r/bitnami/postgresql): Relational database for managing transactions and persistent data.
+- [**Adminer**](https://hub.docker.com/_/adminer): Relational database management tool.
+- [**Redis Insight**](https://hub.docker.com/r/redis/redisinsight): Dashboard for redis databases.
 
 ---
 
@@ -272,19 +298,3 @@ The following features are currently in th pipeline:
     <img src="https://avatars.githubusercontent.com/u/44703244?v=4" width="100" style="border-radius: 50%;" alt="Nob 786">
   </a>
 </div>
-```
-````
-
-```
-
-```
-
-`````
-
-````
-
-```
-
-```
-````
-`````

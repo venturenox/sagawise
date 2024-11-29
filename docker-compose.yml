@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: bitnami/postgresql:latest
+    image: bitnami/postgresql
     container_name: postgres
     restart: always
     ports:
@@ -13,7 +13,7 @@ services:
       POSTGRESQL_DATABASE: $POSTGRES_DATABASE
 
   redis:
-    image: bitnami/redis
+    image: redis/redis-stack-server
     container_name: redis
     restart: always
     ports:
@@ -29,6 +29,15 @@ services:
       ADMINER_DEFAULT_SERVER: postgres
     depends_on:
       - postgres
+
+  redisinsight:
+    image: redis/redisinsight
+    container_name: redosinsight
+    restart: always
+    ports:
+      - $REDIS_INSIGHT_MACHINE_PORT:$REDIS_INSIGHT_PORT
+    depends_on:
+      - redis
 
   sagawise:
     build:

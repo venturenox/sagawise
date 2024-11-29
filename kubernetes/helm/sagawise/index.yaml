@@ -13,7 +13,7 @@ entries:
       licenses: Apache-2.0
     apiVersion: v2
     appVersion: 17.2.0
-    created: "2024-11-25T07:20:02.872114924+05:00"
+    created: "2024-11-28T12:46:16.752617003+05:00"
     dependencies:
     - name: common
       repository: oci://registry-1.docker.io/bitnamicharts
@@ -47,19 +47,19 @@ entries:
       category: Database
       images: |
         - name: kubectl
-          image: docker.io/bitnami/kubectl:1.30.2-debian-12-r2
+          image: docker.io/bitnami/kubectl:1.31.2-debian-12-r6
         - name: os-shell
-          image: docker.io/bitnami/os-shell:12-debian-12-r24
+          image: docker.io/bitnami/os-shell:12-debian-12-r33
         - name: redis
-          image: docker.io/bitnami/redis:7.2.5-debian-12-r2
+          image: docker.io/bitnami/redis:7.4.1-debian-12-r2
         - name: redis-exporter
-          image: docker.io/bitnami/redis-exporter:1.61.0-debian-12-r2
+          image: docker.io/bitnami/redis-exporter:1.66.0-debian-12-r2
         - name: redis-sentinel
-          image: docker.io/bitnami/redis-sentinel:7.2.5-debian-12-r2
+          image: docker.io/bitnami/redis-sentinel:7.4.1-debian-12-r2
       licenses: Apache-2.0
     apiVersion: v2
-    appVersion: 7.2.5
-    created: "2024-11-25T07:20:02.879595442+05:00"
+    appVersion: 7.4.1
+    created: "2024-11-28T12:46:16.761253406+05:00"
     dependencies:
     - name: common
       repository: oci://registry-1.docker.io/bitnamicharts
@@ -69,7 +69,7 @@ entries:
     description: Redis(R) is an open source, advanced key-value store. It is often
       referred to as a data structure server since keys can contain strings, hashes,
       lists, sets and sorted sets.
-    digest: 4389f91f8ddabe85b0b2b2d38492bb3c07ba8dec93498c0e5ddc7ca675aa6571
+    digest: f9dd035ed6e7ecb9192de11787a177faee33bdceb58d35b11cf68b1666e3f2ca
     home: https://bitnami.com
     icon: https://bitnami.com/assets/stacks/redis/img/redis-stack-220x234.png
     keywords:
@@ -83,26 +83,6 @@ entries:
     sources:
     - https://github.com/bitnami/charts/tree/main/bitnami/redis
     urls:
-    - charts/redis-19.6.2.tgz
-    version: 19.6.2
-  sagawise:
-  - apiVersion: v2
-    appVersion: v0.1.0
-    created: "2024-11-25T07:20:02.865634116+05:00"
-    dependencies:
-    - condition: postgresql.enabled
-      name: postgresql
-      repository: https://charts.bitnami.com/bitnami
-      version: 16.2.2
-    - condition: redis.enabled
-      name: redis
-      repository: https://charts.bitnami.com/bitnami
-      version: 19.6.2
-    description: A Helm chart for Kubernetes
-    digest: 1ed3d20843082ac941784bb80eeaac9662a9a904ec7c7de26949a7aae9764b47
-    name: sagawise
-    type: application
-    urls:
-    - sagawise-0.1.0.tgz
-    version: 0.1.0
-generated: "2024-11-25T07:20:02.829571569+05:00"
+    - charts/redis-20.3.0.tgz
+    version: 20.3.0
+generated: "2024-11-28T12:46:16.742492717+05:00"
