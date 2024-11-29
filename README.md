@@ -169,7 +169,6 @@ services:
     - 5000:5000
   environment:
     SERVER_ENV: development
-    REDIS_CONNECTION_STRING: $REDIS_CONNECTION_STRING
     REDIS_HOST: $REDIS_HOST
     REDIS_PORT: $REDIS_PORT
     POSTGRES_USERNAME: $POSTGRES_USERNAME
@@ -270,7 +269,7 @@ This project is under Apache license. [license](/LICENSE.txt)
 
 ## Roadmap
 
-The following features are currently in th pipeline:
+The following features are currently in the pipeline:
 
 - [ ] Dashboard Frontend
 - [ ] AsyncAPI for Workflow definition
