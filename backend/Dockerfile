@@ -20,6 +20,8 @@ RUN go test -v ./...
 # Deploy the application binary into a lean image
 FROM alpine AS build-release-stage
 
+RUN apk add curl 
+
 WORKDIR /
 
 COPY --from=build-stage /output /output

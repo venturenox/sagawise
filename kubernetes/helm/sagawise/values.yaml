@@ -2,7 +2,6 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-
 image:
   # The name of the repository for the docker image used in sagawise deployment.
   repository: venturenox/sagawise
@@ -104,11 +103,14 @@ affinity: {}
 
 # PostgreSQL Configuration
 postgresql:
-  enabled: true                                   # Enable or disable the deployment of an internal PostgreSQL database.
+  # Enable or disable the deployment of an internal PostgreSQL database.
+  enabled: false
   auth:
-    postgresPassword: "password"                  # (Optional) Specify the password for the PostgreSQL superuser. Required if 'enabled' is true.
-    database: sagawise                            # (Optional) Specify the name of the database to create within PostgreSQL.
-  
+    # (Optional) Specify the password for the PostgreSQL superuser. Required if 'enabled' is true.
+    postgresPassword: "password"
+    # (Optional) Specify the name of the database to create within PostgreSQL.
+    database: sagawise
+
   ## @param passwordUpdateJob.enabled Enable password update job
   ##
   passwordUpdateJob:
@@ -116,21 +118,29 @@ postgresql:
 
 # External PostgreSQL Configuration
 externalPostgresql:
-  host:                      # Hostname or IP address of an external PostgreSQL database.
-  username:                  # Username to access the external PostgreSQL database.
-  password:                  # Password for the specified username to access the external PostgreSQL database.
-  database:                  # Name of the database in the external PostgreSQL instance.
+  # Hostname or IP address of an external PostgreSQL database.
+  host: 34.68.227.198
+  # Username to access the external PostgreSQL database.
+  username: postgres
+  # Password for the specified username to access the external PostgreSQL database.
+  password: ")Pdx)G[Sv7cu]i]H"
+  # Name of the database in the external PostgreSQL instance.
+  database: sagawise
 
 # Redis Configuration
 redis:
-  enabled: true              # Enable or disable the deployment of an internal Redis instance.
+  # Enable or disable the deployment of an internal Redis instance.
+  enabled: true
   auth:
-    enabled: false           # Enable or disable authentication for the internal Redis instance.
+    # Enable or disable authentication for the internal Redis instance.
+    enabled: false
   replica:
-    replicaCount: 1          # Number of Redis replicas to deploy if 'enabled' is true. Only applies when Redis is deployed internally.
+    # Number of Redis replicas to deploy if 'enabled' is true. Only applies when Redis is deployed internally.
+    replicaCount: 1
 
 # External Redis Configuration
 externalRedis:
-  host:                      # Hostname or IP address of an external Redis instance.
-  password:                  # Password for accessing the external Redis instance. Required if authentication is enabled.
-
+  # Hostname or IP address of an external Redis instance.
+  host:
+  # Password for accessing the external Redis instance. Required if authentication is enabled.
+  password:

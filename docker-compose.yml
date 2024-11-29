@@ -57,6 +57,17 @@ services:
       POSTGRES_USERNAME: $POSTGRES_USERNAME
       POSTGRES_PASSWORD: $POSTGRES_PASSWORD
       POSTGRES_DATABASE: $POSTGRES_DATABASE
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f http://localhost:5000/live || exit 1; curl -f http://localhost:5000/ready || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
     depends_on:
       - redis
       - postgres
