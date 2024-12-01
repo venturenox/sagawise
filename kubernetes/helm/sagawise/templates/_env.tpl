@@ -50,10 +50,6 @@
   value: {{ include "snippet.postgresql.database" . }}
 {{- end }}
 
-{{- define "snippet.postgresql.connection.string" -}}
-  postgres://{{ include "snippet.postgresql.username" . }}:{{ include "snippet.postgresql.password" . }}@{{ include "snippet.postgresql.host" . }}:{{ include "snippet.postgresql.port" . }}/{{ include "snippet.postgresql.database" . }}
-{{- end }}
-
 
 {{- define "snippet.postgresql.host" -}}
 {{ if not .Values.postgresql.enabled -}}
@@ -82,7 +78,11 @@
 {{ if not .Values.postgresql.enabled -}}
   {{ .Values.externalPostgresql.password }}
 {{- else -}}
-  {{ .Values.postgresql.auth.postgresPassword }}
+- name: POSTGRES_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: psql-postgresql
+      key: postgres-password
 {{- end }}
 {{- end }}
 

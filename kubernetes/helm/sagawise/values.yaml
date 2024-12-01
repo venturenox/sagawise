@@ -104,10 +104,10 @@ affinity: {}
 # PostgreSQL Configuration
 postgresql:
   # Enable or disable the deployment of an internal PostgreSQL database.
-  enabled: false
+  enabled: true
   auth:
     # (Optional) Specify the password for the PostgreSQL superuser. Required if 'enabled' is true.
-    postgresPassword: "password"
+    postgresPassword: ""
     # (Optional) Specify the name of the database to create within PostgreSQL.
     database: sagawise
 
