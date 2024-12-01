@@ -101,8 +101,8 @@ diagnosticMode:
 ##
 image:
   registry: docker.io
-  repository: bitnami/redis
-  tag: 7.4.1-debian-12-r2
+  repository: venturenox/redis
+  tag: latest
   digest: ""
   ## Specify a imagePullPolicy
   ## ref: https://kubernetes.io/docs/concepts/containers/images/#pre-pulled-images
@@ -162,6 +162,8 @@ commonConfiguration: |-
   appendonly yes
   # Disable RDB persistence, AOF persistence already enabled.
   save ""
+  loadmodule /opt/bitnami/redis/modules/rejson.so
+  loadmodule /opt/bitnami/redis/modules/redisearch.so
 ## @param existingConfigmap The name of an existing ConfigMap with your custom configuration for Redis&reg; nodes
 ##
 existingConfigmap: ""
