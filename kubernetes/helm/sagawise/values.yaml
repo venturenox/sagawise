@@ -119,11 +119,11 @@ postgresql:
 # External PostgreSQL Configuration
 externalPostgresql:
   # Hostname or IP address of an external PostgreSQL database.
-  host: 34.68.227.198
+  host:
   # Username to access the external PostgreSQL database.
   username: postgres
   # Password for the specified username to access the external PostgreSQL database.
-  password: ")Pdx)G[Sv7cu]i]H"
+  password: ""
   # Name of the database in the external PostgreSQL instance.
   database: sagawise
 
