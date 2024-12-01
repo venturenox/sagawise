@@ -35,10 +35,12 @@ This Helm chart has the following dependencies:
 
    - The chart can deploy an internal PostgreSQL instance or connect to an external PostgreSQL database. If you choose to use an internal database, make sure to configure the `postgresql.enabled` flag.
    - If using an external PostgreSQL instance, configure the `externalPostgresql` parameters.
+   - Refer to [Bitnami Postgresql chart for more details](https://artifacthub.io/packages/helm/bitnami/postgresql)
 
 2. **Redis**:
    - The chart can also deploy an internal Redis instance or connect to an external Redis server. If you choose to use an internal Redis instance, make sure to configure the `redis.enabled` flag.
    - If using an external Redis instance, configure the `externalRedis` parameters.
+   - [Bitnami Redis chart for more details](https://artifacthub.io/packages/helm/bitnami/redis)
 
 Make sure the following are set according to your use case:
 
@@ -133,13 +135,13 @@ externalRedis:
 
 ### Applicaton Parameters
 
-| Name                    | Description                                            | Default Values         |
-| ----------------------- | ------------------------------------------------------ | ---------------------- |
-| `image.repository`      | Docker image repository for the Sagawise application   | `nventurenox/sagawise` |
-| `image.pullPolicy`      | Docker image pull policy                               | `IfNotPresent`         |
-| `image.tag`             | Tag for the Docker image                               | `latest`               |
-| `serviceAccount.create` | Whether to create a service account for the deployment | `false`                |
-| `serviceAccount.name`   | The name of the service account to use                 | `"nil`                 |
+| Name                    | Description                                            | Default Values        |
+| ----------------------- | ------------------------------------------------------ | --------------------- |
+| `image.repository`      | Docker image repository for the Sagawise application   | `venturenox/sagawise` |
+| `image.pullPolicy`      | Docker image pull policy                               | `IfNotPresent`        |
+| `image.tag`             | Tag for the Docker image                               | `latest`              |
+| `serviceAccount.create` | Whether to create a service account for the deployment | `false`               |
+| `serviceAccount.name`   | The name of the service account to use                 | `"nil`                |
 
 ### Ingress Parameters
 
@@ -155,7 +157,7 @@ externalRedis:
 | Name                         | Description                                                    | Default Values |
 | ---------------------------- | -------------------------------------------------------------- | -------------- |
 | `redis.enabled`              | Enable or disable the deployment of an internal Redis instance | `true`         |
-| `redis.replica.replicaCount` | Number of Redis replicas to deploy if `redis.enabled` is true  | `1`            |
+| `redis.replica.replicaCount` | Number of Redis replicas to deploy if `redis.enabled` is true  | `0`            |
 
 ### External Redis Parameters
 
@@ -172,8 +174,8 @@ externalRedis:
 | -------------------------------------- | -------------------------------------------------------------------- | -------------- |
 | `postgresql.enabled`                   | Enable or disable the deployment of an internal PostgreSQL database. | `true`         |
 | `postgresql.auth.database`             | Name of the database to create within PostgreSQL.                    | `sagawise`     |
-| `postgresql.auth.postgresPassword`     | Password for the PostgreSQL superuser.                               | `password`     |
-| `postgresql.passwordUpdateJob.enabled` | Job for updating the password for postgres user.                     | `true`         |
+| `postgresql.auth.postgresPassword`     | Password for the PostgreSQL superuser.                               | `nill`         |
+| `postgresql.passwordUpdateJob.enabled` | Job for updating the password for postgres user.                     | `false`        |
 
 ### External PostgreSQL parameters
 

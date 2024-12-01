@@ -78,11 +78,7 @@
 {{ if not .Values.postgresql.enabled -}}
   {{ .Values.externalPostgresql.password }}
 {{- else -}}
-- name: POSTGRES_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: psql-postgresql
-      key: postgres-password
+  {{ .Values.postgresql.auth.postgresPassword }}
 {{- end }}
 {{- end }}
 

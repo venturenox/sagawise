@@ -39,24 +39,50 @@ spec:
               containerPort: {{ include "sagawise.application.port" . }}
               protocol: TCP
           env:
-          {{- include "snippet.sagawise.server.env" . | nindent 12 }}
+          - name: REDIS_CONNECTION_STRING
+            value: {{ include "snippet.redis.connection.string" . }}
+          - name: REDIS_HOST
+            value: {{ include "snippet.redis.host" . }}
+          - name: REDIS_PORT
+            value: {{ include "snippet.redis.port" . | quote }}
+          - name: REDIS_PASSWORD
+            value: {{ include "snippet.redis.password" . | quote }}
+          - name: POSTGRES_HOST
+            value: {{ include "snippet.postgresql.host" . }}
+          - name: POSTGRES_PORT
+            value: {{ include "snippet.postgresql.port" . | quote }}
+          - name: POSTGRES_USERNAME
+            value: {{ include "snippet.postgresql.username" . }}  
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: sagawise-postgresql
+                key: postgres-password
+          - name: POSTGRES_DATABASE
+            value: {{ include "snippet.postgresql.database" . }}
+          - name: SERVER_ENV
+            value: development
           lifecycle:
             preStop:
               httpGet:
                 path: shutdown
                 port: {{ include "sagawise.application.port" . }}
+          {{ if .Values.probes.liveness }}
           livenessProbe:
             httpGet:
               path: /live
               port: {{ include "sagawise.application.port" . }}
             initialDelaySeconds: 30
             periodSeconds: 10
+          {{- end -}}
+          {{ if .Values.probes.readiness }}
           readinessProbe:
             httpGet:
               path: /ready
               port: {{ include "sagawise.application.port" . }}
             initialDelaySeconds: 30
             periodSeconds: 10
+          {{- end -}}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}
