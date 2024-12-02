@@ -75,8 +75,8 @@ ingress:
 
 # Flag for enabling or disabling probes
 probes:
-  liveness: false
-  readiness: false
+  liveness: true
+  readiness: true
 
 # PostgreSQL Configuration
 postgresql:
