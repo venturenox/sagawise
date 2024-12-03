@@ -1,0 +1,18 @@
+[
+	{
+		"service_name": "auth",
+		"failure_url": "http://auth:4000/api/v1/failure_report"
+	},
+	{
+		"service_name": "notification",
+		"failure_url": "http://notification:4003/api/v1/failure_report"
+	},
+	{
+		"service_name": "intermediate",
+		"failure_url": "http://intermediate:4005/api/v1/failure_report"
+	},
+	{
+		"service_name": "final",
+		"failure_url": "http://final:4004/api/v1/failure_report"
+	}
+]

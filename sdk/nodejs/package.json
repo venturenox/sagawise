@@ -1,0 +1,16 @@
+{
+	"name": "sagawise",
+	"version": "0.1.0",
+	"description": "A Node.js SDK for interacting with Sagawise workflows",
+	"author": "Venturenox",
+	"main": "sagawise.js",
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/venturenox/sagawise"
+	},
+	"homepage": "https://github.com/venturenox/sagawise/blob/main/sdk/nodejs/",
+	"dependencies": {
+		"axios": "^1.7.2"
+	}
+}

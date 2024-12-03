@@ -1,0 +1,33 @@
+{
+	"workflow": {
+		"version": "1.0",
+		"schema_version": "1.0",
+		"name": "user_creation",
+		"tasks": [
+			{
+				"topic": "user_created",
+				"from": "auth",
+				"to": "notification",
+				"timeout": 20000
+			},
+			{
+				"topic": "user_created_saga",
+				"from": "notification",
+				"to": "final",
+				"timeout": 19500
+			},
+			{
+				"topic": "user_created_saga",
+				"from": "notification",
+				"to": "intermediate",
+				"timeout": 19500
+			},
+			{
+				"topic": "user_created_saga_final",
+				"from": "intermediate",
+				"to": "final",
+				"timeout": 20500
+			}
+		]
+	}
+}
