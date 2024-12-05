@@ -3,7 +3,7 @@ entries:
   sagawise:
   - apiVersion: v2
     appVersion: v0.1.0
-    created: "2024-12-05T16:45:15.554278687+05:00"
+    created: "2024-12-05T17:18:13.680169533+05:00"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -20,4 +20,4 @@ entries:
     urls:
     - https://venturenox.github.io/sagawise/sagawise-0.1.0.tgz
     version: 0.1.0
-generated: "2024-12-05T16:45:15.529773447+05:00"
+generated: "2024-12-05T17:18:13.653391841+05:00"
