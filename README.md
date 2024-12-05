@@ -233,7 +233,7 @@ For quick deployment you can use the docker-compose file from the root directory
 
 ## Helm Chart
 
-For Helm based deployment check [README](./kubernetes/helm/sagawise/README.md)
+For Helm based deployment check [README](./charts/sagawise/README.md) or visit [Github](https://venturenox.github.io/sagawise).
 
 ---
 

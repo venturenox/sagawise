@@ -2,20 +2,9 @@
 
 # Venturenox package for Sagawise
 
-Saga wise is a distributed transaction management tool based on the Saga pattern for managing long-running transactions. It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions. The project is built using Go-Lang, Redis, and PostgreSQL to handle scalability and durability.
-
 [Overview of Sagawise](https://github.com/venturenox/sagawise)
 
-## TL;DR
-
-```console
-
-helm repo add "repo_name" "repo_address"
-
-helm dependency update
-
-helm upgrate --install my-release "registry-to-be-added" ( NEED TO UPDATE THIS )
-```
+Saga wise is a distributed transaction management tool based on the Saga pattern for managing long-running transactions. It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions. The project is built using Go-Lang, Redis, and PostgreSQL to handle scalability and durability.
 
 ## Introduction
 
@@ -52,12 +41,14 @@ Make sure the following are set according to your use case:
 To install the chart with the release name `my-release`:
 
 ```console
-helm install my-release oci://REGISTRY_NAME/REPOSITORY_NAME/sagawise ( NEED TO UPDATE THIS )
+helm repo add sagawise https://venturenox.github.io/sagawise/
+
+helm dependency update
+
+helm install my-sagawise sagawise/sagawise --version 0.1.0
 ```
 
-> Note: You need to substitute the placeholders `REGISTRY_NAME` and `REPOSITORY_NAME` with a reference to your Helm chart registry and repository. For example, in the case of Venturenox, you need to use `REGISTRY_NAME=registry-1.docker.io` and `REPOSITORY_NAME=bitnamicharts`. ( NEED TO UPDATE THIS )
-
-These commands deploy sagawise on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
+These commands deploy Sagawise on the Kubernetes cluster in the default configuration. The [Configuration](#configuration-parameters) section lists the parameters that can be configured during installation.
 
 > **Tip**: List all releases using `helm list` or `helm ls --all-namespaces`
 
@@ -131,7 +122,7 @@ externalRedis:
   password: "redispassword"
 ```
 
-## Parameters
+## Configuration Parameters
 
 ### Applicaton Parameters
 
