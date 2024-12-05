@@ -4,7 +4,7 @@
 
 <p align="center">
 
-![logo]({{ site.baseurl }}docs/sagawise-platform-logo.png)
+![logo]({{ site.baseurl }}/sagawise-platform-logo.png)
 
 </p>
 
