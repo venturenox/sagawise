@@ -1,299 +1,187 @@
-# Saga wise
+<!--- app-name: Sagawise -->
 
-<p align="center">
+# Venturenox package for Sagawise
 
-![sagawise platform logo](sdk/sagawise-platform-logo-1024x641-removebg-preview.png)
+Saga wise is a distributed transaction management tool based on the Saga pattern for managing long-running transactions. It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions. The project is built using Go-Lang, Redis, and PostgreSQL to handle scalability and durability.
 
-</p>
+[Overview of Sagawise](https://github.com/venturenox/sagawise)
 
-<!-- <p align="center">
+## TL;DR
 
-   [![Helm Chart](https://img.shields.io/badge/Helm-0F1689?logo=helm&logoColor=fff)](https://artifacthub.io/packages/helm/venturenox/sagawise)
-   [![Join Slack](https://img.shields.io/badge/join%20slack-sagawise-brightgreen.svg)](https://venturenox.slack.com/)
-   [![Documentation link](https://img.shields.io/badge/Documentation-link-blue?logo=gitbook)](https://github.com/venturenox/sagawise/tree/main)
-   [![Docker Pulls](https://img.shields.io/docker/pulls/venturenox/sagawise)](https://hub.docker.com/r/venturenox/sagawise/tags)
-   [![PyPI](https://img.shields.io/badge/PyPI-3775A9?logo=pypi&logoColor=fff)](https://pypi.org/project/postgres)
-   [![Postgres](https://img.shields.io/pepy/dt/postgres)](https://pypi.org/project/postgres)
-</p> -->
+```console
 
-**Saga wise** is a distributed transaction management tool based on the Saga pattern for managing long-running transactions.
-It helps coordinate the distributed workflow across services by tracking each task's status and ensuring fault tolerance using compensating transactions.
-The project is built using **Go-Lang**, **Redis**, and **PostgreSQL** to handle scalability and durability.
+helm repo add "repo_name" "repo_address"
 
-[Website](https://venturenox.com/work/sagawise/) • [Documentation](https://github.com/venturenox/wtfsaga/tree/main)
+helm dependency update
 
-![Sagawise Example Visualization](https://venturenox.com/wp-content/uploads/2024/05/Sagawise-architecture-1024x592.png)
-
-## Table of Contents
-
-<!-- @NOTE: to be added after release of packages at NPM and PyPi -->
-<!-- - [SDKs:](#)
-	- [SDK - Node JS](#)
-		- [NPM Installation](#)
-	- [SDK - Python](#)
-		- [pip installation](#)
-	- [Node JS ](#)
-	- [Python ](#) -->
-
-- [Getting Started](#getting-started)
-- [DSL Files](#dsl-files)
-- [Services.json file](#servicesjson-file)
-- [Docker Deployment](#docker-deployment)
-- [Helm Chart](#helm-chart)
-- [PostMan Collection](#postman-collection)
-- [Examples](#examples)
-  - [Raw API ](#raw-api)
-- [Tech Stack](#tech-stack)
-- [Roadmap](#roadmap)
-- [License](#license)
-- [Contributors](#contributors)
-
----
-
-## Getting Started
-
-1. **Set Environment Variables**
-
-   - For the `dev` environment, configure variables inside the `.env` file.
-   - For production and other environments, ensure variables are defined as per environment-specific settings.
-
-2. **Define Workflows in DSL Files**
-
-   - Workflow DSL files are stored in [dsl files](/backend/sagawise/) as JSON files.
-   - The format and rules for these files are explained below - [DSL Files](#dsl-files).
-
-3. **Run the Project**
-
-   - Start the containers and necessary services by using the `make` command.
-
-4. **Start Workflow Instance**
-
-   - Use the `start_instance` endpoint of **Saga wise** to initialize a workflow from the publishing service.
-
-5. **Publish Event**
-
-   - Inform **Saga wise** about a `publish` event by sending a request to the "Publish Event" endpoint from the publishing service.
-
-6. **Consume Event**
-
-   - Inform **Saga wise** about a `consume` event by sending a request to the "Consume Event" endpoint from the publishing service.
-
-7. **Failure Reporting**
-
-   - Ensure every service has a failure report webhook registered to handle task failures. This should follow the format: `/v1/sagawise/failure_report/`.
-
-8. **Dashboard Monitoring**
-
-   - Use **Saga wise** API dashboard to get an overview of workflows and track events.
-
-9. **Logging and Debugging**
-   - Access logs to debug and monitor runtime messages.
-
----
-
-## DSL Files
-
-The purpose of the DSL is to define a workflow(s) of Sagas among different services so that they can registered with SagaWise in order to monitored.
-
-Consider the following requirements while creating your DSL Files:
-
-1. Each Workflow should have it's own DSL file.
-2. File naming convention should be: `workflow_name.json`
-   Note: Workflow names should NOT container spaces. Spaces must be converted into underscores `_`
-3. First root key must be `workflow`
-4. Inside `workflow` key, there must be following keys:
-   1. `version` defines version of workflow.
-   2. `schema_version` defines version of the schema to be used by the DSL files. Current value `1.0`
-   3. `name` defines the name of workflow (without spaces).
-5. Last key inside the root "workflow" object, must be the `tasks` key, which is an array of objects.
-6. Inside each task object, there must be these keys:
-   1. `topic` defines the Kafka topic on which this task is publishing and consuming messages.
-   2. `from` defines the name of service which producer the message in this task (see below heading).
-   3. `to` defines the name of service which (is supposed to) consume the message in this task (see below heading).
-   4. `timeout` defines the timeout for the consuming service to consume task, or the time the task should be completed in. Value is integer type and time is in `milliseconds`.
-
----
-
-## Services.json file
-
-This file defines the participating services. Each object must follow this format:
-
-1. Service names MUST be defined in `services.json` file as array of objects.
-2. Each object defined in "services.json" file MUST follow this syntax:
-   1. `service_name` defines the name of service.
-   2. `failure_url` defines the url of failure endpoint.
-3. Following rules apply to the service name:
-   1. It should NOT contain **whitespaces**.
-   2. It MUST be **small-case**.
-
----
-
-## Docker
-
-### Quick Start
-
-Instantly start the sagawise container by configuring environment variables of Redis and Postgres.
-
-```bash
-docker run --detach \
---name sagawise --port 5000:5000 \
---env=REDIS_HOST="redis host" \
---env=REDIS_PORT=6379 \
---env=REDIS_PASSWORD="redis password" \
---env=POSTGRES_HOST="postgres host" \
---env=POSTGRES_PORT=5432 \
---env=POSTGRES_USERNAME="postgres" \
---env=POSTGRES_PASSWORD="postgres password" \
---env=POSTGRES_DATABASE="sagawise" \
-venturenox/sagawise:latest
+helm upgrate --install my-release "registry-to-be-added" ( NEED TO UPDATE THIS )
 ```
 
-Open a shell in the sagawise container
+## Introduction
 
-```bash
-docker exec -it sagawise /bin/sh
+This chart bootstraps [Sagawise](https://github.com/venturenox/sagawise) Deployment with [Redis](https://redis.io/) and [PostgreSQL](https://www.postgresql.org/) on a [Kubernetes](https://kubernetes.io) cluster using the [Helm](https://helm.sh) package manager.
+
+## Prerequisites
+
+- Kubernetes 1.23+
+- Helm 3.8.0+
+- PV provisioner support in the underlying infrastructure
+
+## Dependencies
+
+This Helm chart has the following dependencies:
+
+1. **PostgreSQL**:
+
+   - The chart can deploy an internal PostgreSQL instance or connect to an external PostgreSQL database. If you choose to use an internal database, make sure to configure the `postgresql.enabled` flag.
+   - If using an external PostgreSQL instance, configure the `externalPostgresql` parameters.
+   - Refer to [Bitnami Postgresql chart for more details](https://artifacthub.io/packages/helm/bitnami/postgresql)
+
+2. **Redis**:
+   - The chart can also deploy an internal Redis instance or connect to an external Redis server. If you choose to use an internal Redis instance, make sure to configure the `redis.enabled` flag.
+   - If using an external Redis instance, configure the `externalRedis` parameters.
+   - [Bitnami Redis chart for more details](https://artifacthub.io/packages/helm/bitnami/redis)
+
+Make sure the following are set according to your use case:
+
+- **Redis** and **PostgreSQL** settings in `values.yaml` (internal vs external).
+- Network access and authentication credentials for connecting to external services.
+
+## Installing the Chart
+
+To install the chart with the release name `my-release`:
+
+```console
+helm install my-release oci://REGISTRY_NAME/REPOSITORY_NAME/sagawise ( NEED TO UPDATE THIS )
 ```
 
-Minimalistic docker compose configuration for running sagawise with self/externally managed databases.
+> Note: You need to substitute the placeholders `REGISTRY_NAME` and `REPOSITORY_NAME` with a reference to your Helm chart registry and repository. For example, in the case of Venturenox, you need to use `REGISTRY_NAME=registry-1.docker.io` and `REPOSITORY_NAME=bitnamicharts`. ( NEED TO UPDATE THIS )
+
+These commands deploy sagawise on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
+
+> **Tip**: List all releases using `helm list` or `helm ls --all-namespaces`
+
+### Ingress
+
+This chart provides support for Ingress resources. If you have an ingress controller installed on your cluster, such as [nginx-ingress-controller](https://github.com/bitnami/charts/tree/main/bitnami/nginx-ingress-controller) you can utilize the ingress controller to serve your application.To enable Ingress integration, set `ingress.enabled` to `true` for the http ingress.
+
+The most common scenario is to have one host name mapped to the deployment. In this case, the `ingress.hostname` property can be used to set the host name. The `ingress.tls.secretName` parameter can be used to add the TLS configuration for this host.
+
+[Learn more about Ingress controllers](https://kubernetes.io/docs/concepts/services-networking/ingress-controllers/).
+
+### Example Quickstart Sagawise Configuration
 
 ```yaml
-version: "3.8"
-services:
-  sagawise:
-  build:
-    context: .
-    dockerfile: backend/Dockerfile
-  container_name: sagawise
-  restart: always
-  ports:
-    - 5000:5000
-  environment:
-    SERVER_ENV: development
-    REDIS_HOST: $REDIS_HOST
-    REDIS_PORT: $REDIS_PORT
-    POSTGRES_USERNAME: $POSTGRES_USERNAME
-    POSTGRES_PASSWORD: $POSTGRES_PASSWORD
-    POSTGRES_HOST: postgres
-    POSTGRES_PORT: $POSTGRES_PORT
-    POSTGRES_DATABASEB: $POSTGRES_DATABASE
+# Declare variables to be passed into your templates.
 
-  adminer:
-    image: adminer
-    container_name: adminer
-    restart: always
-    ports:
-      - $MACHINE_ADMINER_PORT:$ADMINER_PORT
-    environment:
-      ADMINER_DEFAULT_SERVER: postgres
+image:
+  repository: "venturenox/sagawise"
+  pullPolicy: "IfNotPresent"
+  tag: "latest"
 
-  redisinsight:
-    image: redis/redisinsight
-    container_name: redosinsight
-    restart: always
-    ports:
-      - $REDIS_INSIGHT_MACHINE_PORT:$REDIS_INSIGHT_PORT
+serviceAccount:
+  create: false
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # cert-manager.io/acme-challenge-type: dns01
+    # cert-manager.io/acme-dns01-provider: cloudflare
+    # nginx.ingress.kubernetes.io/enable-cors: "false"
+    # nginx.ingress.kubernetes.io/proxy-body-size: 50m
+  hosts:
+    - host: api-sagawise.example.com
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: sagawise.tls
+      hosts:
+        - api-sagawise.example.com
+
+postgresql:
+  enabled: false
+  auth:
+    database: ""
+    postgresPassword: ""
+
+redis:
+  enabled: false
+  replica:
+    replicaCount: 1
+
+# External PostgreSQL Parameters
+externalPostgresql:
+  host: "db.example.com"
+  username: "admin"
+  password: "secretpassword"
+  database: "sagawise"
+
+# External Redis Parameters
+externalRedis:
+  host: "redis.example.com"
+  password: "redispassword"
 ```
 
-## NOTE
+## Parameters
 
-If docker compose is used, the environment variables can be set from the **.env** file in the root directory.
+### Applicaton Parameters
 
-### **Environment Variables**
+| Name                    | Description                                            | Default Values        |
+| ----------------------- | ------------------------------------------------------ | --------------------- |
+| `image.repository`      | Docker image repository for the Sagawise application   | `venturenox/sagawise` |
+| `image.pullPolicy`      | Docker image pull policy                               | `IfNotPresent`        |
+| `image.tag`             | Tag for the Docker image                               | `latest`              |
+| `serviceAccount.create` | Whether to create a service account for the deployment | `false`               |
+| `serviceAccount.name`   | The name of the service account to use                 | `"nil`                |
 
-```markdown
-The image supports the following environment variables:
+### Ingress Parameters
 
-| Variable                  | Description                                                      | Default Values                           |
-| ------------------------- | ---------------------------------------------------------------- | ---------------------------------------- |
-| `REDIS_CONNECTION_STRING` | Connection string for Redis database                             | `redis://redis:6379`                     |
-| `REDIS_HOST`              | Host for Redis database                                          | `redis`                                  |
-| `REDIS_PORT`              | Port for Redis database                                          | `6379`                                   |
-| `REDIS_PASSWORD`          | Password for Redis database                                      | `nill`                                   |
-| `POSTGRES_HOST`           | Host for Postgres database                                       | `postgres`                               |
-| `POSTGRES_PORT`           | Port for Postgres database                                       | `5432`                                   |
-| `POSTGRES_USERNAME`       | Username for Postgres database                                   | `postgres`                               |
-| `POSTGRES_PASSWORD`       | Password for Postgres database                                   | `password`                               |
-| `POSTGRES_DATABASE`       | Database to be used sagawise                                     | `sagawise`                               |
-| `SERVER_ENV`              | Specifies the environment running the Sagawise app ( optional ). | `development, preview,stagin,production` |
-```
+| Name                        | Description                                   | Default Values          |
+| --------------------------- | --------------------------------------------- | ----------------------- |
+| `ingress.enabled`           | Enable or disable ingress configuration       | `true`                  |
+| `ingress.className`         | The ingress controller to use (e.g., "nginx") | `nginx`                 |
+| `ingress.hosts[0].host`     | Hostname for the ingress                      | `subdomain.example.com` |
+| `ingress.tls[0].secretName` | Name of the TLS secret for secure connections | `sagawise.tls`          |
 
-### **Volumes**
+### Redis Parameters
 
-```markdown
-The image supports mounting the following volumes:
+| Name                         | Description                                                    | Default Values |
+| ---------------------------- | -------------------------------------------------------------- | -------------- |
+| `redis.enabled`              | Enable or disable the deployment of an internal Redis instance | `true`         |
+| `redis.replica.replicaCount` | Number of Redis replicas to deploy if `redis.enabled` is true  | `0`            |
 
-| Database service in compose | Description             | Path in Container          |
-| --------------------------- | ----------------------- | -------------------------- |
-| Postgres                    | Stores application data | `/var/lib/postgresql/data` |
-```
+### External Redis Parameters
 
-For quick deployment you can use the docker-compose file from the root directory [`docker-compose.yml`](./docker-compose.yml).
+| Name                     | Description                                                                                | Default Values |
+| ------------------------ | ------------------------------------------------------------------------------------------ | -------------- |
+| `externalRedis.host`     | Hostname or IP address of an external Redis instance                                       | `nil`          |
+| `externalRedis.username` | Hostname or IP address of an external Redis instance                                       | `nil`          |
+| `externalRedis.password` | Password for accessing the external Redis instance (required if authentication is enabled) | `nil`          |
+| `externalRedis.database` | Hostname or IP address of an external Redis instance                                       | `sagawise`     |
 
-[Visit our official Dockerhub repository](https://hub.docker.com/r/venturenox/sagawise)
+### PostgreSQL parameters
 
-## Helm Chart
+| Name                                   | Description                                                          | Default Values |
+| -------------------------------------- | -------------------------------------------------------------------- | -------------- |
+| `postgresql.enabled`                   | Enable or disable the deployment of an internal PostgreSQL database. | `true`         |
+| `postgresql.auth.database`             | Name of the database to create within PostgreSQL.                    | `sagawise`     |
+| `postgresql.auth.postgresPassword`     | Password for the PostgreSQL superuser.                               | `nill`         |
+| `postgresql.passwordUpdateJob.enabled` | Job for updating the password for postgres user.                     | `false`        |
 
-For Helm based deployment check [README](./kubernetes/helm/sagawise/README.md)
+### External PostgreSQL parameters
 
----
-
-## Postman Collection
-
-PostMan collection with all the raw APIs and documentation are avaiable in the [docs directory](./docs/).
-
----
-
-## Examples
-
-### Raw API
-
-Implementation with Raw API can be observered in [README](./examples/api_examples/README.md)
-
----
-
-## Tech Stack & Open Source tools
-
-- [**Go-Lang**](https://github.com/golang/go): Core programming language for building high-performance services.
-- [**Redis**](https://hub.docker.com/r/redis/redis-stack-server): In-memory datastore for fast data access.
-- [**PostgreSQL**](https://hub.docker.com/r/bitnami/postgresql): Relational database for managing transactions and persistent data.
-- [**Adminer**](https://hub.docker.com/_/adminer): Relational database management tool.
-- [**Redis Insight**](https://hub.docker.com/r/redis/redisinsight): Dashboard for redis databases.
-
----
-
-## License
-
-This project is under Apache license. [license](/LICENSE.txt)
-
----
-
-## Roadmap
-
-The following features are currently in the pipeline:
-
-- [ ] Dashboard Frontend
-- [ ] AsyncAPI for Workflow definition
-- [ ] zero trust service authentication with mTLS using spiffe protocol
-- [ ] gRPC endpoints
-- [ ] Integrate K8s service discovery layer
-- [ ] Integration with schema registry
-- [ ] Advanced dashboard
-
----
-
-### Contributors
-
-<div align="left">
-  <a href="https://github.com/saad-akhtar26">
-    <img src="https://avatars.githubusercontent.com/u/116262387?v=4" width="100" style="border-radius: 50%;" alt="Saad Akhtar">
-  </a>
-  <a href="https://github.com/AmmarSaqib">
-    <img src="https://avatars.githubusercontent.com/u/22831978?v=4" width="100" style="border-radius: 50%;" alt="Ammar Saqib">
-  </a>
-  <a href="https://github.com/stingerpk">
-    <img src="https://avatars.githubusercontent.com/u/9607103?v=4" width="100" style="border-radius: 50%;" alt="Stinger PK">
-  </a>
-  <a href="https://github.com/nob786">
-    <img src="https://avatars.githubusercontent.com/u/44703244?v=4" width="100" style="border-radius: 50%;" alt="Nob 786">
-  </a>
-</div>
+| Name                          | Description                                                                    | Default Values |
+| ----------------------------- | ------------------------------------------------------------------------------ | -------------- |
+| `externalPostgresql.host`     | Hostname or IP address of an external PostgreSQL database                      | `nil`          |
+| `externalPostgresql.username` | Username to access the external PostgreSQL database                            | `nil`          |
+| `externalPostgresql.password` | Password for the specified username to access the external PostgreSQL database | `nil`          |
+| `externalPostgresql.database` | Name of the database in the external PostgreSQL instance                       | `sagawise`     |

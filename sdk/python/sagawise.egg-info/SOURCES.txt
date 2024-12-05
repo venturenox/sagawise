@@ -1,8 +1,0 @@
-MANIFEST.in
-README.md
-setup.py
-sagawise.egg-info/PKG-INFO
-sagawise.egg-info/SOURCES.txt
-sagawise.egg-info/dependency_links.txt
-sagawise.egg-info/requires.txt
-sagawise.egg-info/top_level.txt
