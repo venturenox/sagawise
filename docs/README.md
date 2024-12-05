@@ -1,7 +1,5 @@
 <!--- app-name: Sagawise -->
 
-# Sagawise
-
 <p align="center">
 
 <img src="./sagawise-platform-logo.png">
