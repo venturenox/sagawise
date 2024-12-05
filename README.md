@@ -2,7 +2,7 @@
 
 <p align="center">
 
-![sagawise platform logo](sdk/sagawise-platform-logo-1024x641-removebg-preview.png)
+![sagawise platform logo](sdk/sagawise-platform-logo.png)
 
 </p>
 
