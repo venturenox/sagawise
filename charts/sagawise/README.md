@@ -1,5 +1,13 @@
 <!--- app-name: Sagawise -->
 
+# Saga wise
+
+<p align="center">
+
+![sagawise platform logo](../../sdk/sagawise-platform-logo.png)
+
+</p>
+
 # Venturenox package for Sagawise
 
 [Overview of Sagawise](https://github.com/venturenox/sagawise)
