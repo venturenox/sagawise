@@ -1,6 +1,6 @@
 <!--- app-name: Sagawise -->
 
-# Saga wise
+# Sagawise
 
 <p align="center">
 
