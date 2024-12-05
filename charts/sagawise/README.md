@@ -52,6 +52,14 @@ These commands deploy Sagawise on the Kubernetes cluster in the default configur
 
 > **Tip**: List all releases using `helm list` or `helm ls --all-namespaces`
 
+## Uninstall Chart
+
+```console
+helm delete sagawise
+```
+
+The command removes all the Kubernetes components associated with the chart and deletes the release.
+
 ### Ingress
 
 This chart provides support for Ingress resources. If you have an ingress controller installed on your cluster, such as [nginx-ingress-controller](https://github.com/bitnami/charts/tree/main/bitnami/nginx-ingress-controller) you can utilize the ingress controller to serve your application.To enable Ingress integration, set `ingress.enabled` to `true` for the http ingress.
@@ -123,6 +131,8 @@ externalRedis:
 ```
 
 ## Configuration Parameters
+
+The following tables lists the configurable parameters of the Sagawise chart and their default values.
 
 ### Applicaton Parameters
 
