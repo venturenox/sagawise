@@ -2,7 +2,7 @@
 
 <p align="center">
 
-<img src="../sagawise-logo.png">
+<img src="./sagawise-logo.png">
 </p>
 
 # Venturenox package for Sagawise
