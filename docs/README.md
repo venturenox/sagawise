@@ -4,7 +4,7 @@
 
 <p align="center">
 
-![logo](https://github.com/venturenox/sagawise/blob/05cf9745d1607db7bf43fce4b643e2212c23c08b/docs/sagawise-platform-logo.png)
+![logo]({{ site.baseurl }}docs/sagawise-platform-logo.png)
 
 </p>
 
