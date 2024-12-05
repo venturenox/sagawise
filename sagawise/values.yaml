@@ -73,11 +73,6 @@ ingress:
       hosts:
         - api-sagawise.example.com
 
-# Flag for enabling or disabling probes
-probes:
-  liveness: true
-  readiness: true
-
 # PostgreSQL Configuration
 postgresql:
   # Enable or disable the deployment of an internal PostgreSQL database.
