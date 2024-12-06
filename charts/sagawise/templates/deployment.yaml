@@ -67,22 +67,18 @@ spec:
               httpGet:
                 path: shutdown
                 port: {{ include "sagawise.application.port" . }}
-          {{ if .Values.probes.liveness }}
           livenessProbe:
             httpGet:
               path: /live
               port: {{ include "sagawise.application.port" . }}
             initialDelaySeconds: 30
             periodSeconds: 10
-          {{- end -}}
-          {{ if .Values.probes.readiness }}
           readinessProbe:
             httpGet:
               path: /ready
               port: {{ include "sagawise.application.port" . }}
             initialDelaySeconds: 30
             periodSeconds: 10
-          {{- end -}}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}
