@@ -283,6 +283,10 @@ The following features are currently in the pipeline:
 
 ### Contributors
 
+<a href="https://github.com/venturenox/sagawise/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=sagawise/REPO" />
+</a>
+
 <div align="left">
   <a href="https://github.com/saad-akhtar26">
     <img src="https://avatars.githubusercontent.com/u/116262387?v=4" width="100" style="border-radius: 50%;" alt="Saad Akhtar">
