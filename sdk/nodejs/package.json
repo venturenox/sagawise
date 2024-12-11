@@ -11,6 +11,10 @@
     "url": "git+https://github.com/venturenox/sagawise.git"
   },
   "keywords": [
+	"saga",
+	"communication",
+	"inter-service communication",
+	"registry",
     "sagawise",
     "workflows",
     "microservices"
