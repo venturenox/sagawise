@@ -1,6 +1,6 @@
 # Sagawise Nodejs SDK
 
-![sagawise platform logo](../sagawise-platform-logo-1024x641-removebg-preview.png)
+![sagawise platform logo](../sagawise-platform-logo.png)
 
 Easy to adopt workflow tracking which instantly lets developers bring resilience into their implementations of saga patterns.
 
