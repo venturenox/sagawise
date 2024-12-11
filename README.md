@@ -1,4 +1,4 @@
-# Saga wise
+# Sagawise
 
 <p align="center">
 
@@ -283,17 +283,6 @@ The following features are currently in the pipeline:
 
 ### Contributors
 
-<div align="left">
-  <a href="https://github.com/saad-akhtar26">
-    <img src="https://avatars.githubusercontent.com/u/116262387?v=4" width="100" style="border-radius: 50%;" alt="Saad Akhtar">
-  </a>
-  <a href="https://github.com/AmmarSaqib">
-    <img src="https://avatars.githubusercontent.com/u/22831978?v=4" width="100" style="border-radius: 50%;" alt="Ammar Saqib">
-  </a>
-  <a href="https://github.com/stingerpk">
-    <img src="https://avatars.githubusercontent.com/u/9607103?v=4" width="100" style="border-radius: 50%;" alt="Stinger PK">
-  </a>
-  <a href="https://github.com/nob786">
-    <img src="https://avatars.githubusercontent.com/u/44703244?v=4" width="100" style="border-radius: 50%;" alt="Nob 786">
-  </a>
-</div>
+<a href="https://github.com/venturenox/sagawise/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=venturenox/sagawise" />
+</a>
