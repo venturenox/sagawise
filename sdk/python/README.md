@@ -1,6 +1,6 @@
 # Sagawise Python SDK
 
-![sagawise platform logo](../sagawise-platform-logo.png)
+![sagawise platform logo](https://raw.githubusercontent.com/venturenox/sagawise/main/sdk/sagawise-platform-logo.png)
 
 Easy to adopt workflow tracking which instantly lets developers bring resilience into their implementations of saga patterns.
 

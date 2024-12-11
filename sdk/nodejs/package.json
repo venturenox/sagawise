@@ -1,5 +1,5 @@
 {
-  "name": "sagawise",
+  "name": "@venturenox/sagawise",
   "version": "0.1.0",
   "description": "A Node.js SDK for interacting with Sagawise workflows.",
   "main": "sagawise.js",
@@ -8,7 +8,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/venturenox/sagawise.git"
+    "url": "git+https://github.com/venturenox/sagawise.git"
   },
   "keywords": [
     "sagawise",
