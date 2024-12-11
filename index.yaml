@@ -2,7 +2,7 @@ apiVersion: v1
 entries:
   sagawise:
   - apiVersion: v2
-    appVersion: v0.1.0
+    appVersion: v0.1.1
     created: "2024-12-05T19:16:26.225124664+05:00"
     dependencies:
     - condition: postgresql.enabled
