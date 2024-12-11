@@ -3,7 +3,7 @@ entries:
   sagawise:
   - apiVersion: v2
     appVersion: v0.1.1
-    created: "2024-12-05T19:16:26.225124664+05:00"
+    created: "2024-12-11T16:43:59.598216307+05:00"
     dependencies:
     - condition: postgresql.enabled
       name: postgresql
@@ -14,10 +14,10 @@ entries:
       repository: https://charts.bitnami.com/bitnami
       version: 20.3.0
     description: A Helm chart for Kubernetes
-    digest: 62bc0800a84969bcbc5bc872952f4c218ab8da89fb5c1becf23d890917f231e1
+    digest: 07642a9a984a34685dd215b8298ce7bf510f808f05908c6052869adf14bc41af
     name: sagawise
     type: application
     urls:
     - https://venturenox.github.io/sagawise/sagawise-0.1.0.tgz
     version: 0.1.0
-generated: "2024-12-05T19:16:26.211403991+05:00"
+generated: "2024-12-11T16:43:59.580914741+05:00"
