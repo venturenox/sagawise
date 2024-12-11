@@ -1,6 +1,6 @@
 {
   "name": "@venturenox/sagawise",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A Node.js SDK for interacting with Sagawise workflows.",
   "main": "sagawise.js",
   "scripts": {
