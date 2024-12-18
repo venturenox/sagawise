@@ -1,0 +1,25 @@
+{
+	"name": "notification",
+	"version": "1.0.0",
+	"main": "index.js",
+	"license": "MIT",
+	"scripts": {
+		"start": "node app.js",
+		"migrate": "knex migrate:latest",
+		"seed": "knex seed:run"
+	},
+	"dependencies": {
+		"axios": "^1.7.2",
+		"body-parser": "^1.19.0",
+		"certifi": "^14.5.15",
+		"express": "^4.17.1",
+		"knex": "^2.3.0",
+		"http-status-codes": "^2.2.0",
+		"node-rdkafka": "^2.10.1",
+		"nunjucks": "^3.2.3",
+		"objection": "^2.2.14",
+		"pg": "^8.5.1",
+		"winston": "^3.8.1",
+		"jsonwebtoken": "^8.5.1"
+	}
+}
