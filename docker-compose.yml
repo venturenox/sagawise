@@ -12,6 +12,9 @@ services:
       POSTGRESQL_USERNAME: $POSTGRES_USERNAME
       POSTGRESQL_PASSWORD: $POSTGRES_PASSWORD
       POSTGRESQL_DATABASE: $POSTGRES_DATABASE
+    
+    networks:
+      - shared_network
 
   redis:
     image: redis/redis-stack-server
@@ -19,6 +22,9 @@ services:
     restart: always
     ports:
       - 6379:6379
+
+    networks:
+      - shared_network
 
   adminer:
     image: adminer
@@ -30,6 +36,8 @@ services:
       ADMINER_DEFAULT_SERVER: postgres
     depends_on:
       - postgres
+    networks:
+      - shared_network
 
   redisinsight:
     image: redis/redisinsight
@@ -39,6 +47,8 @@ services:
       - $REDIS_INSIGHT_MACHINE_PORT:$REDIS_INSIGHT_PORT
     depends_on:
       - redis
+    networks:
+      - shared_network
 
   sagawise:
     build:
@@ -71,3 +81,9 @@ services:
     depends_on:
       - redis
       - postgres
+    networks:
+      - shared_network
+  
+networks:
+  shared_network:
+    external: true

@@ -12,6 +12,7 @@
 		"seed": "knex seed:run"
 	},
 	"dependencies": {
+		"@venturenox/sagawise": "^0.1.1",
 		"axios": "^1.7.2",
 		"bcrypt": "^5.0.1",
 		"certifi": "^14.5.15",
