@@ -666,6 +666,9 @@ func Update_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, 
 // The function `List_workflows` retrieves workflow names from a Redis database and returns them as a
 // JSON-encoded list.
 func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
+	var name, version, schema_version string
+	var topics, services []string
+
 	result, _ := rdb.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
 
 	resultMap, ok := result.(map[interface{}]interface{})
@@ -679,7 +682,7 @@ func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 		log.Printf("Unexpected results format: %T", resultMap[interface{}("results")])
 	}
 
-	var workflow_list []string
+	var workflow_list []map[string]interface{}
 
 	if len(resultsInterface) == 0 {
 		log.Println("No Workflows Found...!")
@@ -705,7 +708,40 @@ func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 				log.Printf("workflow_name not found or not a string")
 			}
 
-			workflow_list = append(workflow_list, workflowName)
+			templateDoc, _ := rdb.JSONGet(ctx, "workflow_template:"+workflowName, "$").Expanded()
+			resultSlice, _ := templateDoc.([]interface{})
+			templateMap, _ := resultSlice[0].(map[string]interface{})
+
+			name = templateMap["name"].(string)
+			version = templateMap["version"].(string)
+			schema_version = templateMap["schema_version"].(string)
+
+			for _, task := range templateMap["tasks"].([]interface{}) {
+				taskMap := task.(map[string]interface{})
+				from := taskMap["from"].(string)
+				to := taskMap["to"].(string)
+				topic := taskMap["topic"].(string)
+
+				if !contains(services, from) {
+					services = append(services, from)
+				}
+				if !contains(services, to) {
+					services = append(services, to)
+				}
+				if !contains(topics, topic) {
+					topics = append(topics, topic)
+				}
+			}
+
+			workflow := map[string]interface{}{
+				"name":           name,
+				"version":        version,
+				"schema_version": schema_version,
+				"services":       services,
+				"topics":         topics,
+			}
+
+			workflow_list = append(workflow_list, workflow)
 		}
 
 		w.Header().Set("Content-Type", "application/json")

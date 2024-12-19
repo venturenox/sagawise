@@ -1,10 +1,10 @@
 {
 	"info": {
-		"_postman_id": "25a2013c-5d23-48f6-ac57-dacc7418a991",
+		"_postman_id": "9c001d87-2ea1-4d68-a637-ffe2aaeb01a8",
 		"name": "Sagawise",
 		"description": "Venturenox open-source saga registry and workflow orchestration tool",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-		"_exporter_id": "21263665"
+		"_exporter_id": "23961167"
 	},
 	"item": [
 		{
@@ -56,15 +56,6 @@
 							"originalRequest": {
 								"method": "GET",
 								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
 								"url": {
 									"raw": "localhost:5000/ping",
 									"host": [
@@ -727,7 +718,7 @@
 					},
 					"response": [
 						{
-							"name": "List Workflows",
+							"name": "List Workflows (OLD)",
 							"originalRequest": {
 								"method": "GET",
 								"header": [],
@@ -762,6 +753,58 @@
 							],
 							"cookie": [],
 							"body": "[\n    \"user_deletion\",\n    \"user_updation\",\n    \"user_creation\"\n]"
+						},
+						{
+							"name": "List Workflows (NEW)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/workflows/list",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"workflows",
+										"list"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Access-Control-Allow-Credentials",
+									"value": "true"
+								},
+								{
+									"key": "Access-Control-Allow-Headers",
+									"value": "Content-Type, Authorization"
+								},
+								{
+									"key": "Access-Control-Allow-Methods",
+									"value": "GET, POST, PUT, DELETE, OPTIONS"
+								},
+								{
+									"key": "Access-Control-Allow-Origin",
+									"value": "*"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								},
+								{
+									"key": "Date",
+									"value": "Thu, 19 Dec 2024 23:22:49 GMT"
+								},
+								{
+									"key": "Content-Length",
+									"value": "196"
+								}
+							],
+							"cookie": [],
+							"body": "[\n    {\n        \"name\": \"user_creation\",\n        \"schema_version\": \"1.0\",\n        \"services\": [\n            \"auth\",\n            \"notification\",\n            \"final\",\n            \"intermediate\"\n        ],\n        \"topics\": [\n            \"user_created\",\n            \"user_created_saga\",\n            \"user_created_saga_final\"\n        ],\n        \"version\": \"1.0\"\n    }\n]"
 						}
 					]
 				},
@@ -828,7 +871,7 @@
 					},
 					"response": [
 						{
-							"name": "List Workflow Instances",
+							"name": "List Instances (OLD)",
 							"originalRequest": {
 								"method": "GET",
 								"header": [],
@@ -871,7 +914,7 @@
 							"body": "[\n    \"workflow_instance:7sd76d67\",\n    \"workflow_instance:7sd76d68\"\n]"
 						},
 						{
-							"name": "List Workflow Instances",
+							"name": "List Instances",
 							"originalRequest": {
 								"method": "GET",
 								"header": [],
@@ -937,6 +980,90 @@
 							],
 							"cookie": [],
 							"body": "No Instances Found"
+						},
+						{
+							"name": "List Instances (NEW)",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/workflow_instances/list",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"workflow_instances",
+										"list"
+									],
+									"query": [
+										{
+											"key": "workflow_name",
+											"value": "user_creation",
+											"disabled": true
+										},
+										{
+											"key": "workflow_state",
+											"value": "PENDING",
+											"disabled": true
+										},
+										{
+											"key": "started_at",
+											"value": "15m",
+											"disabled": true
+										},
+										{
+											"key": "completed_at",
+											"value": "15m",
+											"disabled": true
+										},
+										{
+											"key": "topic",
+											"value": "user_updated_saga",
+											"disabled": true
+										},
+										{
+											"key": "to",
+											"value": "notification",
+											"disabled": true
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Access-Control-Allow-Credentials",
+									"value": "true"
+								},
+								{
+									"key": "Access-Control-Allow-Headers",
+									"value": "Content-Type, Authorization"
+								},
+								{
+									"key": "Access-Control-Allow-Methods",
+									"value": "GET, POST, PUT, DELETE, OPTIONS"
+								},
+								{
+									"key": "Access-Control-Allow-Origin",
+									"value": "*"
+								},
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								},
+								{
+									"key": "Date",
+									"value": "Thu, 19 Dec 2024 09:49:10 GMT"
+								},
+								{
+									"key": "Content-Length",
+									"value": "285"
+								}
+							],
+							"cookie": [],
+							"body": "[\n    {\n        \"key\": \"workflow_instance:5Vt9XPpKxlIo69XgTGho\",\n        \"name\": \"user_creation\",\n        \"schema_version\": \"1.0\",\n        \"services\": [\n            \"auth\",\n            \"notification\",\n            \"final\",\n            \"intermediate\"\n        ],\n        \"started_at\": 1734594081,\n        \"state\": \"PENDING\",\n        \"topics\": [\n            \"user_created\",\n            \"user_created_saga\",\n            \"user_created_saga_final\"\n        ],\n        \"version\": \"1.0\"\n    }\n]"
 						}
 					]
 				},
