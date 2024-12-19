@@ -269,6 +269,16 @@ func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 	}
 }
 
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
+
 // The function `BackupCompletedWorkflows` inserts workflow data into a PostgreSQL database and deletes
 // the corresponding JSON data from a Redis instance.
 func BackupCompletedWorkflows(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key string, name string, startedAt string, completedAt string, document string) {
@@ -843,12 +853,56 @@ func List_workflow_instances(r *http.Request, w http.ResponseWriter, client ruei
 		w.WriteHeader(404)
 		fmt.Fprintf(w, "No Instances Found")
 	} else {
-		var workflowIDs []string
+		var workflows []map[string]interface{}
+
 		for _, doc := range resp {
-			workflowIDs = append(workflowIDs, doc.Key)
+			var docMap map[string]interface{}
+			json.Unmarshal([]byte(doc.Doc["$"]), &docMap)
+
+			tasks_count := 0
+			if docMap["completedAt"] != nil {
+				tasks_count = len(docMap) - 6
+			} else {
+				tasks_count = len(docMap) - 5
+			}
+
+			var services, topics []string
+
+			for i := 0; i < tasks_count; i++ {
+				task := docMap[strconv.Itoa(i)]
+				taskMap, _ := task.(map[string]interface{})
+
+				from, _ := taskMap["from"].(string)
+				to, _ := taskMap["to"].(string)
+				topic, _ := taskMap["topic"].(string)
+
+				if !contains(services, from) {
+					services = append(services, from)
+				}
+				if !contains(services, to) {
+					services = append(services, to)
+				}
+				if !contains(topics, topic) {
+					topics = append(topics, topic)
+				}
+			}
+
+			obj := map[string]interface{}{
+				"key":            doc.Key,
+				"name":           docMap["name"],
+				"schema_version": docMap["schema_version"],
+				"started_at":     docMap["startedAt"],
+				"state":          docMap["state"],
+				"version":        docMap["version"],
+				"services":       services,
+				"topics":         topics,
+			}
+
+			workflows = append(workflows, obj)
 		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(workflowIDs)
+		json.NewEncoder(w).Encode(workflows)
 	}
 }
 
