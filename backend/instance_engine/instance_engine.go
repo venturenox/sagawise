@@ -713,20 +713,9 @@ func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 	}
 }
 
-// The function `List_workflow_instances` retrieves workflow instances based on specified filters and
-// returns their IDs in JSON format.
-func List_workflow_instances(r *http.Request, w http.ResponseWriter, client rueidis.Client) {
-
-	workflow_name := r.URL.Query().Get("workflow_name")
-	workflow_state := r.URL.Query().Get("workflow_state")
-	started_at := r.URL.Query().Get("started_at")
-	completed_at := r.URL.Query().Get("completed_at")
-	failed_at := r.URL.Query().Get("failed_at")
-	topic := r.URL.Query().Get("topic")
-	from := r.URL.Query().Get("from")
-	to := r.URL.Query().Get("to")
-	isMultiFilter := false
+func Build_Query(workflow_name string, workflow_state string, started_at string, completed_at string, failed_at string, topic string, from string, to string) string {
 	var query, startedTimeCondition, completedTimeCondition, failedTimeCondition string
+	isMultiFilter := false
 
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 	before5m := strconv.FormatInt(time.Now().Add(-time.Minute*5).Unix(), 10)
@@ -845,6 +834,23 @@ func List_workflow_instances(r *http.Request, w http.ResponseWriter, client ruei
 		}
 	}
 
+	return query
+}
+
+// The function `List_workflow_instances` retrieves workflow instances based on specified filters and
+// returns their IDs in JSON format.
+func List_workflow_instances(r *http.Request, w http.ResponseWriter, client rueidis.Client) {
+
+	workflow_name := r.URL.Query().Get("workflow_name")
+	workflow_state := r.URL.Query().Get("workflow_state")
+	started_at := r.URL.Query().Get("started_at")
+	completed_at := r.URL.Query().Get("completed_at")
+	failed_at := r.URL.Query().Get("failed_at")
+	topic := r.URL.Query().Get("topic")
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+
+	query := Build_Query(workflow_name, workflow_state, started_at, completed_at, failed_at, topic, from, to)
 	cmd := client.B().FtSearch().Index("workflows_index").Query(query).Build()
 	n, resp, _ := client.Do(ctx, cmd).AsFtSearch()
 
