@@ -15,56 +15,86 @@ const event_functions = Object.freeze({
 			console.error('Fail... ', userProfile.error);
 
 			// Sagawise Fail Event
-			await axios({
-				method: 'post',
-				url: process.env.SAGAWISE_URL+'/update_instance',
-				params: {
-					workflow_instance_id: data.workflow_instance_id,
-					workflow_version: '1.0',
-					event_name: data.event,
-					action_type: 'fail',
-					service_name: 'intermediate',
-					is_retry: true,
-				}
-			});
+
+			// await axios({
+			// 	method: 'post',
+			// 	url: process.env.SAGAWISE_URL+'/update_instance',
+			// 	params: {
+			// 		workflow_instance_id: data.workflow_instance_id,
+			// 		workflow_version: '1.0',
+			// 		event_name: data.event,
+			// 		action_type: 'fail',
+			// 		service_name: 'intermediate',
+			// 		is_retry: true,
+			// 	}
+			// });
+
+			await sagawise.fail_message({
+				workflow_instance_id: data.workflow_instance_id,
+				workflow_version: "1.0",
+				event_name: data.event,
+				service_name: "intermediate",
+			  });
 
 		} else if (userProfile.result) {
 			
 			console.info('Consume...');
 
 			// Sagawise Consume Event
-			const resp = await axios({
-				method: 'post',
-				url: process.env.SAGAWISE_URL+'/update_instance',
-				params: {
-					workflow_instance_id: data.workflow_instance_id,
-					workflow_version: '1.0',
-					event_name: data.event,
-					action_type: 'consume',
-					service_name: 'intermediate',
-					is_retry: true,
-				}
-			});
-			console.log('consume user_created_saga response: ', resp.status);
+
+			// const resp = await axios({
+			// 	method: 'post',
+			// 	url: process.env.SAGAWISE_URL+'/update_instance',
+			// 	params: {
+			// 		workflow_instance_id: data.workflow_instance_id,
+			// 		workflow_version: '1.0',
+			// 		event_name: data.event,
+			// 		action_type: 'consume',
+			// 		service_name: 'intermediate',
+			// 		is_retry: true,
+			// 	}
+			// });
+
+			await sagawise.consume_message({
+				workflow_instance_id: data.workflow_instance_id,
+				workflow_version: "1.0",
+				event_name: data.event,
+				service_name: "intermediate",
+			  });
+
+			// console.log('consume user_created_saga response: ', resp.status);
 			
 
 			// Sagawise Publish Next Event
-			const resp2 = await axios({
-				method: 'post',
-				url: process.env.SAGAWISE_URL+'/update_instance',
-				params: {
-					workflow_instance_id: data.workflow_instance_id,
-					workflow_version: '1.0',
-					event_name: 'user_created_saga_final',
-					action_type: 'publish',
-					is_retry: false,
-				},
+
+			// const resp2 = await axios({
+			// 	method: 'post',
+			// 	url: process.env.SAGAWISE_URL+'/update_instance',
+			// 	params: {
+			// 		workflow_instance_id: data.workflow_instance_id,
+			// 		workflow_version: '1.0',
+			// 		event_name: 'user_created_saga_final',
+			// 		action_type: 'publish',
+			// 		is_retry: false,
+			// 	},
+			// 	data: {
+			// 		...data,
+			// 		event: 'user_created_saga_final',
+			// 	}
+			// });
+
+			await sagawise.publish_message({
+				workflow_instance_id,
+				workflow_version: "1.0",
+				event_name: 'user_created_saga_final',
 				data: {
 					...data,
-					event: 'user_created_saga_final',
-				}
-			});
-			console.log('publish user_created_saga_final response: ', resp2.status);
+					event: "user_created_saga_final"
+				},
+			  }, 
+			  is_retry=false);
+
+			// console.log('publish user_created_saga_final response: ', resp2.status);
 			
 
 			KafkaProducer.sendPayload(
