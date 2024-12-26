@@ -70,14 +70,6 @@ const register = async function (
 			workflow_version: "1.0",
 		});
 
-		// const resp = await axios({
-		// 	method: 'post',
-		// 	url: process.env.SAGAWISE_URL+'/start_instance',
-		// 	params: {
-		// 		workflow_name: 'user_creation',
-		// 		workflow_version: '1.0',
-		// 	}
-		// });
 		console.log('Workflow ID: ', sagawise_workflow_id);
 		
 
@@ -98,26 +90,20 @@ const register = async function (
 
 		// Publish event
 
-		await sagawise.publish_message({
-			workflow_instance_id,
-			workflow_version: "1.0",
-			event_name: payload.event,
-			payload,
-		  });
+		const resp2 = await axios({
+			method: 'post',
+			url: process.env.SAGAWISE_URL+'/update_instance',
+			params: {
+				workflow_instance_id: resp.data.workflow_instance_id,
+				workflow_version: '1.0',
+				event_name: payload.event,
+				action_type: 'publish',
+				is_retry: true,
+			},
+			data: payload
+		});
 
-		// const resp2 = await axios({
-		// 	method: 'post',
-		// 	url: process.env.SAGAWISE_URL+'/update_instance',
-		// 	params: {
-		// 		workflow_instance_id: resp.data.workflow_instance_id,
-		// 		workflow_version: '1.0',
-		// 		event_name: payload.event,
-		// 		action_type: 'publish',
-		// 		is_retry: true,
-		// 	},
-		// 	data: payload
-		// });
-		// console.log('publish_event response: ', resp2.status);
+		console.log('publish_event response: ', resp2.status);
 
 		KafkaProducer.sendPayload(
 			payload,
