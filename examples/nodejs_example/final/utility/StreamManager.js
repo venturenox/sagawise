@@ -7,19 +7,28 @@ const event_functions = Object.freeze({
 		console.log("Event consumed: ", data);
 
 		// Sagawise Consume Event
-		const resp = await axios({
-			method: 'post',
-			url: process.env.SAGAWISE_URL+'/update_instance',
-			params: {
-				workflow_instance_id: data.workflow_instance_id,
-				workflow_version: '1.0',
-				event_name: data.event,
-				action_type: 'consume',
-				service_name: 'final',
-				is_retry: true,
-			}
-		});
-		console.log('consume user_created_saga response: ', resp.status);
+
+		await sagawise.consume_message({
+			workflow_instance_id: data.workflow_instance_id,
+			workflow_version: "1.0",
+			event_name: data.event,
+			service_name: "final",
+		  });
+
+		// const resp = await axios({
+		// 	method: 'post',
+		// 	url: process.env.SAGAWISE_URL+'/update_instance',
+		// 	params: {
+		// 		workflow_instance_id: data.workflow_instance_id,
+		// 		workflow_version: '1.0',
+		// 		event_name: data.event,
+		// 		action_type: 'consume',
+		// 		service_name: 'final',
+		// 		is_retry: true,
+		// 	}
+		// });
+		
+		// console.log('consume user_created_saga response: ', resp.status);
 		
 	},
 
@@ -27,19 +36,28 @@ const event_functions = Object.freeze({
 		console.log("Event consumed: ", data);
 
 		// Sagawise Consume Event
-		const resp = await axios({
-			method: 'post',
-			url: process.env.SAGAWISE_URL+'/update_instance',
-			params: {
-				workflow_instance_id: data.workflow_instance_id,
-				workflow_version: '1.0',
-				event_name: data.event,
-				action_type: 'consume',
-				service_name: 'final',
-				is_retry: true,
-			}
-		});
-		console.log('consume user_created_saga_final response: ', resp.status);
+		
+		await sagawise.consume_message({
+			workflow_instance_id: data.workflow_instance_id,
+			workflow_version: "1.0",
+			event_name: data.event,
+			service_name: "final",
+		  });
+		
+		// const resp = await axios({
+		// 	method: 'post',
+		// 	url: process.env.SAGAWISE_URL+'/update_instance',
+		// 	params: {
+		// 		workflow_instance_id: data.workflow_instance_id,
+		// 		workflow_version: '1.0',
+		// 		event_name: data.event,
+		// 		action_type: 'consume',
+		// 		service_name: 'final',
+		// 		is_retry: true,
+		// 	}
+		// });
+
+		// console.log('consume user_created_saga_final response: ', resp.status);
 		
 	},
 });
