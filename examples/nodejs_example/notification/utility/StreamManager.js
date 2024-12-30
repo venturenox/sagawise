@@ -8,45 +8,65 @@ const event_functions = Object.freeze({
 		console.log("Event Consumed: ", data);
 
 		// Sagawise Consume Event
-		const resp = await axios({
-			method: 'post',
-			url: process.env.SAGAWISE_URL+'/update_instance',
-			params: {
-				workflow_instance_id: data.workflow_instance_id,
-				workflow_version: '1.0',
-				event_name: data.event,
-				action_type: 'consume',
-				service_name: 'notification',
-				is_retry: true,
-			}
-		});
-		console.log('consume user_created response: ', resp.status);
+
+		await sagawise.consume_message({
+			workflow_instance_id: data.workflow_instance_id,
+			workflow_version: "1.0",
+			event_name: data.event,
+			service_name: "notification",
+		  });
+
+		// const resp = await axios({
+		// 	method: 'post',
+		// 	url: process.env.SAGAWISE_URL+'/update_instance',
+		// 	params: {
+		// 		workflow_instance_id: data.workflow_instance_id,
+		// 		workflow_version: '1.0',
+		// 		event_name: data.event,
+		// 		action_type: 'consume',
+		// 		service_name: 'notification',
+		// 		is_retry: true,
+		// 	}
+		// });
+
+		// console.log('consume user_created response: ', resp.status);
 		
 
 		// Sagawise Publish Next Event
-		const resp2 = await axios({
-			method: 'post',
-			url: process.env.SAGAWISE_URL+'/update_instance',
-			params: {
-				workflow_instance_id: data.workflow_instance_id,
-				workflow_version: '1.0',
-				event_name: 'user_created_saga',
-				action_type: 'publish',
-				is_retry: false,
-			},
-			data: {
-				...data,
-				event: 'user_created_saga',
-			},
-		});
-		console.log('publish user_created_saga response: ', resp2.status);
+
+		const payload = {
+			...data,
+			event: 'user_created_saga',
+		}
+
+		await sagawise.publish_message({
+			workflow_instance_id,
+			workflow_version: "1.0",
+			event_name: payload.event,
+			payload,
+		  });
+
+		// const resp2 = await axios({
+		// 	method: 'post',
+		// 	url: process.env.SAGAWISE_URL+'/update_instance',
+		// 	params: {
+		// 		workflow_instance_id: data.workflow_instance_id,
+		// 		workflow_version: '1.0',
+		// 		event_name: 'user_created_saga',
+		// 		action_type: 'publish',
+		// 		is_retry: false,
+		// 	},
+		// 	data: {
+		// 		...data,
+		// 		event: 'user_created_saga',
+		// 	},
+		// });
+
+		// console.log('publish user_created_saga response: ', resp2.status);
 		
 
 		KafkaProducer.sendPayload(
-			{
-				...data,
-				event: 'user_created_saga',
-			},
+			payload,
 			process.env.KAFKA_EVENT_TOPIC,
 			0
 		);
