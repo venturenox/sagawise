@@ -14,6 +14,7 @@ const Constants = require('../constants');
 const { StatusCodes } = require('http-status-codes');
 const logger = require('../utilities/Logger');
 const axios = require('axios');
+const sagawise = require("@venturenox/sagawise");
 
 const register = async function (
 	email,

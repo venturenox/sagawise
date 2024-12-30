@@ -2,6 +2,7 @@ const { EventKey } = require("./KeyMaster");
 const userProfileController = require("../controllers/UserProfileController");
 const KafkaProducer = require('./KafkaProducer');
 const axios = require('axios');
+const sagawise = require("@venturenox/sagawise");
 
 const event_functions = Object.freeze({
 
