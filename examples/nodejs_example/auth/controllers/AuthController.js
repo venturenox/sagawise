@@ -79,13 +79,13 @@ const register = async function (
 		// 	}
 		// });
 
-		// console.log('start_instance response: ', resp.status);
+		console.log('workflow instance id: ', workflow_instance_id);
 		
 		const payload = {
 			time_stamp: Date.now(),
 			user_id: user.id,
 			tenant_id: tenant.id,
-			workflow_instance_id: resp.data.workflow_instance_id,
+			workflow_instance_id: workflow_instance_id,
 			event: process.env.USER_CREATED,
 			properties: {
 				id: user.id,
@@ -99,7 +99,7 @@ const register = async function (
 		// Publish event
 
 		await sagawise.publish_message({
-			workflow_instance_id,
+			workflow_instance_id: workflow_instance_id,
 			workflow_version: "1.0",
 			event_name: payload.event,
 			payload,

@@ -10,12 +10,17 @@ const event_functions = Object.freeze({
 
 		// Sagawise Consume Event
 
-		await sagawise.consume_message({
+		consumption_data = {
 			workflow_instance_id: data.workflow_instance_id,
 			workflow_version: "1.0",
 			event_name: data.event,
 			service_name: "notification",
-		  });
+			is_retry: false
+		  };
+
+		console.log("Notification consumption: ", consumption_data);
+
+		await sagawise.consume_message(consumption_data);
 
 		// const resp = await axios({
 		// 	method: 'post',
@@ -41,7 +46,7 @@ const event_functions = Object.freeze({
 		}
 
 		await sagawise.publish_message({
-			workflow_instance_id,
+			workflow_instance_id: data.workflow_instance_id,
 			workflow_version: "1.0",
 			event_name: payload.event,
 			payload,
