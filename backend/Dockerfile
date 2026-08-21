@@ -2,25 +2,30 @@ FROM golang:1.22.2 AS build-stage
 
 WORKDIR /usr/src/app
 
-COPY backend/. .
-
-RUN go mod tidy
-
 ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
-RUN go env -w GOCACHE=/go-cache
+ENV GOCACHE=/go-cache
 
-RUN --mount=type=cache,target=/go-cache go build -o /output
+COPY backend/go.mod backend/go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+
+COPY backend/. .
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/go-cache \
+    go build -o /output
 
 # Now take that output file into the next stage
 FROM build-stage AS run-stage
-RUN go test -v ./...
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/go-cache \
+    go test -v ./...
 
 # Deploy the application binary into a lean image
 FROM alpine AS build-release-stage
 
-RUN apk add curl 
+RUN apk add curl
 
 WORKDIR /
 
