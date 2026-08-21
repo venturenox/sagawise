@@ -125,7 +125,7 @@ services:
 
 
   init-kafka:
-    image: bitnami/kafka:latest
+    image: apache/kafka:4.3.1
     entrypoint: /bin/bash
     networks:
       - shared_network
@@ -137,7 +137,7 @@ services:
 
 
   kafka:
-    image: docker.io/bitnami/kafka:latest
+    image: apache/kafka:4.3.1
     container_name: kafka
     ports:
       - "9092:9092"
