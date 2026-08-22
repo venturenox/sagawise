@@ -1,7 +1,8 @@
 version: "3.8"
 services:
   postgres:
-    image: bitnami/postgresql
+    build:
+      context: ./postgres-dev
     container_name: postgres
     restart: always
     ports:
@@ -12,6 +13,7 @@ services:
       POSTGRESQL_USERNAME: $POSTGRES_USERNAME
       POSTGRESQL_PASSWORD: $POSTGRES_PASSWORD
       POSTGRESQL_DATABASE: $POSTGRES_DATABASE
+      POSTGRESQL_DATABASE_LIST: $POSTGRES_DATABASE_LIST
     networks:
       - shared_network
 
