@@ -1,0 +1,107 @@
+services:
+  orders:
+    build: orders/
+    container_name: orders
+    restart: always
+    ports:
+      - $ORDERS_PORT:$ORDERS_PORT
+    depends_on:
+      - init-kafka
+    environment:
+      PORT: $ORDERS_PORT
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      SAGAWISE_URL: http://sagawise:5000
+      WORKFLOW_NAME: order_flow
+      WORKFLOW_VERSION: "1.0"
+    networks:
+      - shared_network
+
+  payments:
+    build: payments/
+    container_name: payments
+    restart: always
+    ports:
+      - $PAYMENTS_PORT:$PAYMENTS_PORT
+    depends_on:
+      - init-kafka
+      - orders
+    environment:
+      PORT: $PAYMENTS_PORT
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      KAFKA_GROUP_ID: ${UUID}order_flow_payments
+      SAGAWISE_URL: http://sagawise:5000
+      WORKFLOW_VERSION: "1.0"
+    networks:
+      - shared_network
+
+  shipping:
+    build: shipping/
+    container_name: shipping
+    restart: always
+    ports:
+      - $SHIPPING_PORT:$SHIPPING_PORT
+    depends_on:
+      - init-kafka
+      - payments
+    environment:
+      PORT: $SHIPPING_PORT
+      KAFKA_HOST: $KAFKA_HOST
+      KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
+      KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
+      KAFKA_GROUP_ID: ${UUID}order_flow_shipping
+      SAGAWISE_URL: http://sagawise:5000
+      WORKFLOW_VERSION: "1.0"
+    networks:
+      - shared_network
+
+  # Own broker so this example runs standalone -- no container_name and no
+  # published port, so it can coexist with the api_examples stack.
+  kafka:
+    image: apache/kafka:4.3.1
+    # Distinct hostname: the api_examples stack owns the name "kafka" on
+    # shared_network, so this broker must be addressable as something else.
+    hostname: order-flow-kafka
+    restart: always
+    environment:
+      - KAFKA_NODE_ID=0
+      - KAFKA_PROCESS_ROLES=controller,broker
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=0@order-flow-kafka:9093
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://order-flow-kafka:9092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+      - KAFKA_LOG_DIRS=/var/lib/kafka/data
+    volumes:
+      - kafka-order-flow:/var/lib/kafka/data
+    networks:
+      - shared_network
+
+  init-kafka:
+    image: apache/kafka:4.3.1
+    entrypoint: /bin/bash
+    depends_on:
+      - kafka
+    command: >
+      -c "sleep 10 &&
+            /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --topic "$KAFKA_EVENT_TOPIC" --replication-factor=1 --partitions=3 --bootstrap-server order-flow-kafka:9092
+            --config retention.ms=300000"
+    networks:
+      - shared_network
+
+
+volumes:
+  kafka-order-flow:
+    driver: local
+
+
+networks:
+  shared_network:
+    external: true
