@@ -172,6 +172,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	instance_engine.StartDeadlineReaper(ctx, rdb, conn, time.Second)
 
 	otelShutdown, err := otel.SetupOTelSDK(ctx)
 	defer func() {
