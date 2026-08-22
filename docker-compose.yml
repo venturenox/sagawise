@@ -12,6 +12,8 @@ services:
       POSTGRESQL_USERNAME: $POSTGRES_USERNAME
       POSTGRESQL_PASSWORD: $POSTGRES_PASSWORD
       POSTGRESQL_DATABASE: $POSTGRES_DATABASE
+    networks:
+      - shared_network
 
   redis:
     image: redis/redis-stack-server
@@ -19,6 +21,8 @@ services:
     restart: always
     ports:
       - 6379:6379
+    networks:
+      - shared_network
 
   adminer:
     image: adminer
@@ -67,7 +71,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    networks:
+      - shared_network
 
     depends_on:
       - redis
       - postgres
+
+networks:
+  shared_network:
+    external: true
