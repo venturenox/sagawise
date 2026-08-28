@@ -2,7 +2,6 @@ package instance_engine
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"strconv"
 	"strings"
@@ -12,13 +11,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// DeadlinesKey is a Redis sorted set. Score = unix-millisecond deadline,
+// deadlinesKey is a Redis sorted set. Score = unix-millisecond deadline,
 // member = "<workflow_instance_id>:<task_index>". A task appears here from
 // the moment it is PUBLISHED until it is COMPLETED or FAILED.
-const DeadlinesKey = "task_deadlines"
+const deadlinesKey = "task_deadlines"
 
-// DeadlineMember builds the sorted-set member for a task.
-func DeadlineMember(workflowInstanceID string, taskIndex string) string {
+func deadlineMember(workflowInstanceID, taskIndex string) string {
 	return workflowInstanceID + ":" + taskIndex
 }
 
@@ -45,11 +43,7 @@ func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgx.Conn,
 
 func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgx.Conn) {
 	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
-
-	members, err := rdb.ZRangeByScore(ctx, DeadlinesKey, &redis.ZRangeBy{
-		Min: "-inf",
-		Max: now,
-	}).Result()
+	members, err := rdb.ZRangeByScore(ctx, deadlinesKey, &redis.ZRangeBy{Min: "-inf", Max: now}).Result()
 	if err != nil {
 		log.Printf("Reaper: error reading deadlines: %v", err)
 		return
@@ -57,32 +51,24 @@ func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgx.Conn
 
 	for _, member := range members {
 		// Atomic claim: ZREM returns 1 for exactly one caller.
-		removed, err := rdb.ZRem(ctx, DeadlinesKey, member).Result()
+		removed, err := rdb.ZRem(ctx, deadlinesKey, member).Result()
 		if err != nil || removed == 0 {
 			continue
 		}
 
-		parts := strings.SplitN(member, ":", 2)
-		if len(parts) != 2 {
+		id, index, ok := strings.Cut(member, ":")
+		if !ok {
 			log.Printf("Reaper: malformed deadline member %q", member)
 			continue
 		}
-		workflowInstanceID, taskIndex := parts[0], parts[1]
-		key := "workflow_instance:" + workflowInstanceID
+		key := "workflow_instance:" + id
 
 		// The deadline is a hint; the task state is the truth.
-		var states []string
-		res, err := rdb.JSONGet(ctx, key, "$."+taskIndex+".state").Result()
-		if err != nil {
-			log.Printf("Reaper: error reading %s task %s: %v", key, taskIndex, err)
-			continue
-		}
-		json.Unmarshal([]byte(res), &states)
-		if len(states) == 0 || states[0] != "PUBLISHED" {
+		if state, _ := jsonFirst[string](rdb, key, "$."+index+".state"); state != "PUBLISHED" {
 			continue
 		}
 
-		log.Printf("Reaper: timeout for %s task %s", workflowInstanceID, taskIndex)
-		ReportFailure(ctx, rdb, conn, key, workflowInstanceID, taskIndex)
+		log.Printf("Reaper: timeout for %s task %s", id, index)
+		reportFailure(rdb, conn, key, id, index)
 	}
 }
