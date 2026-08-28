@@ -1,0 +1,21 @@
+{
+	"workflow": {
+		"version": "1.0",
+		"schema_version": "1.0",
+		"name": "order_flow",
+		"tasks": [
+			{
+				"topic": "order_created",
+				"from": "orders",
+				"to": "payments",
+				"timeout": 20000
+			},
+			{
+				"topic": "payment_done",
+				"from": "payments",
+				"to": "shipping",
+				"timeout": 20000
+			}
+		]
+	}
+}

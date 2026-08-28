@@ -14,5 +14,17 @@
 	{
 		"service_name": "final",
 		"failure_url": "http://final:4004/api/v1/failure_report"
+	},
+	{
+		"service_name": "orders",
+		"failure_url": "http://orders:4010/v1/sagawise/failure_report"
+	},
+	{
+		"service_name": "payments",
+		"failure_url": "http://payments:4011/v1/sagawise/failure_report"
+	},
+	{
+		"service_name": "shipping",
+		"failure_url": "http://shipping:4012/v1/sagawise/failure_report"
 	}
 ]
