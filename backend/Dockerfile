@@ -9,29 +9,15 @@ FROM golang:1.22.2 AS build-stage
 
 WORKDIR /usr/src/app
 
-<<<<<<< HEAD
-=======
 # Disable CGO for a static binary (no external libc dependency)
 # Set target OS and architecture for cross-compilation
->>>>>>> main
 ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
 ENV GOCACHE=/go-cache
 
-<<<<<<< HEAD
-COPY backend/go.mod backend/go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
-
-COPY backend/. .
-
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/go-cache \
-    go build -o /output
-=======
 # Copy dependency files first (cached unless go.mod/go.sum change)
 COPY backend/go.mod backend/go.sum ./
->>>>>>> main
 
 # Download Go dependencies (cached unless dependencies change)
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -52,12 +38,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # This stage validates the build before creating the release image
 # =============================================================================
 FROM build-stage AS run-stage
-<<<<<<< HEAD
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/go-cache \
-    go test -v ./...
-=======
->>>>>>> main
 
 # Run tests (cached unless source code changes)
 # Note: This runs "go test" which compiles and executes tests
@@ -75,10 +55,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # =============================================================================
 FROM alpine AS build-release-stage
 
-<<<<<<< HEAD
-=======
 # Install curl for health checks (liveness/readiness probes in Kubernetes)
->>>>>>> main
 RUN apk add curl
 
 WORKDIR /
