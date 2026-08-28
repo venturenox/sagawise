@@ -1,4 +1,4 @@
-FROM node:14-alpine
+FROM node:22-alpine
 RUN apk --no-cache add \
     bash \
     g++ \
