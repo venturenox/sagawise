@@ -6,8 +6,8 @@ set -u
 function create_user_and_database() {
 	local DB=$1
 	echo "  Creating user and database '$DB'"
-	psql -v --username "$POSTGRESQL_USERNAME" <<-EOSQL
-	    CREATE DATABASE $DB;
+	PGPASSWORD="$POSTGRESQL_PASSWORD" psql -v --username "$POSTGRESQL_USERNAME" <<-EOSQL
+	    SELECT 'CREATE DATABASE $DB' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB')\gexec
 	    GRANT ALL PRIVILEGES ON DATABASE $DB TO $POSTGRESQL_USERNAME;
 EOSQL
 }
