@@ -48,6 +48,8 @@ func ReportFailure(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key s
 	var payload map[string]interface{}
 	var valPayload []map[string]interface{}
 
+	// Whether this came from the reaper or an explicit fail report, the deadline is spent.
+	rdb.ZRem(ctx, DeadlinesKey, DeadlineMember(workflow_instance_id, task_index))
 	// Mark task instance state as "FAILED" in redis
 	statePath := "$." + task_index + ".state"
 	new_state, _ := json.Marshal("FAILED")
@@ -91,75 +93,6 @@ func ReportFailure(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key s
 	log.Println("Response status: ", resp.Status)
 }
 
-// The function `CheckTaskState` checks the state of a task instance in a workflow and takes
-// appropriate actions based on the state.
-func CheckTaskState(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, workflow_instance_id string, path string, task_index string, taskInstanceTo string, timeout time.Duration, startTime time.Time) bool {
-	// Check if the state property of the task instance is still "published"
-	key := "workflow_instance:" + workflow_instance_id
-	var value, workflowValue []string
-	var taskInstanceState, workflowInstanceState string
-
-	taskInstanceStateResult, err := rdb.JSONGet(ctx, key, path).Result()
-	if err != nil {
-		log.Printf("Error retrieving task: %v\n", err)
-		return true
-	} else {
-		json.Unmarshal([]byte(taskInstanceStateResult), &value)
-		taskInstanceState = value[0]
-	}
-
-	workflowInstanceStateResult, _ := rdb.JSONGet(ctx, key, "$.state").Result()
-	json.Unmarshal([]byte(workflowInstanceStateResult), &workflowValue)
-	workflowInstanceState = workflowValue[0]
-
-	if taskInstanceState == "COMPLETED" {
-		log.Println("Task COMPLETED: " + taskInstanceTo)
-		if workflowInstanceState != "COMPLETED" {
-			checkWorkflowState(rdb, conn, key)
-		}
-		return true
-
-	} else if taskInstanceState == "FAILED" {
-		log.Println("Task FAILED: " + taskInstanceTo)
-		return true
-	}
-
-	elapsed := time.Since(startTime)
-	if elapsed >= timeout {
-		log.Println("Timeout for " + taskInstanceTo)
-		ReportFailure(ctx, rdb, conn, key, workflow_instance_id, task_index)
-		return true
-	}
-
-	return false
-}
-
-// The function `MonitorAfterTaskPublish` monitors the state of a task instance in a workflow until
-// completion or timeout.
-func MonitorAfterTaskPublish(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, workflow_instance_id string, path string, task_index string, taskInstanceTimeout time.Duration) {
-	ticker := time.NewTicker(taskInstanceTimeout)
-	defer ticker.Stop()
-	timeout := taskInstanceTimeout
-	startTime := time.Now()
-
-	var toList []string
-	taskInstanceToResult, _ := rdb.JSONGet(ctx, "workflow_instance:"+workflow_instance_id, "$."+task_index+".to").Result()
-	json.Unmarshal([]byte(taskInstanceToResult), &toList)
-	var taskInstanceTo = toList[0]
-
-	for {
-		select {
-		case <-ticker.C:
-			log.Println("Monitoring State for " + taskInstanceTo + "...")
-			if CheckTaskState(ctx, rdb, conn, workflow_instance_id, path, task_index, taskInstanceTo, timeout, startTime) {
-				return
-			}
-
-		case <-ctx.Done():
-			return
-		}
-	}
-}
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
 
@@ -387,10 +320,9 @@ func Handle_consume_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 	} else if taskInstanceState == "PUBLISHED" || isRetry {
 		rdb.JSONSet(ctx, key, path, new_state).Result()
 		rdb.JSONSet(ctx, key, "$."+task_index+".consumedAt", time.Now().Unix())
+		rdb.ZRem(ctx, DeadlinesKey, DeadlineMember(strings.TrimPrefix(key, "workflow_instance:"), task_index))
 		fmt.Fprint(w, "Instance State Updated")
-		if isRetry {
-			checkWorkflowState(rdb, conn, key)
-		}
+		checkWorkflowState(rdb, conn, key)
 
 	} else if taskInstanceState == "FAILED" && !isRetry {
 		log.Println("Task Already FAILED.")
@@ -446,11 +378,14 @@ func Handle_publish_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 			json.Unmarshal([]byte(taskInstanceTimeoutResult), &timeoutList)
 			var taskInstanceTimeout = timeoutList[0]
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration((taskInstanceTimeout+1000)*1000000))
-			go func() {
-				defer cancel()
-				MonitorAfterTaskPublish(ctx, rdb, conn, workflow_instance_id, path, task_index, time.Duration(taskInstanceTimeout*1000000))
-			}()
+			deadline := time.Now().UnixMilli() + int64(taskInstanceTimeout)
+			err = rdb.ZAdd(ctx, DeadlinesKey, redis.Z{
+				Score:  float64(deadline),
+				Member: DeadlineMember(workflow_instance_id, task_index),
+			}).Err()
+			if err != nil {
+				log.Printf("Error scheduling deadline for %s task %s: %v", workflow_instance_id, task_index, err)
+			}
 
 		} else if taskInstanceState == "PUBLISHED" && !isRetry {
 			log.Println("Task Already PUBLISHED.")
