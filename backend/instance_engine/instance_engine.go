@@ -269,6 +269,16 @@ func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 	}
 }
 
+// Helper function to check if a slice contains a string
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
+}
+
 // The function `BackupCompletedWorkflows` inserts workflow data into a PostgreSQL database and deletes
 // the corresponding JSON data from a Redis instance.
 func BackupCompletedWorkflows(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key string, name string, startedAt string, completedAt string, document string) {
@@ -656,6 +666,9 @@ func Update_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, 
 // The function `List_workflows` retrieves workflow names from a Redis database and returns them as a
 // JSON-encoded list.
 func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
+	var name, version, schema_version string
+	var topics, services []string
+
 	result, _ := rdb.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
 
 	resultMap, ok := result.(map[interface{}]interface{})
@@ -669,7 +682,7 @@ func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 		log.Printf("Unexpected results format: %T", resultMap[interface{}("results")])
 	}
 
-	var workflow_list []string
+	var workflow_list []map[string]interface{}
 
 	if len(resultsInterface) == 0 {
 		log.Println("No Workflows Found...!")
@@ -695,7 +708,40 @@ func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 				log.Printf("workflow_name not found or not a string")
 			}
 
-			workflow_list = append(workflow_list, workflowName)
+			templateDoc, _ := rdb.JSONGet(ctx, "workflow_template:"+workflowName, "$").Expanded()
+			resultSlice, _ := templateDoc.([]interface{})
+			templateMap, _ := resultSlice[0].(map[string]interface{})
+
+			name = templateMap["name"].(string)
+			version = templateMap["version"].(string)
+			schema_version = templateMap["schema_version"].(string)
+
+			for _, task := range templateMap["tasks"].([]interface{}) {
+				taskMap := task.(map[string]interface{})
+				from := taskMap["from"].(string)
+				to := taskMap["to"].(string)
+				topic := taskMap["topic"].(string)
+
+				if !contains(services, from) {
+					services = append(services, from)
+				}
+				if !contains(services, to) {
+					services = append(services, to)
+				}
+				if !contains(topics, topic) {
+					topics = append(topics, topic)
+				}
+			}
+
+			workflow := map[string]interface{}{
+				"name":           name,
+				"version":        version,
+				"schema_version": schema_version,
+				"services":       services,
+				"topics":         topics,
+			}
+
+			workflow_list = append(workflow_list, workflow)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -703,20 +749,9 @@ func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 	}
 }
 
-// The function `List_workflow_instances` retrieves workflow instances based on specified filters and
-// returns their IDs in JSON format.
-func List_workflow_instances(r *http.Request, w http.ResponseWriter, client rueidis.Client) {
-
-	workflow_name := r.URL.Query().Get("workflow_name")
-	workflow_state := r.URL.Query().Get("workflow_state")
-	started_at := r.URL.Query().Get("started_at")
-	completed_at := r.URL.Query().Get("completed_at")
-	failed_at := r.URL.Query().Get("failed_at")
-	topic := r.URL.Query().Get("topic")
-	from := r.URL.Query().Get("from")
-	to := r.URL.Query().Get("to")
-	isMultiFilter := false
+func Build_Query(workflow_name string, workflow_state string, started_at string, completed_at string, failed_at string, topic string, from string, to string) string {
 	var query, startedTimeCondition, completedTimeCondition, failedTimeCondition string
+	isMultiFilter := false
 
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 	before5m := strconv.FormatInt(time.Now().Add(-time.Minute*5).Unix(), 10)
@@ -835,6 +870,23 @@ func List_workflow_instances(r *http.Request, w http.ResponseWriter, client ruei
 		}
 	}
 
+	return query
+}
+
+// The function `List_workflow_instances` retrieves workflow instances based on specified filters and
+// returns their IDs in JSON format.
+func List_workflow_instances(r *http.Request, w http.ResponseWriter, client rueidis.Client) {
+
+	workflow_name := r.URL.Query().Get("workflow_name")
+	workflow_state := r.URL.Query().Get("workflow_state")
+	started_at := r.URL.Query().Get("started_at")
+	completed_at := r.URL.Query().Get("completed_at")
+	failed_at := r.URL.Query().Get("failed_at")
+	topic := r.URL.Query().Get("topic")
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+
+	query := Build_Query(workflow_name, workflow_state, started_at, completed_at, failed_at, topic, from, to)
 	cmd := client.B().FtSearch().Index("workflows_index").Query(query).Build()
 	n, resp, _ := client.Do(ctx, cmd).AsFtSearch()
 
@@ -843,12 +895,56 @@ func List_workflow_instances(r *http.Request, w http.ResponseWriter, client ruei
 		w.WriteHeader(404)
 		fmt.Fprintf(w, "No Instances Found")
 	} else {
-		var workflowIDs []string
+		var workflows []map[string]interface{}
+
 		for _, doc := range resp {
-			workflowIDs = append(workflowIDs, doc.Key)
+			var docMap map[string]interface{}
+			json.Unmarshal([]byte(doc.Doc["$"]), &docMap)
+
+			tasks_count := 0
+			if docMap["completedAt"] != nil {
+				tasks_count = len(docMap) - 6
+			} else {
+				tasks_count = len(docMap) - 5
+			}
+
+			var services, topics []string
+
+			for i := 0; i < tasks_count; i++ {
+				task := docMap[strconv.Itoa(i)]
+				taskMap, _ := task.(map[string]interface{})
+
+				from, _ := taskMap["from"].(string)
+				to, _ := taskMap["to"].(string)
+				topic, _ := taskMap["topic"].(string)
+
+				if !contains(services, from) {
+					services = append(services, from)
+				}
+				if !contains(services, to) {
+					services = append(services, to)
+				}
+				if !contains(topics, topic) {
+					topics = append(topics, topic)
+				}
+			}
+
+			obj := map[string]interface{}{
+				"key":            doc.Key,
+				"name":           docMap["name"],
+				"schema_version": docMap["schema_version"],
+				"started_at":     docMap["startedAt"],
+				"state":          docMap["state"],
+				"version":        docMap["version"],
+				"services":       services,
+				"topics":         topics,
+			}
+
+			workflows = append(workflows, obj)
 		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(workflowIDs)
+		json.NewEncoder(w).Encode(workflows)
 	}
 }
 
