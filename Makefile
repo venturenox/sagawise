@@ -1,5 +1,6 @@
 .PHONY: start status stop restart clean api_examples
 start:
+	docker network create shared_network || true
 	UUID=$(shell whoami)$(shell hostname) docker compose up -d --build
 
 status:
