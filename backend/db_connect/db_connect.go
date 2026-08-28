@@ -14,9 +14,9 @@ import (
 )
 
 var ctx = context.Background()
-var rdb *redis.Client
 
 func DBConnect() *redis.Client {
+	var rdb *redis.Client
 
 	if os.Getenv("REDIS_CONNECTION_STRING") == "" {
 		rdb = redis.NewClient(&redis.Options{

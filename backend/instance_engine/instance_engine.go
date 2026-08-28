@@ -27,8 +27,15 @@ var ctx = context.Background()
 // URL for a given service name.
 func DetectServiceFailureUrl(service_name string) string {
 	var servicesList []utils.Service
-	data, _ := os.ReadFile("services.json")
-	json.Unmarshal(data, &servicesList)
+	data, err := os.ReadFile("services.json")
+	if err != nil {
+		log.Printf("Error reading services.json: %v", err)
+		return ""
+	}
+	if err := json.Unmarshal(data, &servicesList); err != nil {
+		log.Printf("Error parsing services.json: %v", err)
+		return ""
+	}
 
 	for _, service := range servicesList {
 		if service.ServiceName == service_name {
@@ -61,22 +68,45 @@ func ReportFailure(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key s
 	// Send Failure Report HTTP Request to relevant "FROM" service
 	taskInstanceFrom, _ := rdb.JSONGet(ctx, key, "$."+task_index+".from").Result()
 	json.Unmarshal([]byte(taskInstanceFrom), &val)
+	if len(val) == 0 {
+		log.Printf("Task %s of %s has no 'from' service; cannot report failure", task_index, key)
+		return
+	}
 	from = val[0]
 
 	// Get name of relevant "TO" service
 	taskInstanceTo, _ := rdb.JSONGet(ctx, key, "$."+task_index+".to").Result()
 	json.Unmarshal([]byte(taskInstanceTo), &toList)
+	if len(toList) == 0 {
+		log.Printf("Task %s of %s has no 'to' service; cannot report failure", task_index, key)
+		return
+	}
 	to = toList[0]
 
+	// A task that timed out before anything was published has no payload; report with an empty one.
 	taskInstancePayload, _ := rdb.JSONGet(ctx, key, "$."+task_index+".payload").Result()
 	json.Unmarshal([]byte(taskInstancePayload), &valPayload)
-	payload = valPayload[0]
+	if len(valPayload) > 0 {
+		payload = valPayload[0]
+	} else {
+		payload = map[string]interface{}{}
+	}
+
+	failureUrl := DetectServiceFailureUrl(from)
+	if failureUrl == "" {
+		log.Printf("No failure_url registered for service %q; skipping failure report", from)
+		return
+	}
 
 	log.Println("Reporting Failure to: " + from)
 
 	jsonBody, _ := json.Marshal(payload)
 	bodyReader := bytes.NewReader(jsonBody)
-	req, _ := http.NewRequest(http.MethodPost, DetectServiceFailureUrl(from), bodyReader)
+	req, err := http.NewRequest(http.MethodPost, failureUrl, bodyReader)
+	if err != nil {
+		log.Printf("Error building failure request for %s: %v", from, err)
+		return
+	}
 
 	req.Header.Set("Content-Type", "application/json")
 	q := req.URL.Query()
@@ -92,7 +122,6 @@ func ReportFailure(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key s
 
 	log.Println("Response status: ", resp.Status)
 }
-
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
 
@@ -134,7 +163,7 @@ func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 
 		// Find workflow for name
 		data, err := rdb.JSONGet(ctx, "workflow_template:"+workflow_name, "$").Result()
-		if err == redis.Nil || data == "" {
+		if err == redis.Nil || err != nil || data == "" {
 			log.Println("workflow_name does not exist")
 			w.WriteHeader(400)
 			fmt.Fprint(w, "workflow_name does not exist")
@@ -148,6 +177,12 @@ func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 			fmt.Println(errMsg)
 			w.WriteHeader(500)
 			fmt.Fprint(w, errMsg)
+			return
+		}
+		if len(workflowArray) == 0 {
+			log.Println("workflow_name does not exist")
+			w.WriteHeader(400)
+			fmt.Fprint(w, "workflow_name does not exist")
 			return
 		}
 		workflow := workflowArray[0]
@@ -172,13 +207,12 @@ func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 			index := strconv.Itoa(i)
 			// Create a map for each task
 			taskMap := map[string]interface{}{
-				"topic":       task.Topic,
-				"from":        task.From,
-				"to":          task.To,
-				"state":       "PENDING",
-				"timeout":     task.Timeout,
-				"fail_reason": "null",
-				"index":       index,
+				"topic":   task.Topic,
+				"from":    task.From,
+				"to":      task.To,
+				"state":   "PENDING",
+				"timeout": task.Timeout,
+				"index":   index,
 			}
 
 			workflow_instance[index] = taskMap
@@ -194,100 +228,141 @@ func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 			log.Println("Error: ", workflow_err)
 			w.WriteHeader(500)
 			fmt.Fprint(w, "Error: "+workflow_err.Error())
+			return
 		}
 
-		// fmt.Fprint(w, "Instance Started Successfully")
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(resp)
 	}
 }
 
-// The function `BackupCompletedWorkflows` inserts workflow data into a PostgreSQL database and deletes
-// the corresponding JSON data from a Redis instance.
-func BackupCompletedWorkflows(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key string, name string, startedAt string, completedAt string, document string) {
+// The function `BackupCompletedWorkflows` inserts finished workflow data into PostgreSQL. The instance
+// is intentionally left in Redis afterwards: Redis remains the live store that the read endpoints
+// query, and Postgres is the long-term archive.
+func BackupCompletedWorkflows(ctx context.Context, conn *pgx.Conn, key string, name string, startedAt int64, finishedAt int64, document string) {
 	instance_id := strings.Split(key, ":")[1]
 
-	query := `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data") VALUES ('` + instance_id + `', '` + name + `', TO_TIMESTAMP(` + startedAt + `), TO_TIMESTAMP(` + completedAt + `), '` + document + `')`
-	conn.Exec(ctx, query)
-	// conn.Close(ctx)
-
-	// rdb.JSONDel(ctx, key, "$")
+	query := `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
+		VALUES ($1, $2, TO_TIMESTAMP($3), TO_TIMESTAMP($4), $5)
+		ON CONFLICT ("id") DO NOTHING`
+	_, err := conn.Exec(ctx, query, instance_id, name, startedAt, finishedAt, document)
+	if err != nil {
+		log.Printf("Error archiving instance %s: %v", instance_id, err)
+	}
 }
 
-// The function `checkWorkflowState` retrieves and processes task states within a workflow instance,
-// updating the workflow state to "COMPLETED" if all tasks are completed.
+// The function `checkWorkflowState` retrieves and processes task states within a workflow instance.
+// A workflow is terminal in two ways: every task COMPLETED, or any single task FAILED (a failed task
+// means the saga is compensating and will never complete). Either way the instance is stamped with a
+// terminal state and archived to Postgres.
 func checkWorkflowState(rdb *redis.Client, conn *pgx.Conn, key string) {
 	// Get states of all task instances inside that workflow instance
-	workflow_instance_doc, _ := rdb.JSONGet(ctx, key, "$").Result()
+	workflow_instance_doc, err := rdb.JSONGet(ctx, key, "$").Result()
+	if err != nil || workflow_instance_doc == "" {
+		log.Printf("Failed to read instance %s: %v", key, err)
+		return
+	}
 
 	var docs []map[string]interface{}
-	err := json.Unmarshal([]byte(workflow_instance_doc), &docs)
-	if err != nil {
+	if err := json.Unmarshal([]byte(workflow_instance_doc), &docs); err != nil {
 		log.Printf("Failed to parse JSON document: %v", err)
+		return
+	}
+	if len(docs) == 0 {
+		log.Printf("Instance %s not found", key)
+		return
 	}
 
-	var isWorkflowCompleteFlag = false
-	var name, startedAt string
-	var startedAtFloat float64
+	var name string
+	var startedAt int64
+	taskCount, completedCount := 0, 0
+	anyFailed := false
 
-	// Iterate over the map and log the properties of each object
-	for key, value := range docs[0] {
-		// Check if the key follows the "task_" prefix pattern
-		_, err := strconv.Atoi(key)
-		if err == nil {
-			// Assert that the value is a map
-			task, _ := value.(map[string]interface{})
-
-			// Accessing properties within each task
-			state, stateOk := task["state"].(string)
-			/* from, fromOk := task["from"].(string)
-			to, toOk := task["to"].(string)
-			topic, topicOk := task["topic"].(string)
-			failReason, failReasonOk := task["fail_reason"].(string) */
-
-			if stateOk {
-				if state == "COMPLETED" {
-					isWorkflowCompleteFlag = true
-					continue
-				} else {
-					isWorkflowCompleteFlag = false
-					break
-				}
-			} else {
+	for field, value := range docs[0] {
+		// Task instances are keyed by their numeric index; everything else is instance metadata.
+		if _, err := strconv.Atoi(field); err == nil {
+			task, ok := value.(map[string]interface{})
+			if !ok {
 				log.Println("Unexpected task structure")
+				continue
 			}
-		} else if strings.Compare(key, "name") == 0 {
-			name = value.(string)
-		} else if strings.Compare(key, "startedAt") == 0 {
-			startedAtFloat = value.(float64)
-			startedAt = strconv.FormatFloat(startedAtFloat, 'f', -1, 64)
+
+			state, stateOk := task["state"].(string)
+			if !stateOk {
+				log.Println("Unexpected task structure")
+				continue
+			}
+
+			taskCount++
+			switch state {
+			case "COMPLETED":
+				completedCount++
+			case "FAILED":
+				anyFailed = true
+			}
+		} else if field == "name" {
+			name, _ = value.(string)
+		} else if field == "startedAt" {
+			if f, ok := value.(float64); ok {
+				startedAt = int64(f)
+			}
 		}
-		/* else {
-		Handle non-task properties if needed
-		log.Printf("Non-task property - %s: %v", key, value)
-		} */
 	}
 
-	if isWorkflowCompleteFlag {
-		log.Println("Workflow COMPLETE...")
+	// An instance with no tasks at all is not "complete"; treat it as still pending.
+	if taskCount == 0 {
+		return
+	}
 
-		new_state, _ := json.Marshal("COMPLETED")
-		rdb.JSONSet(ctx, key, "$.state", new_state)
+	var terminalState string
+	if anyFailed {
+		terminalState = "FAILED"
+	} else if completedCount == taskCount {
+		terminalState = "COMPLETED"
+	} else {
+		return
+	}
 
-		completedAt, _ := json.Marshal(time.Now().Unix())
-		rdb.JSONSet(ctx, key, "$.completedAt", completedAt)
+	// Only the first writer to move the instance out of a non-terminal state archives it, so a
+	// second failing task in the same workflow does not produce a duplicate archive row.
+	var currentState []string
+	currentStateResult, _ := rdb.JSONGet(ctx, key, "$.state").Result()
+	json.Unmarshal([]byte(currentStateResult), &currentState)
+	if len(currentState) > 0 && (currentState[0] == "COMPLETED" || currentState[0] == "FAILED") {
+		return
+	}
 
-		// Write new go-routine code here...
-		go func() {
-			workflow_instance_doc, _ = rdb.JSONGet(ctx, key, "$").Result()
-			json.Unmarshal([]byte(workflow_instance_doc), &docs)
-			byteData, _ := json.Marshal(docs[0])
-			BackupCompletedWorkflows(ctx, rdb, conn, key, name, startedAt, string(completedAt), string(byteData))
-		}()
+	log.Printf("Workflow %s...", terminalState)
 
-	} /* else {
-		log.Println("Workflow PENDING...")
-	} */
+	finishedAt := time.Now().Unix()
+	new_state, _ := json.Marshal(terminalState)
+	if err := rdb.JSONSet(ctx, key, "$.state", new_state).Err(); err != nil {
+		log.Printf("Error setting state on %s: %v", key, err)
+		return
+	}
+	if err := rdb.JSONSet(ctx, key, "$.completedAt", finishedAt).Err(); err != nil {
+		log.Printf("Error setting completedAt on %s: %v", key, err)
+	}
+
+	go func() {
+		doc, err := rdb.JSONGet(ctx, key, "$").Result()
+		if err != nil {
+			log.Printf("Error re-reading %s for archive: %v", key, err)
+			return
+		}
+		var finalDocs []map[string]interface{}
+		if err := json.Unmarshal([]byte(doc), &finalDocs); err != nil || len(finalDocs) == 0 {
+			log.Printf("Error parsing %s for archive: %v", key, err)
+			return
+		}
+		byteData, err := json.Marshal(finalDocs[0])
+		if err != nil {
+			log.Printf("Error encoding %s for archive: %v", key, err)
+			return
+		}
+		BackupCompletedWorkflows(ctx, conn, key, name, startedAt, finishedAt, string(byteData))
+	}()
 }
 
 // The function `Handle_consume_cases` processes task states based on conditions and updates the state
@@ -308,6 +383,12 @@ func Handle_consume_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 	var value []string
 	taskInstanceStateResult, _ := rdb.JSONGet(ctx, key, path).Result()
 	json.Unmarshal([]byte(taskInstanceStateResult), &value)
+	if len(value) == 0 {
+		log.Println("Task Not Found")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("Task Not Found"))
+		return
+	}
 	taskInstanceState := value[0]
 
 	new_state, _ := json.Marshal("COMPLETED")
@@ -318,9 +399,18 @@ func Handle_consume_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 		w.Write([]byte("Task NOT started Yet"))
 
 	} else if taskInstanceState == "PUBLISHED" || isRetry {
+		// Claim the deadline before completing the task. ZREM returns 1 for exactly one caller, so
+		// this loses to a reaper that already claimed it and is about to mark the task FAILED.
+		removed, err := rdb.ZRem(ctx, DeadlinesKey, DeadlineMember(strings.TrimPrefix(key, "workflow_instance:"), task_index)).Result()
+		if err == nil && removed == 0 && !isRetry {
+			log.Println("Task deadline already claimed; consume lost the race.")
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte("Task Already FAILED"))
+			return
+		}
+
 		rdb.JSONSet(ctx, key, path, new_state).Result()
 		rdb.JSONSet(ctx, key, "$."+task_index+".consumedAt", time.Now().Unix())
-		rdb.ZRem(ctx, DeadlinesKey, DeadlineMember(strings.TrimPrefix(key, "workflow_instance:"), task_index))
 		fmt.Fprint(w, "Instance State Updated")
 		checkWorkflowState(rdb, conn, key)
 
@@ -339,24 +429,34 @@ func Handle_consume_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 
 // The function `Handle_publish_cases` processes tasks based on a given event name, updating their
 // state and handling retries if needed.
-func Handle_publish_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.ResponseWriter, event_name string, isRetry bool, workflow_instance_id string, body io.ReadCloser) {
+func Handle_publish_cases(rdb *redis.Client, key string, w http.ResponseWriter, event_name string, isRetry bool, workflow_instance_id string, body io.ReadCloser) {
 	// Calculate Consuming Task Names List based on "topic"
 	var taskIndexesList []string
-	taskIndexesResult, _ := rdb.JSONGet(ctx, key, "$..[?(@.topic=='"+event_name+"')].index").Result()
+	taskIndexesResult, err := rdb.JSONGet(ctx, key, "$..[?(@.topic=='"+event_name+"')].index").Result()
 	json.Unmarshal([]byte(taskIndexesResult), &taskIndexesList)
+
+	if err == redis.Nil || err != nil || len(taskIndexesList) == 0 {
+		log.Println("Task Not Found")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("Task Not Found"))
+		return
+	}
 
 	isAllOk := true
 
-	bodyBytes, _ := io.ReadAll(body)
+	bodyBytes, err := io.ReadAll(body)
 	body.Close()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	for _, task_index := range taskIndexesList {
 		task_index := task_index
 		payloadPath := "$." + task_index + ".payload"
 
 		var reqPayload map[string]interface{}
-		err := json.Unmarshal(bodyBytes, &reqPayload)
-		if err != nil {
+		if err := json.Unmarshal(bodyBytes, &reqPayload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -366,6 +466,11 @@ func Handle_publish_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 		var value []string
 		taskInstanceStateResult, _ := rdb.JSONGet(ctx, key, path).Result()
 		json.Unmarshal([]byte(taskInstanceStateResult), &value)
+		if len(value) == 0 {
+			log.Printf("Task %s has no state; skipping", task_index)
+			isAllOk = false
+			continue
+		}
 		taskInstanceState := value[0]
 
 		if taskInstanceState == "PENDING" || isRetry {
@@ -376,10 +481,14 @@ func Handle_publish_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.
 			var timeoutList []int
 			taskInstanceTimeoutResult, _ := rdb.JSONGet(ctx, "workflow_instance:"+workflow_instance_id, "$."+task_index+".timeout").Result()
 			json.Unmarshal([]byte(taskInstanceTimeoutResult), &timeoutList)
-			var taskInstanceTimeout = timeoutList[0]
+			if len(timeoutList) == 0 {
+				log.Printf("Task %s has no timeout; no deadline scheduled", task_index)
+				continue
+			}
+			taskInstanceTimeout := timeoutList[0]
 
 			deadline := time.Now().UnixMilli() + int64(taskInstanceTimeout)
-			err = rdb.ZAdd(ctx, DeadlinesKey, redis.Z{
+			err := rdb.ZAdd(ctx, DeadlinesKey, redis.Z{
 				Score:  float64(deadline),
 				Member: DeadlineMember(workflow_instance_id, task_index),
 			}).Err()
@@ -431,6 +540,12 @@ func Handle_fail_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.Res
 	var value []string
 	taskInstanceStateResult, _ := rdb.JSONGet(ctx, key, path).Result()
 	json.Unmarshal([]byte(taskInstanceStateResult), &value)
+	if len(value) == 0 {
+		log.Println("Task Not Found")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("Task Not Found"))
+		return
+	}
 	taskInstanceState := value[0]
 
 	if taskInstanceState == "PENDING" && !isRetry {
@@ -459,36 +574,30 @@ func Handle_fail_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.Res
 // in Redis and returns a success message or an error message accordingly.
 func Match_workflow_version(rdb *redis.Client, key string, workflow_version string) (bool, string) {
 	var value []string
-	var workflow_version_json string
 
 	workflow_version_json_result, err := rdb.JSONGet(ctx, key, "$.version").Result()
 
 	if err == redis.Nil || err != nil || workflow_version_json_result == "" {
-
 		log.Println("workflow_instance Not Found")
 		return false, "workflow_instance Not Found"
-	} else {
-
-		err := json.Unmarshal([]byte(workflow_version_json_result), &value)
-		if err != nil {
-			log.Println("Error Unmarshalling JSON")
-			return false, "Error Unmarshalling JSON"
-		}
-		if len(value) == 0 {
-			log.Println("Workflow Instance Not Found")
-			return false, "Workflow Instance Not Found"
-		} else if len(value) > 0 {
-			workflow_version_json = value[0]
-			return true, "Success"
-		}
 	}
 
-	if workflow_version != workflow_version_json {
-		log.Println("Invalid worklfow version ", workflow_version)
-		return false, "Invalid worklfow version " + workflow_version
+	if err := json.Unmarshal([]byte(workflow_version_json_result), &value); err != nil {
+		log.Println("Error Unmarshalling JSON")
+		return false, "Error Unmarshalling JSON"
 	}
 
-	return false, "Error"
+	if len(value) == 0 {
+		log.Println("Workflow Instance Not Found")
+		return false, "Workflow Instance Not Found"
+	}
+
+	if workflow_version != value[0] {
+		log.Println("Invalid workflow version ", workflow_version)
+		return false, "Invalid workflow version " + workflow_version
+	}
+
+	return true, "Success"
 }
 
 // The function `Update_instance` processes requests to update workflow instances based on specified
@@ -563,7 +672,7 @@ func Update_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, 
 				return
 
 			} else if action_type == "publish" {
-				Handle_publish_cases(rdb, conn, key, w, event_name, isRetry, workflow_instance_id, r.Body)
+				Handle_publish_cases(rdb, key, w, event_name, isRetry, workflow_instance_id, r.Body)
 				return
 
 			} else if action_type == "fail" {
@@ -590,52 +699,66 @@ func Update_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, 
 
 // The function `List_workflows` retrieves workflow names from a Redis database and returns them as a
 // JSON-encoded list.
-func List_workflows(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
-	result, _ := rdb.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
+func List_workflows(w http.ResponseWriter, rdb *redis.Client) {
+	result, err := rdb.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
+	if err != nil {
+		log.Printf("Error searching workflow templates: %v", err)
+		w.WriteHeader(500)
+		fmt.Fprint(w, "Error searching workflow templates")
+		return
+	}
 
 	resultMap, ok := result.(map[interface{}]interface{})
 	if !ok {
 		log.Printf("Unexpected result format: %T", result)
+		w.WriteHeader(500)
+		fmt.Fprint(w, "Unexpected search result format")
+		return
 	}
 
 	// Convert results to slice of maps
 	resultsInterface, ok := resultMap[interface{}("results")].([]interface{})
 	if !ok {
 		log.Printf("Unexpected results format: %T", resultMap[interface{}("results")])
+		w.WriteHeader(500)
+		fmt.Fprint(w, "Unexpected search result format")
+		return
 	}
-
-	var workflow_list []string
 
 	if len(resultsInterface) == 0 {
 		log.Println("No Workflows Found...!")
 		w.WriteHeader(404)
 		fmt.Fprintf(w, "No Workflows Found")
+		return
+	}
 
-	} else {
+	workflow_list := []string{}
 
-		// Iterate over the results
-		for _, item := range resultsInterface {
-			itemMap, ok := item.(map[interface{}]interface{})
-			if !ok {
-				log.Printf("Unexpected item format: %T", item)
-			}
-
-			extraAttributes, ok := itemMap[interface{}("extra_attributes")].(map[interface{}]interface{})
-			if !ok {
-				log.Printf("Unexpected extra_attributes format: %T", itemMap[interface{}("extra_attributes")])
-			}
-
-			workflowName, ok := extraAttributes[interface{}("workflow_name")].(string)
-			if !ok {
-				log.Printf("workflow_name not found or not a string")
-			}
-
-			workflow_list = append(workflow_list, workflowName)
+	// Iterate over the results
+	for _, item := range resultsInterface {
+		itemMap, ok := item.(map[interface{}]interface{})
+		if !ok {
+			log.Printf("Unexpected item format: %T", item)
+			continue
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(workflow_list)
+		extraAttributes, ok := itemMap[interface{}("extra_attributes")].(map[interface{}]interface{})
+		if !ok {
+			log.Printf("Unexpected extra_attributes format: %T", itemMap[interface{}("extra_attributes")])
+			continue
+		}
+
+		workflowName, ok := extraAttributes[interface{}("workflow_name")].(string)
+		if !ok {
+			log.Printf("workflow_name not found or not a string")
+			continue
+		}
+
+		workflow_list = append(workflow_list, workflowName)
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(workflow_list)
 }
 
 // The function `List_workflow_instances` retrieves workflow instances based on specified filters and
@@ -808,27 +931,32 @@ func Get_workflow_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Cl
 		return
 	}
 
-	result, _ := rdb.JSONGet(ctx, doc_key, "$").Expanded()
+	result, err := rdb.JSONGet(ctx, doc_key, "$").Expanded()
+	if err != nil && err != redis.Nil {
+		log.Printf("Error reading %s: %v", doc_key, err)
+		w.WriteHeader(500)
+		fmt.Fprint(w, "Error reading instance")
+		return
+	}
 
 	// Assert result as a slice
 	resultSlice, ok := result.([]interface{})
-	if !ok {
-		log.Printf("Expected result to be a slice, got %T", result)
-	}
-
-	if len(resultSlice) == 0 {
+	if !ok || len(resultSlice) == 0 {
 		log.Println("Instance Not Found...!!")
 		w.WriteHeader(404)
 		fmt.Fprintf(w, "Instance Not Found")
-
-	} else {
-		// Access the first element and assert as a map
-		instance, ok := resultSlice[0].(map[string]interface{})
-		if !ok {
-			log.Printf("Expected first element to be a map, got %T", resultSlice[0])
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(instance)
+		return
 	}
+
+	// Access the first element and assert as a map
+	instance, ok := resultSlice[0].(map[string]interface{})
+	if !ok {
+		log.Printf("Expected first element to be a map, got %T", resultSlice[0])
+		w.WriteHeader(500)
+		fmt.Fprint(w, "Unexpected instance format")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(instance)
 }
