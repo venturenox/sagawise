@@ -23,111 +23,62 @@ import (
 
 var ctx = context.Background()
 
-// The function `DetectServiceFailureUrl` reads service data from a JSON file and returns the failure
-// URL for a given service name.
-func DetectServiceFailureUrl(service_name string) string {
-	var servicesList []utils.Service
-	data, err := os.ReadFile("services.json")
-	if err != nil {
-		log.Printf("Error reading services.json: %v", err)
-		return ""
-	}
-	if err := json.Unmarshal(data, &servicesList); err != nil {
-		log.Printf("Error parsing services.json: %v", err)
-		return ""
-	}
+// ---- shared helpers ----
 
-	for _, service := range servicesList {
-		if service.ServiceName == service_name {
-			return service.FailureUrl
-		}
-	}
-
-	return ""
+func httpError(w http.ResponseWriter, code int, msg string) {
+	log.Println(msg)
+	w.WriteHeader(code)
+	fmt.Fprint(w, msg)
 }
 
-// The function `ReportFailure` marks a task instance as failed in Redis, retrieves relevant service
-// information, and sends a failure report HTTP request to the corresponding service.
-func ReportFailure(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, key string, workflow_instance_id string, task_index string) {
-	var to, from string
-	var toList, val []string
-	client := &http.Client{}
-	var payload map[string]interface{}
-	var valPayload []map[string]interface{}
-
-	// Whether this came from the reaper or an explicit fail report, the deadline is spent.
-	rdb.ZRem(ctx, DeadlinesKey, DeadlineMember(workflow_instance_id, task_index))
-	// Mark task instance state as "FAILED" in redis
-	statePath := "$." + task_index + ".state"
-	new_state, _ := json.Marshal("FAILED")
-	rdb.JSONSet(ctx, key, statePath, new_state).Result()
-	rdb.JSONSet(ctx, key, "$."+task_index+".failedAt", time.Now().Unix())
-
-	checkWorkflowState(rdb, conn, key)
-
-	// Send Failure Report HTTP Request to relevant "FROM" service
-	taskInstanceFrom, _ := rdb.JSONGet(ctx, key, "$."+task_index+".from").Result()
-	json.Unmarshal([]byte(taskInstanceFrom), &val)
-	if len(val) == 0 {
-		log.Printf("Task %s of %s has no 'from' service; cannot report failure", task_index, key)
-		return
+// requireParams writes a 400 listing every missing query parameter and returns
+// false if any of the named parameters is absent.
+func requireParams(r *http.Request, w http.ResponseWriter, names ...string) bool {
+	msg := ""
+	for _, n := range names {
+		if r.URL.Query().Get(n) == "" {
+			msg += n + " required. "
+		}
 	}
-	from = val[0]
-
-	// Get name of relevant "TO" service
-	taskInstanceTo, _ := rdb.JSONGet(ctx, key, "$."+task_index+".to").Result()
-	json.Unmarshal([]byte(taskInstanceTo), &toList)
-	if len(toList) == 0 {
-		log.Printf("Task %s of %s has no 'to' service; cannot report failure", task_index, key)
-		return
+	if msg != "" {
+		httpError(w, 400, msg)
+		return false
 	}
-	to = toList[0]
+	return true
+}
 
-	// A task that timed out before anything was published has no payload; report with an empty one.
-	taskInstancePayload, _ := rdb.JSONGet(ctx, key, "$."+task_index+".payload").Result()
-	json.Unmarshal([]byte(taskInstancePayload), &valPayload)
-	if len(valPayload) > 0 {
-		payload = valPayload[0]
-	} else {
-		payload = map[string]interface{}{}
-	}
-
-	failureUrl := DetectServiceFailureUrl(from)
-	if failureUrl == "" {
-		log.Printf("No failure_url registered for service %q; skipping failure report", from)
-		return
-	}
-
-	log.Println("Reporting Failure to: " + from)
-
-	jsonBody, _ := json.Marshal(payload)
-	bodyReader := bytes.NewReader(jsonBody)
-	req, err := http.NewRequest(http.MethodPost, failureUrl, bodyReader)
+// jsonAll runs a RedisJSON path query (which always yields an array) and
+// unmarshals the matches.
+func jsonAll[T any](rdb *redis.Client, key, path string) []T {
+	res, err := rdb.JSONGet(ctx, key, path).Result()
 	if err != nil {
-		log.Printf("Error building failure request for %s: %v", from, err)
-		return
+		return nil
 	}
+	var out []T
+	json.Unmarshal([]byte(res), &out)
+	return out
+}
 
-	req.Header.Set("Content-Type", "application/json")
-	q := req.URL.Query()
-	q.Add("service", to)
-	req.URL.RawQuery = q.Encode()
-
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("Failed to send request: %v", err)
-		return
+// jsonFirst returns the first match of a RedisJSON path query, if any.
+func jsonFirst[T any](rdb *redis.Client, key, path string) (T, bool) {
+	out := jsonAll[T](rdb, key, path)
+	if len(out) == 0 {
+		var zero T
+		return zero, false
 	}
-	defer resp.Body.Close()
+	return out[0], true
+}
 
-	log.Println("Response status: ", resp.Status)
+// markTask sets a task's state and stamps the matching timestamp field.
+func markTask(rdb *redis.Client, key, index, state, stampField string) {
+	s, _ := json.Marshal(state)
+	rdb.JSONSet(ctx, key, "$."+index+".state", s)
+	rdb.JSONSet(ctx, key, "$."+index+"."+stampField, time.Now().Unix())
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
 
-// The Generate_ID function generates a random string of 20 characters using a predefined set of
-// letters.
-func Generate_ID() string {
+func generateID() string {
 	b := make([]rune, 20)
 	for i := range b {
 		b[i] = letters[rand.Intn(len(letters))]
@@ -135,209 +86,309 @@ func Generate_ID() string {
 	return string(b)
 }
 
-// The Start_instance function creates a new workflow instance based on provided parameters and
-// template data stored in Redis.
-func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
-	// Get workflow_name + service name
-	workflow_name := r.URL.Query().Get("workflow_name")
-	workflow_version := r.URL.Query().Get("workflow_version")
-
-	errMsg := ""
-	isMissing := false
-	if workflow_name == "" {
-		errMsg = errMsg + "workflow_name required. "
-		isMissing = true
+// failureURL looks up a service's failure webhook in services.json.
+func failureURL(service string) string {
+	data, err := os.ReadFile("services.json")
+	var services []utils.Service
+	if err == nil {
+		err = json.Unmarshal(data, &services)
 	}
-	if workflow_version == "" {
-		errMsg = errMsg + "workflow_version required. "
-		isMissing = true
-	}
-
-	if isMissing {
-		log.Println("Error: ", errMsg)
-		w.WriteHeader(400)
-		fmt.Fprint(w, errMsg)
-		return
-
-	} else {
-
-		// Find workflow for name
-		data, err := rdb.JSONGet(ctx, "workflow_template:"+workflow_name, "$").Result()
-		if err == redis.Nil || err != nil || data == "" {
-			log.Println("workflow_name does not exist")
-			w.WriteHeader(400)
-			fmt.Fprint(w, "workflow_name does not exist")
-			return
-		}
-
-		var workflowArray []utils.Workflow
-		err = json.Unmarshal([]byte(data), &workflowArray)
-		if err != nil {
-			errMsg := "Error unmarshalling JSON:" + err.Error()
-			fmt.Println(errMsg)
-			w.WriteHeader(500)
-			fmt.Fprint(w, errMsg)
-			return
-		}
-		if len(workflowArray) == 0 {
-			log.Println("workflow_name does not exist")
-			w.WriteHeader(400)
-			fmt.Fprint(w, "workflow_name does not exist")
-			return
-		}
-		workflow := workflowArray[0]
-
-		if workflow.Version != workflow_version {
-			log.Println("Invalid workflow_version " + workflow_version)
-			w.WriteHeader(400)
-			fmt.Fprint(w, "Invalid workflow_version "+workflow_version)
-			return
-		}
-
-		// Create Tasks and Workflow instances using template
-		workflow_instance := map[string]interface{}{
-			"name":           workflow_name,
-			"version":        workflow.Version,
-			"schema_version": workflow.Schema_version,
-			"state":          "PENDING",
-			"startedAt":      time.Now().Unix(),
-		}
-
-		for i, task := range workflow.Tasks {
-			index := strconv.Itoa(i)
-			// Create a map for each task
-			taskMap := map[string]interface{}{
-				"topic":   task.Topic,
-				"from":    task.From,
-				"to":      task.To,
-				"state":   "PENDING",
-				"timeout": task.Timeout,
-				"index":   index,
-			}
-
-			workflow_instance[index] = taskMap
-		}
-
-		workflow_instance_id := Generate_ID()
-		resp := map[string]interface{}{
-			"workflow_instance_id": workflow_instance_id,
-		}
-
-		workflow_err := rdb.JSONSet(ctx, "workflow_instance:"+workflow_instance_id, ".", workflow_instance).Err()
-		if workflow_err != nil {
-			log.Println("Error: ", workflow_err)
-			w.WriteHeader(500)
-			fmt.Fprint(w, "Error: "+workflow_err.Error())
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
-		json.NewEncoder(w).Encode(resp)
-	}
-}
-
-// The function `BackupCompletedWorkflows` inserts finished workflow data into PostgreSQL. The instance
-// is intentionally left in Redis afterwards: Redis remains the live store that the read endpoints
-// query, and Postgres is the long-term archive.
-func BackupCompletedWorkflows(ctx context.Context, conn *pgx.Conn, key string, name string, startedAt int64, finishedAt int64, document string) {
-	instance_id := strings.Split(key, ":")[1]
-
-	query := `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
-		VALUES ($1, $2, TO_TIMESTAMP($3), TO_TIMESTAMP($4), $5)
-		ON CONFLICT ("id") DO NOTHING`
-	_, err := conn.Exec(ctx, query, instance_id, name, startedAt, finishedAt, document)
 	if err != nil {
-		log.Printf("Error archiving instance %s: %v", instance_id, err)
+		log.Printf("Error reading services.json: %v", err)
+		return ""
 	}
+	for _, s := range services {
+		if s.ServiceName == service {
+			return s.FailureUrl
+		}
+	}
+	return ""
 }
 
-// The function `checkWorkflowState` retrieves and processes task states within a workflow instance.
-// A workflow is terminal in two ways: every task COMPLETED, or any single task FAILED (a failed task
-// means the saga is compensating and will never complete). Either way the instance is stamped with a
-// terminal state and archived to Postgres.
-func checkWorkflowState(rdb *redis.Client, conn *pgx.Conn, key string) {
-	// Get states of all task instances inside that workflow instance
-	workflow_instance_doc, err := rdb.JSONGet(ctx, key, "$").Result()
-	if err != nil || workflow_instance_doc == "" {
-		log.Printf("Failed to read instance %s: %v", key, err)
+// ---- instance lifecycle ----
+
+// Start_instance clones a workflow template into a new workflow_instance doc.
+func Start_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
+	if !requireParams(r, w, "workflow_name", "workflow_version") {
+		return
+	}
+	name := r.URL.Query().Get("workflow_name")
+	version := r.URL.Query().Get("workflow_version")
+
+	workflow, ok := jsonFirst[utils.Workflow](rdb, "workflow_template:"+name, "$")
+	if !ok {
+		httpError(w, 400, "workflow_name does not exist")
+		return
+	}
+	if workflow.Version != version {
+		httpError(w, 400, "Invalid workflow_version "+version)
 		return
 	}
 
-	var docs []map[string]interface{}
-	if err := json.Unmarshal([]byte(workflow_instance_doc), &docs); err != nil {
-		log.Printf("Failed to parse JSON document: %v", err)
-		return
+	instance := map[string]interface{}{
+		"name":           name,
+		"version":        workflow.Version,
+		"schema_version": workflow.Schema_version,
+		"state":          "PENDING",
+		"startedAt":      time.Now().Unix(),
 	}
-	if len(docs) == 0 {
-		log.Printf("Instance %s not found", key)
-		return
-	}
-
-	var name string
-	var startedAt int64
-	taskCount, completedCount := 0, 0
-	anyFailed := false
-
-	for field, value := range docs[0] {
-		// Task instances are keyed by their numeric index; everything else is instance metadata.
-		if _, err := strconv.Atoi(field); err == nil {
-			task, ok := value.(map[string]interface{})
-			if !ok {
-				log.Println("Unexpected task structure")
-				continue
-			}
-
-			state, stateOk := task["state"].(string)
-			if !stateOk {
-				log.Println("Unexpected task structure")
-				continue
-			}
-
-			taskCount++
-			switch state {
-			case "COMPLETED":
-				completedCount++
-			case "FAILED":
-				anyFailed = true
-			}
-		} else if field == "name" {
-			name, _ = value.(string)
-		} else if field == "startedAt" {
-			if f, ok := value.(float64); ok {
-				startedAt = int64(f)
-			}
+	for i, task := range workflow.Tasks {
+		index := strconv.Itoa(i)
+		instance[index] = map[string]interface{}{
+			"topic":   task.Topic,
+			"from":    task.From,
+			"to":      task.To,
+			"state":   "PENDING",
+			"timeout": task.Timeout,
+			"index":   index,
 		}
 	}
 
-	// An instance with no tasks at all is not "complete"; treat it as still pending.
-	if taskCount == 0 {
+	id := generateID()
+	if err := rdb.JSONSet(ctx, "workflow_instance:"+id, ".", instance).Err(); err != nil {
+		httpError(w, 500, "Error: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"workflow_instance_id": id})
+}
+
+// Update_instance dispatches a publish/consume/fail report onto the instance.
+func Update_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, conn *pgx.Conn) {
+	if !requireParams(r, w, "action_type", "workflow_instance_id", "workflow_version", "event_name", "is_retry") {
+		return
+	}
+	q := r.URL.Query()
+	action := q.Get("action_type")
+	id := q.Get("workflow_instance_id")
+	topic := q.Get("event_name")
+	isRetry, _ := strconv.ParseBool(q.Get("is_retry"))
+
+	if action != "consume" && action != "publish" && action != "fail" {
+		httpError(w, 400, "Invalid action_type value. ")
 		return
 	}
 
-	var terminalState string
-	if anyFailed {
-		terminalState = "FAILED"
-	} else if completedCount == taskCount {
-		terminalState = "COMPLETED"
+	key := "workflow_instance:" + id
+	version, ok := jsonFirst[string](rdb, key, "$.version")
+	if !ok {
+		httpError(w, 400, "workflow_instance Not Found")
+		return
+	}
+	if version != q.Get("workflow_version") {
+		httpError(w, 400, "Invalid workflow version "+q.Get("workflow_version"))
+		return
+	}
+
+	if action == "publish" {
+		handlePublish(rdb, id, w, topic, isRetry, r.Body)
+		return
+	}
+	if !requireParams(r, w, "service_name") {
+		return
+	}
+	handleConsumeOrFail(rdb, conn, id, w, topic, q.Get("service_name"), action, isRetry)
+}
+
+// handlePublish marks every task carrying the topic as PUBLISHED, stores the
+// message payload, and schedules a consumption deadline per task.
+func handlePublish(rdb *redis.Client, id string, w http.ResponseWriter, topic string, isRetry bool, body io.ReadCloser) {
+	key := "workflow_instance:" + id
+	indexes := jsonAll[string](rdb, key, "$..[?(@.topic=='"+topic+"')].index")
+	if len(indexes) == 0 {
+		httpError(w, http.StatusNotFound, "Task Not Found")
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(body)
+	body.Close()
+	var payload map[string]interface{}
+	if err == nil {
+		err = json.Unmarshal(bodyBytes, &payload)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	allOk := true
+	for _, index := range indexes {
+		state, ok := jsonFirst[string](rdb, key, "$."+index+".state")
+		if !ok {
+			log.Printf("Task %s has no state; skipping", index)
+			allOk = false
+			continue
+		}
+		if state != "PENDING" && !isRetry {
+			log.Println("Task Already " + state)
+			allOk = false
+			continue
+		}
+
+		markTask(rdb, key, index, "PUBLISHED", "publishedAt")
+		rdb.JSONSet(ctx, key, "$."+index+".payload", payload)
+
+		timeout, ok := jsonFirst[int](rdb, key, "$."+index+".timeout")
+		if !ok {
+			log.Printf("Task %s has no timeout; no deadline scheduled", index)
+			continue
+		}
+		err := rdb.ZAdd(ctx, deadlinesKey, redis.Z{
+			Score:  float64(time.Now().UnixMilli() + int64(timeout)),
+			Member: deadlineMember(id, index),
+		}).Err()
+		if err != nil {
+			log.Printf("Error scheduling deadline for %s task %s: %v", id, index, err)
+		}
+	}
+
+	if allOk {
+		fmt.Fprint(w, "Instance State Updated")
 	} else {
+		httpError(w, http.StatusForbidden, "Task Already COMPLETED or FAILED")
+	}
+}
+
+// handleConsumeOrFail resolves the task by topic + consuming service, then
+// completes it (consume) or fails it (fail). Both only act on a PUBLISHED task
+// unless the report is a retry.
+func handleConsumeOrFail(rdb *redis.Client, conn *pgx.Conn, id string, w http.ResponseWriter, topic, service, action string, isRetry bool) {
+	key := "workflow_instance:" + id
+	index, ok := jsonFirst[string](rdb, key, "$..[?(@.topic=='"+topic+"' && @.to=='"+service+"')].index")
+	if !ok {
+		httpError(w, http.StatusNotFound, "Task Not Found")
+		return
+	}
+	state, ok := jsonFirst[string](rdb, key, "$."+index+".state")
+	if !ok {
+		httpError(w, http.StatusNotFound, "Task Not Found")
+		return
+	}
+	if state != "PUBLISHED" && !isRetry {
+		if state == "PENDING" {
+			httpError(w, http.StatusForbidden, "Task NOT started Yet")
+		} else {
+			httpError(w, http.StatusForbidden, "Task Already "+state)
+		}
 		return
 	}
 
-	// Only the first writer to move the instance out of a non-terminal state archives it, so a
-	// second failing task in the same workflow does not produce a duplicate archive row.
-	var currentState []string
-	currentStateResult, _ := rdb.JSONGet(ctx, key, "$.state").Result()
-	json.Unmarshal([]byte(currentStateResult), &currentState)
-	if len(currentState) > 0 && (currentState[0] == "COMPLETED" || currentState[0] == "FAILED") {
+	if action == "fail" {
+		reportFailure(rdb, conn, key, id, index)
+		fmt.Fprint(w, "Instance State Updated")
 		return
 	}
 
-	log.Printf("Workflow %s...", terminalState)
+	// Claim the deadline before completing the task. ZREM returns 1 for exactly
+	// one caller, so this loses to a reaper that already claimed it and is about
+	// to mark the task FAILED.
+	removed, err := rdb.ZRem(ctx, deadlinesKey, deadlineMember(id, index)).Result()
+	if err == nil && removed == 0 && !isRetry {
+		httpError(w, http.StatusForbidden, "Task Already FAILED")
+		return
+	}
+	markTask(rdb, key, index, "COMPLETED", "consumedAt")
+	fmt.Fprint(w, "Instance State Updated")
+	checkWorkflowState(rdb, conn, key)
+}
 
+// reportFailure marks the task FAILED, archives the workflow if that made it
+// terminal, and POSTs the task payload to the publishing service's failure_url
+// so it can compensate.
+func reportFailure(rdb *redis.Client, conn *pgx.Conn, key, id, index string) {
+	// Whether this came from the reaper or an explicit fail report, the deadline is spent.
+	rdb.ZRem(ctx, deadlinesKey, deadlineMember(id, index))
+	markTask(rdb, key, index, "FAILED", "failedAt")
+	checkWorkflowState(rdb, conn, key)
+
+	from, okFrom := jsonFirst[string](rdb, key, "$."+index+".from")
+	to, okTo := jsonFirst[string](rdb, key, "$."+index+".to")
+	if !okFrom || !okTo {
+		log.Printf("Task %s of %s has no from/to service; cannot report failure", index, key)
+		return
+	}
+	// A task that timed out before anything was published has no payload; report with an empty one.
+	payload, _ := jsonFirst[map[string]interface{}](rdb, key, "$."+index+".payload")
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+
+	url := failureURL(from)
+	if url == "" {
+		log.Printf("No failure_url registered for service %q; skipping failure report", from)
+		return
+	}
+
+	log.Println("Reporting Failure to: " + from)
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		log.Printf("Error building failure request for %s: %v", from, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.URL.RawQuery = "service=" + to
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Failed to send request: %v", err)
+		return
+	}
+	resp.Body.Close()
+	log.Println("Response status: ", resp.Status)
+}
+
+// checkWorkflowState stamps the instance with a terminal state and archives it
+// to Postgres. A workflow is terminal in two ways: every task COMPLETED, or any
+// single task FAILED (a failed task means the saga is compensating and will
+// never complete).
+func checkWorkflowState(rdb *redis.Client, conn *pgx.Conn, key string) {
+	doc, ok := jsonFirst[map[string]interface{}](rdb, key, "$")
+	if !ok {
+		log.Printf("Failed to read instance %s", key)
+		return
+	}
+
+	name, _ := doc["name"].(string)
+	startedAt, _ := doc["startedAt"].(float64)
+	total, completed, failed := 0, 0, false
+	for field, value := range doc {
+		// Task instances are keyed by their numeric index; everything else is metadata.
+		if _, err := strconv.Atoi(field); err != nil {
+			continue
+		}
+		total++
+		task, _ := value.(map[string]interface{})
+		switch task["state"] {
+		case "COMPLETED":
+			completed++
+		case "FAILED":
+			failed = true
+		}
+	}
+
+	var terminal string
+	switch {
+	case total == 0: // an instance with no tasks is not "complete"; treat as still pending
+		return
+	case failed:
+		terminal = "FAILED"
+	case completed == total:
+		terminal = "COMPLETED"
+	default:
+		return
+	}
+
+	// Only the first writer to move the instance out of a non-terminal state
+	// archives it, so a second failing task in the same workflow does not
+	// produce a duplicate archive row.
+	if cur, _ := jsonFirst[string](rdb, key, "$.state"); cur == "COMPLETED" || cur == "FAILED" {
+		return
+	}
+
+	log.Printf("Workflow %s...", terminal)
 	finishedAt := time.Now().Unix()
-	new_state, _ := json.Marshal(terminalState)
-	if err := rdb.JSONSet(ctx, key, "$.state", new_state).Err(); err != nil {
+	state, _ := json.Marshal(terminal)
+	if err := rdb.JSONSet(ctx, key, "$.state", state).Err(); err != nil {
 		log.Printf("Error setting state on %s: %v", key, err)
 		return
 	}
@@ -346,617 +397,142 @@ func checkWorkflowState(rdb *redis.Client, conn *pgx.Conn, key string) {
 	}
 
 	go func() {
-		doc, err := rdb.JSONGet(ctx, key, "$").Result()
-		if err != nil {
-			log.Printf("Error re-reading %s for archive: %v", key, err)
+		// Re-read so the archived document includes the terminal state.
+		final, ok := jsonFirst[map[string]interface{}](rdb, key, "$")
+		if !ok {
+			log.Printf("Error re-reading %s for archive", key)
 			return
 		}
-		var finalDocs []map[string]interface{}
-		if err := json.Unmarshal([]byte(doc), &finalDocs); err != nil || len(finalDocs) == 0 {
-			log.Printf("Error parsing %s for archive: %v", key, err)
-			return
-		}
-		byteData, err := json.Marshal(finalDocs[0])
+		data, err := json.Marshal(final)
 		if err != nil {
 			log.Printf("Error encoding %s for archive: %v", key, err)
 			return
 		}
-		BackupCompletedWorkflows(ctx, conn, key, name, startedAt, finishedAt, string(byteData))
+		archiveInstance(conn, key, name, int64(startedAt), finishedAt, string(data))
 	}()
 }
 
-// The function `Handle_consume_cases` processes task states based on conditions and updates the state
-// accordingly in a Redis database.
-func Handle_consume_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.ResponseWriter, event_name string, service_name string, isRetry bool) {
-	// Calculate Task name depending on "to" & "topic" fields...
-	var taskIndexesList []string
-	taskIndexesResult, err := rdb.JSONGet(ctx, key, "$..[?(@.topic=='"+event_name+"' && @.to=='"+service_name+"')].index").Result()
-	json.Unmarshal([]byte(taskIndexesResult), &taskIndexesList)
-
-	if err == redis.Nil || err != nil || len(taskIndexesList) == 0 {
-		log.Println("Task Not Found")
-		return
-	}
-	task_index := taskIndexesList[0]
-
-	path := "$." + task_index + ".state"
-	var value []string
-	taskInstanceStateResult, _ := rdb.JSONGet(ctx, key, path).Result()
-	json.Unmarshal([]byte(taskInstanceStateResult), &value)
-	if len(value) == 0 {
-		log.Println("Task Not Found")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Task Not Found"))
-		return
-	}
-	taskInstanceState := value[0]
-
-	new_state, _ := json.Marshal("COMPLETED")
-
-	if taskInstanceState == "PENDING" && !isRetry {
-		log.Println("Task NOT started Yet.")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task NOT started Yet"))
-
-	} else if taskInstanceState == "PUBLISHED" || isRetry {
-		// Claim the deadline before completing the task. ZREM returns 1 for exactly one caller, so
-		// this loses to a reaper that already claimed it and is about to mark the task FAILED.
-		removed, err := rdb.ZRem(ctx, DeadlinesKey, DeadlineMember(strings.TrimPrefix(key, "workflow_instance:"), task_index)).Result()
-		if err == nil && removed == 0 && !isRetry {
-			log.Println("Task deadline already claimed; consume lost the race.")
-			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte("Task Already FAILED"))
-			return
-		}
-
-		rdb.JSONSet(ctx, key, path, new_state).Result()
-		rdb.JSONSet(ctx, key, "$."+task_index+".consumedAt", time.Now().Unix())
-		fmt.Fprint(w, "Instance State Updated")
-		checkWorkflowState(rdb, conn, key)
-
-	} else if taskInstanceState == "FAILED" && !isRetry {
-		log.Println("Task Already FAILED.")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task Already FAILED"))
-
-	} else if taskInstanceState == "COMPLETED" && !isRetry {
-		log.Println("Task Already COMPLETED.")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task Already COMPLETED"))
-
-	}
-}
-
-// The function `Handle_publish_cases` processes tasks based on a given event name, updating their
-// state and handling retries if needed.
-func Handle_publish_cases(rdb *redis.Client, key string, w http.ResponseWriter, event_name string, isRetry bool, workflow_instance_id string, body io.ReadCloser) {
-	// Calculate Consuming Task Names List based on "topic"
-	var taskIndexesList []string
-	taskIndexesResult, err := rdb.JSONGet(ctx, key, "$..[?(@.topic=='"+event_name+"')].index").Result()
-	json.Unmarshal([]byte(taskIndexesResult), &taskIndexesList)
-
-	if err == redis.Nil || err != nil || len(taskIndexesList) == 0 {
-		log.Println("Task Not Found")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Task Not Found"))
-		return
-	}
-
-	isAllOk := true
-
-	bodyBytes, err := io.ReadAll(body)
-	body.Close()
+// archiveInstance inserts a finished workflow into Postgres. The instance is
+// intentionally left in Redis: Redis remains the live store the read endpoints
+// query; Postgres is the long-term archive.
+func archiveInstance(conn *pgx.Conn, key, name string, startedAt, finishedAt int64, document string) {
+	id := strings.Split(key, ":")[1]
+	_, err := conn.Exec(ctx, `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
+		VALUES ($1, $2, TO_TIMESTAMP($3), TO_TIMESTAMP($4), $5)
+		ON CONFLICT ("id") DO NOTHING`, id, name, startedAt, finishedAt, document)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	for _, task_index := range taskIndexesList {
-		task_index := task_index
-		payloadPath := "$." + task_index + ".payload"
-
-		var reqPayload map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &reqPayload); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		new_state, _ := json.Marshal("PUBLISHED")
-		path := "$." + task_index + ".state"
-		var value []string
-		taskInstanceStateResult, _ := rdb.JSONGet(ctx, key, path).Result()
-		json.Unmarshal([]byte(taskInstanceStateResult), &value)
-		if len(value) == 0 {
-			log.Printf("Task %s has no state; skipping", task_index)
-			isAllOk = false
-			continue
-		}
-		taskInstanceState := value[0]
-
-		if taskInstanceState == "PENDING" || isRetry {
-			rdb.JSONSet(ctx, key, "$."+task_index+".publishedAt", time.Now().Unix())
-			rdb.JSONSet(ctx, key, path, new_state).Result()
-			rdb.JSONSet(ctx, key, payloadPath, reqPayload).Err()
-
-			var timeoutList []int
-			taskInstanceTimeoutResult, _ := rdb.JSONGet(ctx, "workflow_instance:"+workflow_instance_id, "$."+task_index+".timeout").Result()
-			json.Unmarshal([]byte(taskInstanceTimeoutResult), &timeoutList)
-			if len(timeoutList) == 0 {
-				log.Printf("Task %s has no timeout; no deadline scheduled", task_index)
-				continue
-			}
-			taskInstanceTimeout := timeoutList[0]
-
-			deadline := time.Now().UnixMilli() + int64(taskInstanceTimeout)
-			err := rdb.ZAdd(ctx, DeadlinesKey, redis.Z{
-				Score:  float64(deadline),
-				Member: DeadlineMember(workflow_instance_id, task_index),
-			}).Err()
-			if err != nil {
-				log.Printf("Error scheduling deadline for %s task %s: %v", workflow_instance_id, task_index, err)
-			}
-
-		} else if taskInstanceState == "PUBLISHED" && !isRetry {
-			log.Println("Task Already PUBLISHED.")
-			isAllOk = false
-
-		} else if taskInstanceState == "FAILED" && !isRetry {
-			log.Println("Task Already FAILED.")
-			isAllOk = false
-
-		} else if taskInstanceState == "COMPLETED" && !isRetry {
-			log.Println("Task Already COMPLETED.")
-			isAllOk = false
-
-		}
-	}
-
-	// @TODO: See a better response with count of updated and already failed and already completed
-	if isAllOk {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Instance State Updated"))
-	} else {
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task Already COMPLETED or FAILED"))
+		log.Printf("Error archiving instance %s: %v", id, err)
 	}
 }
 
-// The function `Handle_fail_cases` checks the state of a task in a workflow and handles different
-// failure cases accordingly.
-func Handle_fail_cases(rdb *redis.Client, conn *pgx.Conn, key string, w http.ResponseWriter, event_name string, service_name string, isRetry bool, workflow_instance_id string) {
-	// Calculate Task name depending on "to" & "topic" fields...
-	var taskIndexesList []string
-	taskIndexesResult, err := rdb.JSONGet(ctx, key, "$..[?(@.topic=='"+event_name+"' && @.to=='"+service_name+"')].index").Result()
-	json.Unmarshal([]byte(taskIndexesResult), &taskIndexesList)
+// ---- read endpoints ----
 
-	if err == redis.Nil || err != nil || len(taskIndexesList) == 0 {
-		log.Println("Task Not Found")
-		return
-	}
-
-	task_index := taskIndexesList[0]
-
-	path := "$." + task_index + ".state"
-	var value []string
-	taskInstanceStateResult, _ := rdb.JSONGet(ctx, key, path).Result()
-	json.Unmarshal([]byte(taskInstanceStateResult), &value)
-	if len(value) == 0 {
-		log.Println("Task Not Found")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Task Not Found"))
-		return
-	}
-	taskInstanceState := value[0]
-
-	if taskInstanceState == "PENDING" && !isRetry {
-		log.Println("Task NOT started Yet.")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task NOT started Yet"))
-
-	} else if taskInstanceState == "COMPLETED" && !isRetry {
-		log.Println("Task Already COMPLETED.")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task Already COMPLETED"))
-
-	} else if taskInstanceState == "PUBLISHED" || isRetry {
-		ReportFailure(ctx, rdb, conn, key, workflow_instance_id, task_index)
-		fmt.Fprint(w, "Instance State Updated")
-
-	} else if taskInstanceState == "FAILED" && !isRetry {
-		log.Println("Task Already FAILED.")
-		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("Task Already FAILED"))
-
-	}
-}
-
-// The function `Match_workflow_version` checks if a given workflow version matches the version stored
-// in Redis and returns a success message or an error message accordingly.
-func Match_workflow_version(rdb *redis.Client, key string, workflow_version string) (bool, string) {
-	var value []string
-
-	workflow_version_json_result, err := rdb.JSONGet(ctx, key, "$.version").Result()
-
-	if err == redis.Nil || err != nil || workflow_version_json_result == "" {
-		log.Println("workflow_instance Not Found")
-		return false, "workflow_instance Not Found"
-	}
-
-	if err := json.Unmarshal([]byte(workflow_version_json_result), &value); err != nil {
-		log.Println("Error Unmarshalling JSON")
-		return false, "Error Unmarshalling JSON"
-	}
-
-	if len(value) == 0 {
-		log.Println("Workflow Instance Not Found")
-		return false, "Workflow Instance Not Found"
-	}
-
-	if workflow_version != value[0] {
-		log.Println("Invalid workflow version ", workflow_version)
-		return false, "Invalid workflow version " + workflow_version
-	}
-
-	return true, "Success"
-}
-
-// The function `Update_instance` processes requests to update workflow instances based on specified
-// parameters and actions.
-func Update_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, conn *pgx.Conn) {
-	action_type := r.URL.Query().Get("action_type")
-	workflow_instance_id := r.URL.Query().Get("workflow_instance_id")
-	event_name := r.URL.Query().Get("event_name")
-	workflow_version := r.URL.Query().Get("workflow_version")
-	is_retry := r.URL.Query().Get("is_retry")
-
-	errMsg := ""
-	isMissing := false
-	if action_type == "" {
-		errMsg = errMsg + "action_type required. "
-		isMissing = true
-	}
-	if action_type != "consume" && action_type != "publish" && action_type != "fail" {
-		errMsg = errMsg + "Invalid action_type value. "
-		isMissing = true
-	}
-	if workflow_instance_id == "" {
-		errMsg = errMsg + "workflow_instance_id required. "
-		isMissing = true
-	}
-	if workflow_version == "" {
-		errMsg = errMsg + "workflow_version required. "
-		isMissing = true
-	}
-	if event_name == "" {
-		errMsg = errMsg + "event_name required. "
-		isMissing = true
-	}
-	if is_retry == "" {
-		errMsg = errMsg + "is_retry required. "
-		isMissing = true
-	}
-
-	if isMissing {
-		w.WriteHeader(400)
-		fmt.Fprint(w, errMsg)
-		return
-
-	} else {
-		isRetry, _ := strconv.ParseBool(is_retry)
-		key := "workflow_instance:" + workflow_instance_id
-
-		status, errMsg := Match_workflow_version(rdb, key, workflow_version)
-		if !status {
-
-			w.WriteHeader(400)
-			fmt.Fprint(w, errMsg)
-			return
-		} else {
-
-			if action_type == "consume" {
-				service_name := r.URL.Query().Get("service_name")
-
-				errMsg := ""
-				isMissing := false
-				if service_name == "" {
-					errMsg = errMsg + "service_name required. "
-					isMissing = true
-				}
-				if isMissing {
-					w.WriteHeader(400)
-					fmt.Fprint(w, errMsg)
-					return
-				}
-
-				Handle_consume_cases(rdb, conn, key, w, event_name, service_name, isRetry)
-				return
-
-			} else if action_type == "publish" {
-				Handle_publish_cases(rdb, key, w, event_name, isRetry, workflow_instance_id, r.Body)
-				return
-
-			} else if action_type == "fail" {
-				service_name := r.URL.Query().Get("service_name")
-
-				errMsg := ""
-				isMissing := false
-				if service_name == "" {
-					errMsg = errMsg + "service_name required. "
-					isMissing = true
-				}
-				if isMissing {
-					w.WriteHeader(400)
-					fmt.Fprint(w, errMsg)
-					return
-				}
-
-				Handle_fail_cases(rdb, conn, key, w, event_name, service_name, isRetry, workflow_instance_id)
-				return
-			}
-		}
-	}
-}
-
-// The function `List_workflows` retrieves workflow names from a Redis database and returns them as a
-// JSON-encoded list.
+// List_workflows returns the names of all registered workflow templates.
 func List_workflows(w http.ResponseWriter, rdb *redis.Client) {
 	result, err := rdb.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
 	if err != nil {
 		log.Printf("Error searching workflow templates: %v", err)
-		w.WriteHeader(500)
-		fmt.Fprint(w, "Error searching workflow templates")
+		httpError(w, 500, "Error searching workflow templates")
 		return
 	}
 
-	resultMap, ok := result.(map[interface{}]interface{})
-	if !ok {
-		log.Printf("Unexpected result format: %T", result)
-		w.WriteHeader(500)
-		fmt.Fprint(w, "Unexpected search result format")
+	resultMap, _ := result.(map[interface{}]interface{})
+	results, _ := resultMap["results"].([]interface{})
+	if len(results) == 0 {
+		httpError(w, 404, "No Workflows Found")
 		return
 	}
 
-	// Convert results to slice of maps
-	resultsInterface, ok := resultMap[interface{}("results")].([]interface{})
-	if !ok {
-		log.Printf("Unexpected results format: %T", resultMap[interface{}("results")])
-		w.WriteHeader(500)
-		fmt.Fprint(w, "Unexpected search result format")
-		return
-	}
-
-	if len(resultsInterface) == 0 {
-		log.Println("No Workflows Found...!")
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "No Workflows Found")
-		return
-	}
-
-	workflow_list := []string{}
-
-	// Iterate over the results
-	for _, item := range resultsInterface {
-		itemMap, ok := item.(map[interface{}]interface{})
-		if !ok {
-			log.Printf("Unexpected item format: %T", item)
-			continue
+	names := []string{}
+	for _, item := range results {
+		itemMap, _ := item.(map[interface{}]interface{})
+		attrs, _ := itemMap["extra_attributes"].(map[interface{}]interface{})
+		if name, ok := attrs["workflow_name"].(string); ok {
+			names = append(names, name)
 		}
-
-		extraAttributes, ok := itemMap[interface{}("extra_attributes")].(map[interface{}]interface{})
-		if !ok {
-			log.Printf("Unexpected extra_attributes format: %T", itemMap[interface{}("extra_attributes")])
-			continue
-		}
-
-		workflowName, ok := extraAttributes[interface{}("workflow_name")].(string)
-		if !ok {
-			log.Printf("workflow_name not found or not a string")
-			continue
-		}
-
-		workflow_list = append(workflow_list, workflowName)
 	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(workflow_list)
+	json.NewEncoder(w).Encode(names)
 }
 
-// The function `List_workflow_instances` retrieves workflow instances based on specified filters and
-// returns their IDs in JSON format.
+// List_workflow_instances returns instance IDs matching the query-string
+// filters, ANDed together; with no filters it returns everything.
 func List_workflow_instances(r *http.Request, w http.ResponseWriter, client rueidis.Client) {
+	q := r.URL.Query()
+	now := time.Now()
 
-	workflow_name := r.URL.Query().Get("workflow_name")
-	workflow_state := r.URL.Query().Get("workflow_state")
-	started_at := r.URL.Query().Get("started_at")
-	completed_at := r.URL.Query().Get("completed_at")
-	failed_at := r.URL.Query().Get("failed_at")
-	topic := r.URL.Query().Get("topic")
-	from := r.URL.Query().Get("from")
-	to := r.URL.Query().Get("to")
-	isMultiFilter := false
-	var query, startedTimeCondition, completedTimeCondition, failedTimeCondition string
+	// timeCond turns "5m"/"15m" into a RediSearch numeric range on a field.
+	timeCond := func(field, val string) string {
+		var d time.Duration
+		switch val {
+		case "5m":
+			d = 5 * time.Minute
+		case "15m":
+			d = 15 * time.Minute
+		default:
+			return ""
+		}
+		return fmt.Sprintf("@%s:[%d %d]", field, now.Add(-d).Unix(), now.Unix())
+	}
+	tag := func(field, val string) string {
+		if val == "" {
+			return ""
+		}
+		return "@" + field + ":" + val
+	}
 
-	now := strconv.FormatInt(time.Now().Unix(), 10)
-	before5m := strconv.FormatInt(time.Now().Add(-time.Minute*5).Unix(), 10)
-	before15m := strconv.FormatInt(time.Now().Add(-time.Minute*15).Unix(), 10)
-
-	if workflow_name == "" && workflow_state == "" && started_at == "" && completed_at == "" && failed_at == "" && topic == "" && from == "" && to == "" {
-		query = "*"
-	} else if workflow_name != "" && workflow_state != "" && started_at != "" && completed_at != "" && failed_at != "" && topic != "" && from != "" && to != "" {
-		// Started At
-		if started_at == "5m" {
-			startedTimeCondition = "@started_at:[" + before5m + " " + now + "]"
-		} else if started_at == "15m" {
-			startedTimeCondition = "@started_at:[" + before15m + " " + now + "]"
+	var clauses []string
+	for _, c := range []string{
+		tag("workflow_name", q.Get("workflow_name")),
+		tag("workflow_state", q.Get("workflow_state")),
+		timeCond("started_at", q.Get("started_at")),
+		timeCond("completed_at", q.Get("completed_at")),
+		timeCond("failed_at", q.Get("failed_at")),
+		tag("topic", q.Get("topic")),
+		tag("from", q.Get("from")),
+		tag("to", q.Get("to")),
+	} {
+		if c != "" {
+			clauses = append(clauses, c)
 		}
-
-		// Completed At
-		if completed_at == "5m" {
-			completedTimeCondition = "@completed_at:[" + before5m + " " + now + "]"
-		} else if completed_at == "15m" {
-			completedTimeCondition = "@completed_at:[" + before15m + " " + now + "]"
-		}
-
-		// Completed At
-		if failed_at == "5m" {
-			failedTimeCondition = "@failed_at:[" + before5m + " " + now + "]"
-		} else if failed_at == "15m" {
-			failedTimeCondition = "@failed_at:[" + before15m + " " + now + "]"
-		}
-
-		query = "@workflow_name:" + workflow_name + " && @workflow_state:" + workflow_state +
-			" && @topic:" + topic + " && @from:" + from + " && @to:" + to +
-			" && " + startedTimeCondition + " && " + completedTimeCondition + " && " + failedTimeCondition
-		isMultiFilter = true
-	} else {
-		if workflow_name != "" {
-			if !isMultiFilter {
-				query = "@workflow_name:" + workflow_name
-				isMultiFilter = true
-			} else {
-				query = query + " && @workflow_name:" + workflow_name
-			}
-		}
-		if workflow_state != "" {
-			if !isMultiFilter {
-				query = "@workflow_state:" + workflow_state
-				isMultiFilter = true
-			} else {
-				query = query + " && @workflow_state:" + workflow_state
-			}
-		}
-		if started_at != "" {
-			if started_at == "5m" {
-				startedTimeCondition = "@started_at:[" + before5m + " " + now + "]"
-			} else if started_at == "15m" {
-				startedTimeCondition = "@started_at:[" + before15m + " " + now + "]"
-			}
-
-			if !isMultiFilter {
-				query = startedTimeCondition
-				isMultiFilter = true
-			} else {
-				query = query + " && " + startedTimeCondition
-			}
-		}
-		if completed_at != "" {
-			if completed_at == "5m" {
-				completedTimeCondition = "@completed_at:[" + before5m + " " + now + "]"
-			} else if completed_at == "15m" {
-				completedTimeCondition = "@completed_at:[" + before15m + " " + now + "]"
-			}
-
-			if !isMultiFilter {
-				query = completedTimeCondition
-				isMultiFilter = true
-			} else {
-				query = query + " && " + completedTimeCondition
-			}
-		}
-		if failed_at != "" {
-			if failed_at == "5m" {
-				failedTimeCondition = "@failed_at:[" + before5m + " " + now + "]"
-			} else if failed_at == "15m" {
-				failedTimeCondition = "@failed_at:[" + before15m + " " + now + "]"
-			}
-
-			if !isMultiFilter {
-				query = failedTimeCondition
-				isMultiFilter = true
-			} else {
-				query = query + " && " + failedTimeCondition
-			}
-		}
-		if topic != "" {
-			if !isMultiFilter {
-				query = "@topic:" + topic
-				isMultiFilter = true
-			} else {
-				query = query + " && @topic:" + topic
-			}
-		}
-		if from != "" {
-			if !isMultiFilter {
-				query = "@from:" + from
-				isMultiFilter = true
-			} else {
-				query = query + " && @from:" + from
-			}
-		}
-		if to != "" {
-			if !isMultiFilter {
-				query = "@to:" + to
-				isMultiFilter = true
-			} else {
-				query = query + " && @to:" + to
-			}
-		}
+	}
+	query := "*"
+	if len(clauses) > 0 {
+		query = strings.Join(clauses, " && ")
 	}
 
 	cmd := client.B().FtSearch().Index("workflows_index").Query(query).Build()
 	n, resp, _ := client.Do(ctx, cmd).AsFtSearch()
-
 	if n == 0 {
-		log.Println("No Instances Found...!")
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "No Instances Found")
-	} else {
-		var workflowIDs []string
-		for _, doc := range resp {
-			workflowIDs = append(workflowIDs, doc.Key)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(workflowIDs)
+		httpError(w, 404, "No Instances Found")
+		return
 	}
+
+	var ids []string
+	for _, doc := range resp {
+		ids = append(ids, doc.Key)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ids)
 }
 
-// The function `Get_workflow_instance` retrieves a workflow instance from Redis based on a document
-// key provided in the request URL and returns it as JSON if found.
+// Get_workflow_instance returns the full JSON document for one instance.
 func Get_workflow_instance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
-	doc_key := r.URL.Query().Get("doc_key")
-
-	errMsg := ""
-	isMissing := false
-	if doc_key == "" {
-		errMsg = errMsg + "doc_key required. "
-		isMissing = true
+	docKey := r.URL.Query().Get("doc_key")
+	if docKey == "" {
+		httpError(w, 400, "doc_key required. ")
+		return
 	}
-	if len(strings.Split(doc_key, ":")) == 1 {
-		errMsg = errMsg + "doc_key format Invalid. "
-		isMissing = true
-	}
-	if isMissing {
-		w.WriteHeader(400)
-		fmt.Fprint(w, errMsg)
+	if !strings.Contains(docKey, ":") {
+		httpError(w, 400, "doc_key format Invalid. ")
 		return
 	}
 
-	result, err := rdb.JSONGet(ctx, doc_key, "$").Expanded()
-	if err != nil && err != redis.Nil {
-		log.Printf("Error reading %s: %v", doc_key, err)
-		w.WriteHeader(500)
-		fmt.Fprint(w, "Error reading instance")
-		return
-	}
-
-	// Assert result as a slice
-	resultSlice, ok := result.([]interface{})
-	if !ok || len(resultSlice) == 0 {
-		log.Println("Instance Not Found...!!")
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "Instance Not Found")
-		return
-	}
-
-	// Access the first element and assert as a map
-	instance, ok := resultSlice[0].(map[string]interface{})
+	instance, ok := jsonFirst[map[string]interface{}](rdb, docKey, "$")
 	if !ok {
-		log.Printf("Expected first element to be a map, got %T", resultSlice[0])
-		w.WriteHeader(500)
-		fmt.Fprint(w, "Unexpected instance format")
+		httpError(w, 404, "Instance Not Found")
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(instance)
 }
