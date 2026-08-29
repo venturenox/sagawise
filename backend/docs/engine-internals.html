@@ -1,0 +1,1550 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A plain-language reference for Sagawise: what problem it solves, how services report to it, how it stores state, how it detects a lost message, and how it tells the sender to undo its work.">
+<title>Sagawise Internals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+  /* minimal reset — supplied by the artifact host when published, inlined here
+     so this file also opens standalone from the filesystem */
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+  table { border-collapse: collapse; }
+
+  :root {
+    --ground: #F7F8FA;
+    --surface: #FFFFFF;
+    --surface-sunk: #EEF1F5;
+    --ink: #0E141B;
+    --ink-soft: #3D4A57;
+    --ink-faint: #5C6B7A;
+    --rule: #D6DCE3;
+    --rule-soft: #E5EAEF;
+
+    --signal: #0E7C86;
+    --signal-wash: #E2F2F3;
+    --warn: #B4690E;
+    --warn-wash: #FAEEDC;
+    --fail: #A33A28;
+    --fail-wash: #F8E7E3;
+    --inert: #8A97A3;
+    --inert-wash: #E9ECF0;
+
+    --shadow: 0 1px 2px rgba(14, 20, 27, .06), 0 8px 24px rgba(14, 20, 27, .05);
+
+    --measure: 68ch;
+    --step--1: .8125rem;
+    --step-0: 1rem;
+    --step-1: 1.1875rem;
+    --step-2: 1.5rem;
+    --step-3: 2rem;
+    --step-4: 2.75rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #101620;
+      --surface: #17202C;
+      --surface-sunk: #131B25;
+      --ink: #E8EDF2;
+      --ink-soft: #B3C0CD;
+      --ink-faint: #8496A6;
+      --rule: #2A3644;
+      --rule-soft: #212C39;
+
+      --signal: #3FD0C9;
+      --signal-wash: #123037;
+      --warn: #F0A64B;
+      --warn-wash: #352814;
+      --fail: #E8705A;
+      --fail-wash: #34201D;
+      --inert: #6F8090;
+      --inert-wash: #1D2733;
+
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .28);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #101620;
+    --surface: #17202C;
+    --surface-sunk: #131B25;
+    --ink: #E8EDF2;
+    --ink-soft: #B3C0CD;
+    --ink-faint: #8496A6;
+    --rule: #2A3644;
+    --rule-soft: #212C39;
+
+    --signal: #3FD0C9;
+    --signal-wash: #123037;
+    --warn: #F0A64B;
+    --warn-wash: #352814;
+    --fail: #E8705A;
+    --fail-wash: #34201D;
+    --inert: #6F8090;
+    --inert-wash: #1D2733;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 28px rgba(0, 0, 0, .28);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: var(--step-0);
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 1.5rem 6rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1140px;
+    margin: 0 auto;
+  }
+
+  .flow > * { max-width: var(--measure); }
+  .flow > .bleed { max-width: none; }
+
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; }
+
+  code {
+    font-size: .875em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: .1em .35em;
+    color: var(--ink);
+    word-break: break-word;
+  }
+
+  /* ---------- masthead ---------- */
+
+  header.masthead {
+    padding: 5rem 0 3rem;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 3.5rem;
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: var(--step--1);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--signal);
+    margin: 0 0 1.25rem;
+  }
+
+  h1 {
+    font-size: var(--step-4);
+    line-height: 1.05;
+    letter-spacing: -.03em;
+    font-weight: 600;
+    margin: 0 0 1.25rem;
+    max-width: 20ch;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: var(--step-1);
+    line-height: 1.55;
+    color: var(--ink-soft);
+    max-width: var(--measure);
+    margin: 0 0 1rem;
+  }
+  .standfirst:last-child { margin-bottom: 0; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- contents ---------- */
+
+  nav.toc {
+    margin: 0 0 4rem;
+    padding: 1.25rem 1.5rem;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    max-width: var(--measure);
+  }
+  nav.toc .toc-head {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 .75rem;
+  }
+  nav.toc ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: .35rem 1.5rem;
+  }
+  nav.toc li { display: flex; gap: .7rem; align-items: baseline; font-size: var(--step--1); }
+  nav.toc li .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--signal);
+    flex: none;
+  }
+  nav.toc a { color: var(--ink); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  /* ---------- sections ---------- */
+
+  section { margin-bottom: 5rem; scroll-margin-top: 2rem; }
+
+  h2 {
+    font-size: var(--step-2);
+    line-height: 1.2;
+    letter-spacing: -.02em;
+    font-weight: 600;
+    margin: 0 0 .75rem;
+    display: flex;
+    align-items: baseline;
+    gap: .85rem;
+    text-wrap: balance;
+  }
+
+  h2 .num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .8125rem;
+    font-weight: 500;
+    color: var(--signal);
+    letter-spacing: .04em;
+    flex: none;
+    padding-top: .1em;
+  }
+
+  h3 {
+    font-size: var(--step-1);
+    font-weight: 600;
+    letter-spacing: -.01em;
+    margin: 2.75rem 0 .5rem;
+  }
+
+  p { margin: 0 0 1.1rem; }
+  p + h3 { margin-top: 2.5rem; }
+
+  a { color: var(--signal); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  ul.notes, ol.steps {
+    margin: 0 0 1.25rem;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: .7rem;
+  }
+
+  ul.notes li, ol.steps li {
+    padding-left: 1.6rem;
+    position: relative;
+    color: var(--ink-soft);
+  }
+
+  ul.notes li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .62em;
+    width: 7px;
+    height: 7px;
+    border: 1.5px solid var(--signal);
+    border-radius: 1px;
+  }
+
+  ol.steps { counter-reset: step; }
+  ol.steps li { counter-increment: step; padding-left: 2.1rem; }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: .15em;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    border: 1.5px solid var(--signal);
+    color: var(--signal);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  ul.notes li strong, ol.steps li strong { color: var(--ink); font-weight: 600; }
+
+  /* ---------- figures ---------- */
+
+  figure {
+    margin: 2.25rem 0 2.5rem;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .fig-body {
+    padding: 1.75rem 1.5rem 1.25rem;
+    overflow-x: auto;
+  }
+
+  figure svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-width: 560px;
+    color: var(--ink-soft);
+  }
+
+  figcaption {
+    border-top: 1px solid var(--rule-soft);
+    background: var(--surface-sunk);
+    padding: .85rem 1.5rem;
+    font-size: var(--step--1);
+    line-height: 1.55;
+    color: var(--ink-faint);
+  }
+
+  figcaption b {
+    color: var(--ink-soft);
+    font-weight: 600;
+  }
+
+  /* svg text defaults */
+  .svg-label {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-size: 12.5px;
+    font-weight: 500;
+    fill: currentColor;
+  }
+  .svg-mono {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    fill: currentColor;
+  }
+  .svg-tiny {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .06em;
+    fill: currentColor;
+    opacity: .75;
+  }
+  .svg-head {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .11em;
+    fill: currentColor;
+    text-transform: uppercase;
+  }
+
+  /* ---------- callout ---------- */
+
+  aside.callout {
+    border-left: 3px solid var(--warn);
+    background: var(--warn-wash);
+    padding: 1.1rem 1.25rem;
+    margin: 2rem 0;
+    border-radius: 0 4px 4px 0;
+    font-size: var(--step--1);
+    line-height: 1.6;
+    color: var(--ink-soft);
+  }
+
+  aside.callout.crit { border-left-color: var(--fail); background: var(--fail-wash); }
+  aside.callout.info { border-left-color: var(--signal); background: var(--signal-wash); }
+  aside.callout p { margin: 0 0 .6rem; }
+  aside.callout p:last-child { margin: 0; }
+  aside.callout strong { color: var(--ink); font-weight: 600; }
+
+  aside.callout .tag {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--warn);
+    margin-bottom: .45rem;
+  }
+  aside.callout.crit .tag { color: var(--fail); }
+  aside.callout.info .tag { color: var(--signal); }
+
+  /* ---------- table ---------- */
+
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--surface);
+    margin: 1.75rem 0 2rem;
+    box-shadow: var(--shadow);
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 620px;
+    font-size: var(--step--1);
+  }
+
+  th, td {
+    text-align: left;
+    padding: .7rem 1rem;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+    background: var(--surface-sunk);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  td.mono { font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: nowrap; }
+  td .sub { display: block; color: var(--ink-faint); font-size: 12px; margin-top: .15rem; }
+
+  .pill {
+    display: inline-block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    padding: .15rem .45rem;
+    border-radius: 3px;
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .pill.ok { color: var(--signal); background: var(--signal-wash); }
+  .pill.warnp { color: var(--warn); background: var(--warn-wash); }
+  .pill.failp { color: var(--fail); background: var(--fail-wash); }
+  .pill.inertp { color: var(--inert); background: var(--inert-wash); }
+
+  /* ---------- code block ---------- */
+
+  pre {
+    background: var(--surface-sunk);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1rem 1.15rem;
+    overflow-x: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin: 1.5rem 0 1.75rem;
+    color: var(--ink-soft);
+  }
+  pre code {
+    background: none;
+    border: 0;
+    padding: 0;
+    font-size: inherit;
+    color: inherit;
+  }
+  pre .k { color: var(--signal); }
+  pre .c { color: var(--ink-faint); font-style: italic; }
+  pre .w { color: var(--warn); }
+
+  /* ---------- source references ---------- */
+
+  .src {
+    display: block;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    margin: -.4rem 0 1.25rem;
+    line-height: 1.6;
+  }
+  .src::before {
+    content: "source";
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-size: 10px;
+    color: var(--signal);
+    margin-right: .7rem;
+  }
+  .src code {
+    font-size: 11.5px;
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--ink-soft);
+  }
+  .src code + code::before { content: " · "; color: var(--ink-faint); }
+  figcaption .src, li .src, aside .src { margin: .45rem 0 0; }
+
+  /* ---------- glossary ---------- */
+
+  dl.glossary {
+    margin: 1.5rem 0 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: .8rem 1.5rem;
+    font-size: var(--step--1);
+  }
+  dl.glossary dt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink);
+    padding-top: .1rem;
+  }
+  dl.glossary dd { margin: 0; color: var(--ink-soft); line-height: 1.55; }
+
+  @media (max-width: 640px) {
+    dl.glossary { grid-template-columns: 1fr; gap: .25rem 0; }
+    dl.glossary dd { margin-bottom: .9rem; }
+  }
+
+  /* ---------- footer ---------- */
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.75rem;
+    font-size: var(--step--1);
+    color: var(--ink-faint);
+    max-width: var(--measure);
+  }
+  footer code { font-size: 12px; }
+
+  @media (max-width: 640px) {
+    body { padding: 0 1.1rem 4rem; }
+    header.masthead { padding: 3rem 0 2.25rem; }
+    :root { --step-4: 2.125rem; --step-3: 1.625rem; --step-2: 1.3125rem; }
+    h2 { flex-direction: column; gap: .2rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<header class="masthead">
+  <p class="eyebrow">Engine reference · plain-language edition</p>
+  <h1>How Sagawise Watches a Saga</h1>
+  <p class="standfirst">Sagawise is a small service that keeps watch over a business action which spans several other services. It notices when one step of that action is never completed. When that happens, it tells the service that started the step, so that service can undo its own work.</p>
+  <p class="standfirst">This document explains the problem Sagawise solves, what it is and is not, and exactly how it works inside. It needs no prior knowledge of the code. Terms are defined as they appear, and again in the <a href="#glossary">glossary</a> at the end.</p>
+  <p class="standfirst">Every file and piece of code mentioned here is given with its path, relative to the root of the repository. A reference like <code>backend/instance_engine/reaper.go:44-74</code> means lines 44 to 73 of that file.</p>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <p class="toc-head">Contents</p>
+  <ol>
+    <li><span class="num">01</span><a href="#problem">The problem Sagawise solves</a></li>
+    <li><span class="num">02</span><a href="#what-it-is">What Sagawise is, and is not</a></li>
+    <li><span class="num">03</span><a href="#definition">Describing a saga</a></li>
+    <li><span class="num">04</span><a href="#happy-path">One successful run</a></li>
+    <li><span class="num">05</span><a href="#storage">What Sagawise remembers</a></li>
+    <li><span class="num">06</span><a href="#timeouts">Detecting a lost message</a></li>
+    <li><span class="num">07</span><a href="#callback">Telling the sender</a></li>
+    <li><span class="num">08</span><a href="#states">The states a task can be in</a></li>
+    <li><span class="num">09</span><a href="#code">Where the code lives</a></li>
+    <li><span class="num">—</span><a href="#glossary">Glossary</a></li>
+    <li><span class="num">—</span><a href="#filemap">Every file referred to</a></li>
+  </ol>
+</nav>
+
+<main class="flow">
+
+<!-- ============================================ 1 ============================================ -->
+<section id="problem">
+  <h2><span class="num">01</span> The problem Sagawise solves</h2>
+
+  <p>Large software systems are often split into many small programs called <strong>services</strong>. Each service does one job and keeps its own data. One service handles orders. Another handles payments. A third handles shipping.</p>
+
+  <p>A single business action often needs several of these services to act in turn. Placing an order is a good example. The orders service records the order. The payments service charges the card. The shipping service books a courier. Each step changes data that belongs to a different service.</p>
+
+  <p>This creates a problem. There is no single "undo" that covers all three services at once. If the shipping step fails, the order has already been saved and the card has already been charged. Someone has to notice the failure and then reverse the earlier steps.</p>
+
+  <p>The standard way to handle this is called a <strong>saga</strong>. A saga is a sequence of steps across services, where every step has a matching <strong>compensating action</strong> that undoes it. Charge the card; the compensating action is a refund. Save the order; the compensating action is to cancel it. If a later step fails, the earlier steps run their compensating actions and the system returns to a clean state.</p>
+
+  <p>The hard part of a saga is not the undo. It is <em>knowing</em> that a step failed. A service that crashed cannot say so. A message that was lost in transit leaves no trace. Nobody sends a report that says "I never received this". From the outside, a failed step and a slow step look exactly the same: silence.</p>
+
+  <p>Sagawise exists to answer one question: <strong>did every step of this saga get picked up, or did one of them go silent?</strong> When a step goes silent for too long, Sagawise treats it as failed and tells the right service to compensate.</p>
+</section>
+
+<!-- ============================================ 2 ============================================ -->
+<section id="what-it-is">
+  <h2><span class="num">02</span> What Sagawise is, and is not</h2>
+
+  <p>The services in a system talk to each other by sending messages. In this project they send them through <strong>Kafka</strong>. Kafka is a message system that works like a durable mailbox. A service <strong>publishes</strong> a message to a named channel called a <strong>topic</strong>. Another service that has subscribed to that topic <strong>consumes</strong> the message when it is ready. The message waits in Kafka until it is consumed.</p>
+
+  <p>Sagawise is <strong>not</strong> part of that path. It is not a message broker and it does not replace Kafka. It never sees the message content travel. Services keep sending messages to each other exactly as they did before.</p>
+
+  <p>Instead, Sagawise listens on a separate channel. After a service publishes a message, it makes one small HTTP call to Sagawise that says, in effect, <em>"I just sent this."</em> After a service consumes a message, it makes another call that says <em>"I just received this."</em> These calls are <strong>reports</strong>. They carry facts about what happened, not the message itself.</p>
+
+  <p>The three services in the diagram are a working example that ships with the repository. Their code is in <code>examples/order_flow/orders/app.js</code>, <code>examples/order_flow/payments/app.js</code>, and <code>examples/order_flow/shipping/app.js</code>. Each one makes its reports through a small helper, <code>examples/order_flow/&lt;service&gt;/sagawiseClient.js</code>.</p>
+
+  <p>The picture below shows the two separate paths. The grey band is Kafka, which carries the real messages. The blue band is the HTTP reports that flow to Sagawise.</p>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 400" role="img" aria-label="Kafka carries messages between orders, payments and shipping on the data plane, while each service separately reports publish and consume events to Sagawise over HTTP on the control plane. Sagawise has no connection to Kafka.">
+        <defs>
+          <marker id="d1-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+          <marker id="d1-arr-sig" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--signal)"/>
+          </marker>
+        </defs>
+
+        <rect x="20" y="24" width="860" height="150" rx="5" fill="var(--inert-wash)" stroke="var(--rule)" stroke-width="1"/>
+        <text class="svg-head" x="36" y="47" fill="var(--inert)">Messages — Kafka — Sagawise is not here</text>
+
+        <g>
+          <rect x="60" y="92" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--ink-faint)" stroke-width="1.5"/>
+          <text class="svg-label" x="135" y="116" text-anchor="middle" fill="var(--ink)">orders</text>
+          <text class="svg-tiny" x="135" y="132" text-anchor="middle">:4010</text>
+        </g>
+        <g>
+          <rect x="375" y="92" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--ink-faint)" stroke-width="1.5"/>
+          <text class="svg-label" x="450" y="116" text-anchor="middle" fill="var(--ink)">payments</text>
+          <text class="svg-tiny" x="450" y="132" text-anchor="middle">:4011</text>
+        </g>
+        <g>
+          <rect x="690" y="92" width="150" height="52" rx="4" fill="var(--surface)" stroke="var(--ink-faint)" stroke-width="1.5"/>
+          <text class="svg-label" x="765" y="116" text-anchor="middle" fill="var(--ink)">shipping</text>
+          <text class="svg-tiny" x="765" y="132" text-anchor="middle">:4012</text>
+        </g>
+
+        <line x1="212" y1="118" x2="371" y2="118" stroke="var(--inert)" stroke-width="2" marker-end="url(#d1-arr)"/>
+        <text class="svg-mono" x="291" y="110" text-anchor="middle" fill="var(--inert)">order_created</text>
+        <line x1="527" y1="118" x2="686" y2="118" stroke="var(--inert)" stroke-width="2" marker-end="url(#d1-arr)"/>
+        <text class="svg-mono" x="606" y="110" text-anchor="middle" fill="var(--inert)">payment_done</text>
+
+        <rect x="20" y="252" width="860" height="126" rx="5" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1" stroke-opacity=".45"/>
+        <text class="svg-head" x="36" y="275" fill="var(--signal)">Reports — HTTP</text>
+
+        <rect x="300" y="292" width="300" height="62" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="2"/>
+        <text class="svg-label" x="450" y="318" text-anchor="middle" fill="var(--ink)">Sagawise :5000</text>
+        <text class="svg-tiny" x="450" y="336" text-anchor="middle" fill="var(--signal)">POST /update_instance</text>
+
+        <path d="M 135 148 L 135 250 L 300 288" fill="none" stroke="var(--signal)" stroke-width="1.75" marker-end="url(#d1-arr-sig)"/>
+        <text class="svg-mono" x="146" y="205" fill="var(--signal)">"I sent it"</text>
+
+        <path d="M 450 148 L 450 288" fill="none" stroke="var(--signal)" stroke-width="1.75" marker-end="url(#d1-arr-sig)"/>
+        <text class="svg-mono" x="461" y="205" fill="var(--signal)">"I got it" · "I sent it"</text>
+
+        <path d="M 765 148 L 765 250 L 600 288" fill="none" stroke="var(--signal)" stroke-width="1.75" marker-end="url(#d1-arr-sig)"/>
+        <text class="svg-mono" x="754" y="205" text-anchor="end" fill="var(--signal)">"I got it"</text>
+
+        <line x1="450" y1="176" x2="450" y2="240" stroke="var(--fail)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".55"/>
+        <g transform="translate(450 208)">
+          <circle r="11" fill="var(--surface)" stroke="var(--fail)" stroke-width="1.5"/>
+          <line x1="-5" y1="-5" x2="5" y2="5" stroke="var(--fail)" stroke-width="1.75"/>
+          <line x1="5" y1="-5" x2="-5" y2="5" stroke="var(--fail)" stroke-width="1.75"/>
+        </g>
+        <text class="svg-mono" x="432" y="212" text-anchor="end" fill="var(--fail)">no link to Kafka</text>
+      </svg>
+    </div>
+    <figcaption><b>Two separate paths.</b> Kafka moves the messages. HTTP moves the reports. There is no line from Sagawise to Kafka, so Sagawise can record what happened but can never step in.
+      <span class="src"><code>examples/order_flow/orders/app.js:27-33</code><code>examples/order_flow/payments/app.js:35-51</code><code>backend/main.go:151-161</code> the routes</span></figcaption>
+  </figure>
+
+  <p>Sagawise knows only what it is told. It cannot stop a message, delay it, or send it again.</p>
+
+  <p>What it <em>can</em> do is this. <strong>If a message is sent and nobody reads it within the time limit, Sagawise calls the sending service's error endpoint.</strong> The sender can then undo whatever it did. Sections <a href="#timeouts">06</a> and <a href="#callback">07</a> show how this works.</p>
+</section>
+
+<!-- ============================================ 3 ============================================ -->
+<section id="definition">
+  <h2><span class="num">03</span> Describing a saga</h2>
+
+  <p>Before Sagawise can watch a saga, someone must describe it. The description is a small JSON file. Each file describes one <strong>workflow</strong>, which is the name Sagawise uses for a saga. The files live in <code>backend/sagawise/</code>, one per workflow, and the filename must match the workflow's <code>name</code> field.</p>
+
+  <p>Here is the file for the order example used throughout this document, <code>backend/sagawise/order_flow.json</code>, shown in full:</p>
+
+  <pre><code>{
+  <span class="k">"workflow"</span>: {
+    <span class="k">"name"</span>: "order_flow",
+    <span class="k">"version"</span>: "1.0",
+    <span class="k">"schema_version"</span>: "1.0",
+    <span class="k">"tasks"</span>: [
+      { <span class="k">"topic"</span>: "order_created", <span class="k">"from"</span>: "orders",   <span class="k">"to"</span>: "payments", <span class="k">"timeout"</span>: <span class="w">20000</span> },
+      { <span class="k">"topic"</span>: "payment_done",  <span class="k">"from"</span>: "payments", <span class="k">"to"</span>: "shipping", <span class="k">"timeout"</span>: <span class="w">20000</span> }
+    ]
+  }
+}</code></pre>
+
+  <p>A workflow is a list of <strong>tasks</strong>. One task is one message that must travel from one service to another. Each task has four fields:</p>
+
+  <ul class="notes">
+    <li><strong><code>topic</code></strong> — the name of the Kafka channel the message travels on.</li>
+    <li><strong><code>from</code></strong> — the service that sends the message.</li>
+    <li><strong><code>to</code></strong> — the service that must receive it.</li>
+    <li><strong><code>timeout</code></strong> — how long Sagawise waits for the receive report before it gives up. This is in <strong>milliseconds</strong>. <code>20000</code> means twenty seconds.</li>
+  </ul>
+
+  <p>The service names in <code>from</code> and <code>to</code> must match a second file, <code>services.json</code>, at the root of the repository. That file lists every service and the web address Sagawise should call when one of that service's tasks fails. The three entries relevant to this example are:</p>
+
+  <pre><code>[
+  { <span class="k">"service_name"</span>: "orders",   <span class="k">"failure_url"</span>: "http://orders:4010/v1/sagawise/failure_report" },
+  { <span class="k">"service_name"</span>: "payments", <span class="k">"failure_url"</span>: "http://payments:4011/v1/sagawise/failure_report" },
+  { <span class="k">"service_name"</span>: "shipping", <span class="k">"failure_url"</span>: "http://shipping:4012/v1/sagawise/failure_report" }
+]</code></pre>
+
+  <p>The workflow files are read once when Sagawise starts and copied into Redis. <code>services.json</code> is read from disk each time a task fails. Both are built into the program's container image, so changing either file means rebuilding the image, not just restarting it.</p>
+  <span class="src"><code>backend/templating/templating.go:35-67</code> reads the workflow files<code>backend/instance_engine/instance_engine.go:90-106</code> reads services.json<code>backend/Dockerfile:33-34</code> copies both into the image</span>
+</section>
+
+<!-- ============================================ 4 ============================================ -->
+<section id="happy-path">
+  <h2><span class="num">04</span> One successful run</h2>
+
+  <p>Now follow a single order all the way through. Three services take part. Every arrow to Sagawise is one HTTP report.</p>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 470" role="img" aria-label="Swimlane sequence: orders starts an instance, reports publish which sets task zero to PUBLISHED and adds a deadline, sends the Kafka message; payments reports consume which sets task zero COMPLETED and removes the deadline, then reports publish for task one; shipping reports consume, task one completes, and the workflow flips to COMPLETED and is archived to Postgres.">
+        <defs>
+          <marker id="d3-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--signal)"/>
+          </marker>
+          <marker id="d3-arr-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--inert)"/>
+          </marker>
+        </defs>
+
+        <g>
+          <rect x="20" y="16" width="130" height="34" rx="4" fill="var(--surface-sunk)" stroke="var(--rule)"/>
+          <text class="svg-label" x="85" y="38" text-anchor="middle" fill="var(--ink)">orders</text>
+          <line x1="85" y1="50" x2="85" y2="452" stroke="var(--rule)" stroke-width="1.5"/>
+        </g>
+        <g>
+          <rect x="240" y="16" width="130" height="34" rx="4" fill="var(--surface-sunk)" stroke="var(--rule)"/>
+          <text class="svg-label" x="305" y="38" text-anchor="middle" fill="var(--ink)">payments</text>
+          <line x1="305" y1="50" x2="305" y2="452" stroke="var(--rule)" stroke-width="1.5"/>
+        </g>
+        <g>
+          <rect x="460" y="16" width="130" height="34" rx="4" fill="var(--surface-sunk)" stroke="var(--rule)"/>
+          <text class="svg-label" x="525" y="38" text-anchor="middle" fill="var(--ink)">shipping</text>
+          <line x1="525" y1="50" x2="525" y2="452" stroke="var(--rule)" stroke-width="1.5"/>
+        </g>
+        <g>
+          <rect x="680" y="16" width="200" height="34" rx="4" fill="var(--signal-wash)" stroke="var(--signal)"/>
+          <text class="svg-label" x="780" y="38" text-anchor="middle" fill="var(--signal)">Sagawise</text>
+          <line x1="780" y1="50" x2="780" y2="452" stroke="var(--signal)" stroke-width="1.5" stroke-opacity=".5"/>
+        </g>
+
+        <line x1="85" y1="76" x2="775" y2="76" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d3-arr)"/>
+        <text class="svg-mono" x="95" y="70" fill="var(--signal)">start a new run of order_flow</text>
+        <text class="svg-tiny" x="775" y="94" text-anchor="end" fill="var(--ink-faint)">copy the workflow · every task starts PENDING</text>
+
+        <line x1="85" y1="126" x2="775" y2="126" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d3-arr)"/>
+        <text class="svg-mono" x="95" y="120" fill="var(--signal)">"I sent order_created"</text>
+        <text class="svg-tiny" x="775" y="144" text-anchor="end" fill="var(--warn)">task 0 → PUBLISHED · start a 20 s clock</text>
+
+        <line x1="88" y1="176" x2="300" y2="176" stroke="var(--inert)" stroke-width="2" marker-end="url(#d3-arr-n)"/>
+        <text class="svg-mono" x="194" y="169" text-anchor="middle" fill="var(--inert)">kafka: order_created</text>
+
+        <line x1="305" y1="216" x2="775" y2="216" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d3-arr)"/>
+        <text class="svg-mono" x="315" y="210" fill="var(--signal)">"I got order_created"</text>
+        <text class="svg-tiny" x="775" y="234" text-anchor="end" fill="var(--signal)">task 0 → COMPLETED · stop the clock</text>
+
+        <line x1="305" y1="266" x2="775" y2="266" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d3-arr)"/>
+        <text class="svg-mono" x="315" y="260" fill="var(--signal)">"I sent payment_done"</text>
+        <text class="svg-tiny" x="775" y="284" text-anchor="end" fill="var(--warn)">task 1 → PUBLISHED · start a 20 s clock</text>
+
+        <line x1="308" y1="316" x2="520" y2="316" stroke="var(--inert)" stroke-width="2" marker-end="url(#d3-arr-n)"/>
+        <text class="svg-mono" x="414" y="309" text-anchor="middle" fill="var(--inert)">kafka: payment_done</text>
+
+        <line x1="525" y1="356" x2="775" y2="356" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d3-arr)"/>
+        <text class="svg-mono" x="535" y="350" fill="var(--signal)">"I got payment_done"</text>
+        <text class="svg-tiny" x="775" y="374" text-anchor="end" fill="var(--signal)">task 1 → COMPLETED · stop the clock</text>
+
+        <rect x="596" y="392" width="284" height="52" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.5"/>
+        <text class="svg-mono" x="612" y="412" fill="var(--signal)">every task COMPLETED</text>
+        <text class="svg-tiny" x="612" y="430" fill="var(--ink-soft)">run → COMPLETED · copy to long-term storage</text>
+      </svg>
+    </div>
+    <figcaption><b>Every change is caused by a report.</b> Sagawise writes nothing on its own in a successful run. The moment the last "I got it" arrives, the run is marked complete.
+      <span class="src"><code>examples/order_flow/orders/app.js:14-37</code><code>examples/order_flow/payments/app.js:18-53</code><code>backend/instance_engine/instance_engine.go:157-191</code> receives every report</span></figcaption>
+  </figure>
+
+  <p>In words:</p>
+
+  <ol class="steps">
+    <li><strong>orders asks Sagawise to start a run.</strong> Sagawise copies the <code>order_flow</code> workflow into a fresh record and returns an ID for it. This record is called an <strong>instance</strong>. Every task in it starts as <code>PENDING</code>.
+      <span class="src"><code>examples/order_flow/orders/app.js:18</code><code>backend/instance_engine/instance_engine.go:111-154</code></span></li>
+    <li><strong>orders reports "I sent order_created".</strong> Sagawise marks task 0 as <code>PUBLISHED</code> and starts a twenty-second clock for it. Only now does orders actually put the message into Kafka. Reporting first means the clock is already running before the message is in flight.
+      <span class="src"><code>examples/order_flow/orders/app.js:27-33</code><code>backend/instance_engine/instance_engine.go:195-250</code></span></li>
+    <li><strong>Kafka delivers the message to payments.</strong> Sagawise does not see this.
+      <span class="src"><code>examples/order_flow/payments/app.js:65-80</code></span></li>
+    <li><strong>payments reports "I got order_created".</strong> Sagawise marks task 0 as <code>COMPLETED</code> and stops its clock. Then it checks whether every task is complete. Not yet.
+      <span class="src"><code>examples/order_flow/payments/app.js:35-39</code><code>backend/instance_engine/instance_engine.go:255-293</code><code>backend/instance_engine/instance_engine.go:344-413</code> checks for completion</span></li>
+    <li><strong>payments reports "I sent payment_done".</strong> Task 1 becomes <code>PUBLISHED</code>. A new clock starts.
+      <span class="src"><code>examples/order_flow/payments/app.js:45-51</code></span></li>
+    <li><strong>Kafka delivers the message to shipping.</strong></li>
+    <li><strong>shipping reports "I got payment_done".</strong> Task 1 becomes <code>COMPLETED</code>. Sagawise checks again. Every task is now complete, so the whole run is marked <code>COMPLETED</code> and a copy is written to long-term storage.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:386-397</code> marks the run complete<code>backend/instance_engine/instance_engine.go:418-426</code> writes the copy to Postgres</span></li>
+  </ol>
+
+  <p>One detail makes all of this possible. Sagawise has no way to know which message belongs to which run. So the sending service puts the instance ID <em>inside</em> the Kafka message. The receiving service reads it back out and uses it in its own report. That is the entire link between a message and a run.</p>
+  <span class="src"><code>examples/order_flow/orders/app.js:23</code> puts the ID in<code>examples/order_flow/payments/app.js:19</code> reads it back out</span>
+</section>
+
+<!-- ============================================ 5 ============================================ -->
+<section id="storage">
+  <h2><span class="num">05</span> What Sagawise remembers</h2>
+
+  <p>Sagawise keeps its working memory in <strong>Redis</strong>, a fast in-memory data store. It uses a Redis feature that stores whole JSON documents, so each instance is one document.</p>
+
+  <p>When Sagawise starts, it reads every workflow file and stores each one in Redis as a template under the key <code>workflow_template:&lt;name&gt;</code>. When a service starts a run, Sagawise copies the template into a new document under <code>workflow_instance:&lt;id&gt;</code>, where the ID is twenty random characters.</p>
+  <span class="src"><code>backend/templating/templating.go:46-65</code> stores the templates<code>backend/instance_engine/instance_engine.go:128-143</code> builds one instance from a template<code>backend/instance_engine/instance_engine.go:81-87</code> makes the ID</span>
+
+  <p>The shape of that document is unusual, and it explains some of the code. The tasks are stored under the keys <code>"0"</code>, <code>"1"</code>, and so on. The run's own details — its name, its state, when it started — sit right beside them under keys like <code>"name"</code> and <code>"state"</code>. There is no separate list of tasks. Everything is one flat object.</p>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 340" role="img" aria-label="A workflow_instance document holds metadata keys named name, version, state, startedAt alongside task objects stored under stringified integer keys zero and one. Code distinguishes tasks from metadata by testing whether strconv.Atoi succeeds on the key.">
+        <defs>
+          <marker id="d2-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--signal)"/>
+          </marker>
+        </defs>
+
+        <rect x="24" y="20" width="470" height="298" rx="5" fill="var(--surface-sunk)" stroke="var(--rule)"/>
+        <text class="svg-mono" x="42" y="46" fill="var(--signal)">workflow_instance:Kp2xQ...tR9</text>
+
+        <rect x="42" y="60" width="434" height="94" rx="4" fill="var(--surface)" stroke="var(--inert)" stroke-dasharray="3 3"/>
+        <text class="svg-tiny" x="56" y="79" fill="var(--inert)">DETAILS ABOUT THE RUN</text>
+        <text class="svg-mono" x="56" y="99" fill="var(--ink-soft)">"name": "order_flow"</text>
+        <text class="svg-mono" x="56" y="117" fill="var(--ink-soft)">"state": "PENDING"</text>
+        <text class="svg-mono" x="56" y="135" fill="var(--ink-soft)">"startedAt": 1761… &nbsp; "version": "1.0"</text>
+
+        <rect x="42" y="166" width="434" height="66" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="1.5"/>
+        <text class="svg-mono" x="56" y="187" fill="var(--signal)">"0": {</text>
+        <text class="svg-mono" x="120" y="187" fill="var(--ink-soft)">topic: order_created, from: orders,</text>
+        <text class="svg-mono" x="120" y="205" fill="var(--ink-soft)">to: payments, timeout: 20000,</text>
+        <text class="svg-mono" x="120" y="223" fill="var(--ink-soft)">state: PENDING, index: "0" }</text>
+
+        <rect x="42" y="242" width="434" height="60" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="1.5"/>
+        <text class="svg-mono" x="56" y="263" fill="var(--signal)">"1": {</text>
+        <text class="svg-mono" x="120" y="263" fill="var(--ink-soft)">topic: payment_done, from: payments,</text>
+        <text class="svg-mono" x="120" y="281" fill="var(--ink-soft)">to: shipping, timeout: 20000, … }</text>
+
+        <path d="M 500 120 L 560 120" fill="none" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d2-arr)"/>
+        <path d="M 500 200 L 560 200" fill="none" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d2-arr)"/>
+
+        <rect x="566" y="88" width="308" height="150" rx="5" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.5"/>
+        <text class="svg-head" x="586" y="114" fill="var(--signal)">How the code tells them apart</text>
+        <text class="svg-mono" x="586" y="140" fill="var(--ink)">is the key a whole number?</text>
+        <text class="svg-mono" x="586" y="164" fill="var(--ink-soft)">no   →  a detail about the run</text>
+        <text class="svg-mono" x="586" y="186" fill="var(--ink-soft)">yes  →  a task</text>
+        <text class="svg-tiny" x="586" y="212" fill="var(--ink-faint)">the code does exactly this test</text>
+        <text class="svg-tiny" x="586" y="226" fill="var(--ink-faint)">whenever it walks the document</text>
+      </svg>
+    </div>
+    <figcaption><b>Tasks and run details share one flat document.</b> The only thing that tells them apart is whether the key is a number. Any new field added to the run must therefore not have a numeric name.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:354-367</code> walks the document and does the number test at line 356</span></figcaption>
+  </figure>
+
+  <p>To find the right task for a report, Sagawise does not loop through the document. It asks Redis to search inside the JSON using a small query. The query depends on the kind of report, and the difference matters:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Report</th><th>Finds tasks where</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">"I sent it"</td>
+          <td><code>topic</code> matches</td>
+          <td>One message can be meant for several services at once. Every task on that topic is affected.</td>
+        </tr>
+        <tr>
+          <td class="mono">"I got it"</td>
+          <td><code>topic</code> matches <strong>and</strong> <code>to</code> is the reporting service</td>
+          <td>Only the task for this exact receiver is complete. Others on the same topic are still waiting.</td>
+        </tr>
+        <tr>
+          <td class="mono">"It failed"</td>
+          <td><code>topic</code> matches <strong>and</strong> <code>to</code> is the reporting service</td>
+          <td>Same lookup as a receive. Only this one receiver has failed.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <span class="src"><code>backend/instance_engine/instance_engine.go:197</code> the "I sent it" query<code>backend/instance_engine/instance_engine.go:257</code> the "I got it" query — the same lookup now serves both "I got it" and "it failed"</span>
+
+  <p>Section <a href="#callback">07</a> shows what this asymmetry makes possible.</p>
+</section>
+
+<!-- ============================================ 6 ============================================ -->
+<section id="timeouts">
+  <h2><span class="num">06</span> Detecting a lost message</h2>
+
+  <p>This is the heart of Sagawise. Everything so far has been bookkeeping. This section is the one place where Sagawise makes a decision on its own.</p>
+
+  <p>The rule is simple. When a task becomes <code>PUBLISHED</code>, a clock starts. If the matching "I got it" report arrives before the clock runs out, the task completes and the clock stops. If the clock runs out first, Sagawise marks the task <code>FAILED</code>.</p>
+
+  <h3>Why the clock is not kept in memory</h3>
+
+  <p>The obvious way to build this is to start a timer inside the program for each task. Sagawise used to work that way. It has a serious flaw. If the program restarts for any reason, every timer is lost. Every message in flight at that moment becomes invisible. Sagawise would never notice if one of them was lost.</p>
+
+  <p>So the clock is not kept in memory. It is kept in Redis, as a number. Redis has a data structure called a <strong>sorted set</strong>: a list of entries, each with a numeric score, kept in score order. Sagawise uses one sorted set named <code>task_deadlines</code>. Each entry is one in-flight task, written as <code>&lt;instance id&gt;:&lt;task number&gt;</code>. Its score is the exact moment, in milliseconds, when its clock runs out.</p>
+  <span class="src"><code>backend/instance_engine/reaper.go:17-21</code> names the set and builds the entry</span>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 320" role="img" aria-label="On publish, a deadline of now plus timeout milliseconds is written as a score into the task_deadlines sorted set with member instance-id colon task-index. A consume removes the entry. The reaper polls entries whose score is in the past. Because the deadline lives in Redis it survives a process restart.">
+        <defs>
+          <marker id="d4-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g color="var(--warn)">
+          <rect x="24" y="40" width="180" height="52" rx="4" fill="var(--warn-wash)" stroke="var(--warn)" stroke-width="1.5"/>
+          <text class="svg-label" x="114" y="62" text-anchor="middle" fill="var(--warn)">"I sent it" arrives</text>
+          <text class="svg-tiny" x="114" y="80" text-anchor="middle" fill="var(--ink-soft)">task → PUBLISHED</text>
+          <line x1="206" y1="66" x2="320" y2="118" stroke="currentColor" stroke-width="1.75" marker-end="url(#d4-arr)"/>
+          <text class="svg-mono" x="216" y="86" fill="var(--warn)">add entry</text>
+        </g>
+
+        <g color="var(--signal)">
+          <rect x="24" y="132" width="180" height="52" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.5"/>
+          <text class="svg-label" x="114" y="154" text-anchor="middle" fill="var(--signal)">"I got it" arrives</text>
+          <text class="svg-tiny" x="114" y="172" text-anchor="middle" fill="var(--ink-soft)">task → COMPLETED</text>
+          <line x1="206" y1="158" x2="320" y2="152" stroke="currentColor" stroke-width="1.75" marker-end="url(#d4-arr)"/>
+          <text class="svg-mono" x="222" y="146" fill="var(--signal)">remove entry</text>
+        </g>
+
+        <g color="var(--fail)">
+          <rect x="24" y="224" width="180" height="52" rx="4" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.5"/>
+          <text class="svg-label" x="114" y="246" text-anchor="middle" fill="var(--fail)">task fails</text>
+          <text class="svg-tiny" x="114" y="264" text-anchor="middle" fill="var(--ink-soft)">task → FAILED</text>
+          <line x1="206" y1="250" x2="320" y2="188" stroke="currentColor" stroke-width="1.75" marker-end="url(#d4-arr)"/>
+          <text class="svg-mono" x="222" y="266" fill="var(--fail)">remove entry</text>
+        </g>
+
+        <rect x="330" y="34" width="300" height="250" rx="5" fill="var(--surface-sunk)" stroke="var(--rule)" stroke-width="1.5"/>
+        <text class="svg-mono" x="348" y="58" fill="var(--ink)">sorted set: task_deadlines</text>
+        <text class="svg-tiny" x="348" y="76" fill="var(--ink-faint)">score = when the clock runs out</text>
+
+        <line x1="348" y1="88" x2="612" y2="88" stroke="var(--rule)"/>
+
+        <g>
+          <rect x="348" y="100" width="264" height="34" rx="3" fill="var(--surface)" stroke="var(--rule)"/>
+          <text class="svg-mono" x="360" y="122" fill="var(--ink-soft)">run Kp2x… task 0</text>
+          <text class="svg-mono" x="600" y="122" text-anchor="end" fill="var(--warn)">1761…420</text>
+        </g>
+        <g>
+          <rect x="348" y="142" width="264" height="34" rx="3" fill="var(--surface)" stroke="var(--rule)"/>
+          <text class="svg-mono" x="360" y="164" fill="var(--ink-soft)">run Kp2x… task 1</text>
+          <text class="svg-mono" x="600" y="164" text-anchor="end" fill="var(--warn)">1761…980</text>
+        </g>
+        <g>
+          <rect x="348" y="184" width="264" height="34" rx="3" fill="var(--surface)" stroke="var(--rule)"/>
+          <text class="svg-mono" x="360" y="206" fill="var(--ink-soft)">run Za81… task 0</text>
+          <text class="svg-mono" x="600" y="206" text-anchor="end" fill="var(--warn)">1762…115</text>
+        </g>
+        <text class="svg-tiny" x="480" y="244" text-anchor="middle" fill="var(--ink-faint)">holds only tasks still waiting for a receiver</text>
+        <text class="svg-tiny" x="480" y="262" text-anchor="middle" fill="var(--ink-faint)">kept in time order, so the overdue ones are at the front</text>
+
+        <g color="var(--fail)">
+          <line x1="632" y1="152" x2="712" y2="152" stroke="currentColor" stroke-width="1.75" marker-end="url(#d4-arr)"/>
+          <text class="svg-mono" x="672" y="144" text-anchor="middle" fill="var(--fail)">every 1 s</text>
+          <rect x="718" y="106" width="158" height="92" rx="4" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.5"/>
+          <text class="svg-label" x="797" y="132" text-anchor="middle" fill="var(--fail)">The reaper</text>
+          <text class="svg-mono" x="797" y="154" text-anchor="middle" fill="var(--ink-soft)">"which entries</text>
+          <text class="svg-mono" x="797" y="172" text-anchor="middle" fill="var(--ink-soft)">are overdue?"</text>
+          <text class="svg-tiny" x="797" y="190" text-anchor="middle" fill="var(--ink-faint)">a background loop</text>
+        </g>
+
+        <rect x="660" y="222" width="216" height="62" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text class="svg-mono" x="768" y="244" text-anchor="middle" fill="var(--signal)">program restarts</text>
+        <text class="svg-tiny" x="768" y="262" text-anchor="middle" fill="var(--ink-soft)">the set is untouched — the new</text>
+        <text class="svg-tiny" x="768" y="276" text-anchor="middle" fill="var(--ink-soft)">program picks up every clock</text>
+      </svg>
+    </div>
+    <figcaption><b>The clock is a number in Redis, not a timer in memory.</b> Three events add or remove entries. A separate loop checks for overdue ones. Because nothing lives in program memory, a restart loses nothing.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:236-239</code> adds an entry on "I sent it"<code>backend/instance_engine/instance_engine.go:285</code> removes it on "I got it"<code>backend/instance_engine/instance_engine.go:300</code> removes it on failure<code>backend/main.go:175</code> starts the reaper</span></figcaption>
+  </figure>
+
+  <h3>The reaper</h3>
+
+  <p>A background loop called the <strong>reaper</strong> runs once every second. It asks Redis for every entry whose score is in the past. For each one it finds, it takes two careful steps before doing anything:</p>
+  <span class="src"><code>backend/instance_engine/reaper.go:26-42</code> the once-a-second loop<code>backend/instance_engine/reaper.go:44-74</code> what each tick does</span>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 400" role="img" aria-label="Reaper flowchart: every second, read deadline entries with score at or before now. For each, ZREM it; if the removal returned zero another replica claimed it, so skip. Otherwise re-read the task state from the RedisJSON document; if it is not still PUBLISHED, skip. Otherwise call reportFailure.">
+        <defs>
+          <marker id="d5-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g color="var(--ink-faint)">
+          <rect x="30" y="168" width="128" height="48" rx="24" fill="var(--surface-sunk)" stroke="var(--ink-faint)" stroke-width="1.5"/>
+          <text class="svg-label" x="94" y="190" text-anchor="middle" fill="var(--ink)">tick</text>
+          <text class="svg-tiny" x="94" y="206" text-anchor="middle">every 1 s</text>
+          <line x1="160" y1="192" x2="200" y2="192" stroke="currentColor" stroke-width="1.75" marker-end="url(#d5-arr)"/>
+        </g>
+
+        <g color="var(--ink-faint)">
+          <rect x="204" y="164" width="150" height="56" rx="4" fill="var(--surface)" stroke="var(--ink-faint)" stroke-width="1.5"/>
+          <text class="svg-mono" x="279" y="186" text-anchor="middle" fill="var(--ink)">read overdue</text>
+          <text class="svg-tiny" x="279" y="204" text-anchor="middle">entries</text>
+          <line x1="356" y1="192" x2="396" y2="192" stroke="currentColor" stroke-width="1.75" marker-end="url(#d5-arr)"/>
+        </g>
+
+        <g color="var(--warn)">
+          <rect x="400" y="152" width="152" height="80" rx="4" fill="var(--warn-wash)" stroke="var(--warn)" stroke-width="1.75"/>
+          <text class="svg-tiny" x="476" y="174" text-anchor="middle" fill="var(--warn)">STEP 1 — CLAIM IT</text>
+          <text class="svg-mono" x="476" y="194" text-anchor="middle" fill="var(--ink)">remove the entry</text>
+          <text class="svg-tiny" x="476" y="214" text-anchor="middle" fill="var(--ink-soft)">did I remove it?</text>
+        </g>
+        <line x1="554" y1="192" x2="596" y2="192" stroke="var(--warn)" stroke-width="1.75" marker-end="url(#d5-arr)" color="var(--warn)"/>
+        <text class="svg-mono" x="575" y="184" text-anchor="middle" fill="var(--warn)">yes</text>
+
+        <line x1="476" y1="236" x2="476" y2="300" stroke="var(--inert)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#d5-arr)" color="var(--inert)"/>
+        <text class="svg-mono" x="488" y="268" fill="var(--inert)">no → another copy of Sagawise got it first</text>
+
+        <g color="var(--signal)">
+          <rect x="600" y="152" width="164" height="80" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.75"/>
+          <text class="svg-tiny" x="682" y="174" text-anchor="middle" fill="var(--signal)">STEP 2 — CHECK AGAIN</text>
+          <text class="svg-mono" x="682" y="194" text-anchor="middle" fill="var(--ink)">read the task's state</text>
+          <text class="svg-tiny" x="682" y="214" text-anchor="middle" fill="var(--ink-soft)">still PUBLISHED?</text>
+        </g>
+
+        <line x1="682" y1="236" x2="682" y2="300" stroke="var(--inert)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#d5-arr)" color="var(--inert)"/>
+        <text class="svg-mono" x="694" y="268" fill="var(--inert)">no → "I got it" just arrived</text>
+
+        <rect x="400" y="306" width="364" height="40" rx="4" fill="var(--surface-sunk)" stroke="var(--inert)" stroke-dasharray="4 3"/>
+        <text class="svg-mono" x="582" y="331" text-anchor="middle" fill="var(--inert)">do nothing — leave the task alone</text>
+
+        <path d="M 682 148 L 682 96 L 452 96" fill="none" stroke="var(--fail)" stroke-width="1.75" marker-end="url(#d5-arr)" color="var(--fail)"/>
+        <text class="svg-mono" x="700" y="124" fill="var(--fail)">yes</text>
+
+        <g color="var(--fail)">
+          <rect x="286" y="48" width="164" height="60" rx="4" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.75"/>
+          <text class="svg-label" x="368" y="72" text-anchor="middle" fill="var(--fail)">mark it FAILED</text>
+          <text class="svg-tiny" x="368" y="90" text-anchor="middle" fill="var(--ink-soft)">and tell the sender — §07</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Two checks before any action.</b> Removing the entry first means that if several copies of Sagawise are running, only one of them can win. Re-reading the task's state then guards against a receive report that arrived a moment ago.
+      <span class="src"><code>backend/instance_engine/reaper.go:46</code> reads the overdue entries<code>backend/instance_engine/reaper.go:54-58</code> step 1<code>backend/instance_engine/reaper.go:67-69</code> step 2<code>backend/instance_engine/reaper.go:72</code> marks it failed</span></figcaption>
+  </figure>
+
+  <p>The order of those two checks matters. If the reaper read the state first and removed the entry second, two running copies of Sagawise could both see <code>PUBLISHED</code> and both report the same failure. Removing first makes the removal a kind of lock: Redis tells exactly one caller "yes, you removed it".</p>
+
+  <aside class="callout">
+    <span class="tag">Two different time units</span>
+    <p>The <code>timeout</code> in the workflow file and the scores in the sorted set are in <strong>milliseconds</strong>. The timestamps stored on the instance document — when it started, when each task was published or received — are in <strong>seconds</strong>. Both units live side by side. Mixing them up is an easy mistake.</p>
+    <span class="src"><code>backend/instance_engine/instance_engine.go:237</code> milliseconds<code>backend/instance_engine/instance_engine.go:133</code><code>backend/instance_engine/instance_engine.go:76</code> seconds — every task timestamp is stamped by <code>markTask</code></span>
+  </aside>
+
+  <aside class="callout crit">
+    <span class="tag">A known gap, still open</span>
+    <p>The second check makes the race between "I got it" and the reaper very small, but does not remove it. Sagawise reads a task's state and then writes a new state as two separate steps. If "I got it" arrives between those two steps, the reaper can overwrite <code>COMPLETED</code> with <code>FAILED</code>. The window is well under a millisecond. Closing it fully would mean doing each read-and-write as one atomic operation inside Redis.</p>
+    <span class="src"><code>backend/instance_engine/reaper.go:67-72</code> the read, then the call that writes<code>backend/instance_engine/instance_engine.go:301</code> the write itself</span>
+  </aside>
+</section>
+
+<!-- ============================================ 7 ============================================ -->
+<section id="callback">
+  <h2><span class="num">07</span> Telling the sender</h2>
+
+  <p>A task can fail in two ways. A service can say so directly, by sending an "it failed" report. Or the reaper can decide it failed because the clock ran out. Both paths end in the same place: a function called <code>reportFailure</code> in <code>backend/instance_engine/instance_engine.go:298-338</code>.</p>
+  <span class="src"><code>backend/instance_engine/instance_engine.go:277</code> the "it failed" report calls it<code>backend/instance_engine/reaper.go:72</code> the reaper calls it</span>
+
+  <p>It does six things. It removes the task's clock. It marks the task <code>FAILED</code>. It records the time. It checks whether the run is now finished. It looks up the sender, the receiver, and the message that was sent. Then it makes an HTTP call to tell a service what happened.</p>
+
+  <p>Which service? Not the one that failed. <strong>The one that sent the message.</strong></p>
+
+  <p>This surprises most people the first time, but it is the correct choice and it is the core of the saga idea. If payments never received <code>order_created</code>, then payments did nothing and has nothing to undo. But orders already saved an order and sent a message. Orders is the one holding work that now needs to be reversed. So orders gets the call.</p>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 360" role="img" aria-label="reportFailure removes the deadline, sets the task state to FAILED with a failedAt timestamp, calls checkWorkflowState, resolves the from-service failure URL from services.json, and POSTs the stored payload to the orders service with a query parameter naming the service that failed. The report goes to orders, the publisher, not to payments, the consumer that went silent.">
+        <defs>
+          <marker id="d6-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <rect x="24" y="30" width="392" height="94" rx="5" fill="var(--surface-sunk)" stroke="var(--rule)"/>
+        <text class="svg-tiny" x="42" y="52" fill="var(--ink-faint)">TASK 0 — order_created</text>
+
+        <rect x="42" y="62" width="120" height="44" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="1.5"/>
+        <text class="svg-label" x="102" y="80" text-anchor="middle" fill="var(--ink)">orders</text>
+        <text class="svg-tiny" x="102" y="96" text-anchor="middle" fill="var(--signal)">sender</text>
+
+        <line x1="166" y1="84" x2="272" y2="84" stroke="var(--inert)" stroke-width="2" marker-end="url(#d6-arr)" color="var(--inert)"/>
+        <text class="svg-tiny" x="219" y="76" text-anchor="middle" fill="var(--inert)">sent</text>
+
+        <rect x="278" y="62" width="120" height="44" rx="4" fill="var(--surface)" stroke="var(--fail)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text class="svg-label" x="338" y="80" text-anchor="middle" fill="var(--ink)">payments</text>
+        <text class="svg-tiny" x="338" y="96" text-anchor="middle" fill="var(--fail)">receiver — silent</text>
+
+        <rect x="24" y="146" width="392" height="192" rx="5" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.5"/>
+        <text class="svg-head" x="42" y="170" fill="var(--fail)">reportFailure</text>
+        <text class="svg-mono" x="42" y="196" fill="var(--ink-soft)">1 · remove the task's clock</text>
+        <text class="svg-mono" x="42" y="218" fill="var(--ink-soft)">2 · task → FAILED</text>
+        <text class="svg-mono" x="42" y="240" fill="var(--ink-soft)">3 · record the time</text>
+        <text class="svg-mono" x="42" y="262" fill="var(--ink-soft)">4 · is the run complete?</text>
+        <text class="svg-mono" x="42" y="284" fill="var(--ink-soft)">5 · look up sender, receiver, message</text>
+        <text class="svg-mono" x="42" y="306" fill="var(--fail)">6 · call the sender's failure address</text>
+        <text class="svg-tiny" x="42" y="326" fill="var(--ink-faint)">the message was saved when "I sent it" arrived</text>
+
+        <line x1="420" y1="242" x2="472" y2="242" stroke="var(--fail)" stroke-width="1.75" marker-end="url(#d6-arr)" color="var(--fail)"/>
+
+        <rect x="478" y="196" width="184" height="92" rx="4" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.5"/>
+        <text class="svg-mono" x="494" y="220" fill="var(--ink)">services.json</text>
+        <text class="svg-tiny" x="494" y="238" fill="var(--ink-faint)">read from disk each time</text>
+        <text class="svg-mono" x="494" y="260" fill="var(--ink-soft)">"orders" →</text>
+        <text class="svg-mono" x="494" y="276" fill="var(--signal)">…:4010/failure_report</text>
+
+        <path d="M 570 192 L 570 120 L 700 120" fill="none" stroke="var(--fail)" stroke-width="2" marker-end="url(#d6-arr)" color="var(--fail)"/>
+
+        <rect x="706" y="60" width="170" height="120" rx="4" fill="var(--surface)" stroke="var(--fail)" stroke-width="2"/>
+        <text class="svg-label" x="791" y="86" text-anchor="middle" fill="var(--ink)">orders</text>
+        <text class="svg-tiny" x="791" y="104" text-anchor="middle" fill="var(--fail)">POST /failure_report</text>
+        <line x1="722" y1="116" x2="860" y2="116" stroke="var(--rule)"/>
+        <text class="svg-mono" x="722" y="136" fill="var(--ink-soft)">body: the original</text>
+        <text class="svg-mono" x="722" y="152" fill="var(--ink-soft)">      message</text>
+        <text class="svg-mono" x="722" y="172" fill="var(--warn)">?service=payments</text>
+
+        <text class="svg-tiny" x="791" y="204" text-anchor="middle" fill="var(--ink-faint)">orders undoes its</text>
+        <text class="svg-tiny" x="791" y="220" text-anchor="middle" fill="var(--ink-faint)">own work here</text>
+      </svg>
+    </div>
+    <figcaption><b>The call goes back to the sender.</b> Orders receives the exact message it sent, plus the name of the service that went silent. That is enough to find and reverse the work it did. Payments is told nothing, because it did nothing.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:300-302</code> steps 1–4<code>backend/instance_engine/instance_engine.go:304-314</code> step 5<code>backend/instance_engine/instance_engine.go:316-336</code> step 6<code>examples/order_flow/orders/app.js:41-44</code> the endpoint that receives the call</span></figcaption>
+  </figure>
+
+  <p>Two details make this work. When a service reports "I sent it", it includes a copy of the message body, and Sagawise saves that copy on the task. Later, when the task fails, Sagawise sends that same copy back to the sender. The sender does not need to keep its own record of what it sent.</p>
+  <span class="src"><code>backend/instance_engine/instance_engine.go:203-212</code> reads the body once for all matching tasks<code>backend/instance_engine/instance_engine.go:229</code> saves it on the task<code>backend/instance_engine/instance_engine.go:311-314</code> reads it back on failure</span>
+
+  <p>The address to call comes from <code>services.json</code> at the root of the repository. Sagawise reads that file from disk every time a task fails, looks up the sender's name, and uses the address it finds.</p>
+  <span class="src"><code>backend/instance_engine/instance_engine.go:90-106</code></span>
+
+  <aside class="callout">
+    <span class="tag">An unregistered service is skipped</span>
+    <p>If the sender's name is not in <code>services.json</code>, the lookup returns an empty address. Sagawise notices this, writes <code>No failure_url registered for service …</code> to its log, and skips the call. The task is still marked <code>FAILED</code> either way — only the outbound notification is dropped, so the sender never learns it must compensate. Whenever a new service is added, check that it appears in this file, and watch the log for that message.</p>
+    <span class="src"><code>backend/instance_engine/instance_engine.go:105</code> returns the empty string<code>backend/instance_engine/instance_engine.go:316-319</code> checks it and skips</span>
+  </aside>
+
+  <h3>One message, several receivers</h3>
+
+  <p>Section <a href="#storage">05</a> noted that an "I sent it" report matches tasks by topic alone. This is what lets one message reach more than one service.</p>
+
+  <p>The project's second workflow, <code>backend/sagawise/user_creation.json</code>, has two tasks on the same topic, <code>user_created_saga</code>, going to two different services. One "I sent it" report starts both tasks. Each gets its own clock. Each waits for its own "I got it". One can complete while the other times out.</p>
+  <span class="src"><code>backend/sagawise/user_creation.json:12-23</code> the two tasks that share a topic</span>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 260" role="img" aria-label="One publish report for topic user_created_saga from notification matches two tasks by topic alone: task one to final and task two to intermediate. Both move to PUBLISHED and each gets its own deadline entry, so one can complete while the other times out independently.">
+        <defs>
+          <marker id="d7-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <g color="var(--signal)">
+          <rect x="24" y="94" width="196" height="72" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.75"/>
+          <text class="svg-tiny" x="122" y="116" text-anchor="middle" fill="var(--signal)">ONE "I SENT IT" REPORT</text>
+          <text class="svg-mono" x="122" y="138" text-anchor="middle" fill="var(--ink)">user_created_saga</text>
+          <text class="svg-tiny" x="122" y="156" text-anchor="middle" fill="var(--ink-soft)">from notification</text>
+        </g>
+
+        <line x1="224" y1="130" x2="272" y2="130" stroke="var(--signal)" stroke-width="1.75" marker-end="url(#d7-arr)" color="var(--signal)"/>
+        <rect x="278" y="100" width="200" height="60" rx="4" fill="var(--surface-sunk)" stroke="var(--rule)" stroke-width="1.5"/>
+        <text class="svg-mono" x="378" y="124" text-anchor="middle" fill="var(--ink)">find tasks on this topic</text>
+        <text class="svg-tiny" x="378" y="144" text-anchor="middle" fill="var(--ink-faint)">the receiver is not checked</text>
+
+        <path d="M 482 122 L 530 122 L 530 62 L 592 62" fill="none" stroke="var(--warn)" stroke-width="1.75" marker-end="url(#d7-arr)" color="var(--warn)"/>
+        <path d="M 482 138 L 530 138 L 530 198 L 592 198" fill="none" stroke="var(--warn)" stroke-width="1.75" marker-end="url(#d7-arr)" color="var(--warn)"/>
+
+        <rect x="598" y="32" width="278" height="60" rx="4" fill="var(--surface)" stroke="var(--warn)" stroke-width="1.5"/>
+        <text class="svg-mono" x="614" y="54" fill="var(--ink)">task 1 → final</text>
+        <text class="svg-tiny" x="614" y="74" fill="var(--warn)">PUBLISHED · its own 19.5 s clock</text>
+
+        <rect x="598" y="168" width="278" height="60" rx="4" fill="var(--surface)" stroke="var(--warn)" stroke-width="1.5"/>
+        <text class="svg-mono" x="614" y="190" fill="var(--ink)">task 2 → intermediate</text>
+        <text class="svg-tiny" x="614" y="210" fill="var(--warn)">PUBLISHED · its own 19.5 s clock</text>
+
+        <text class="svg-tiny" x="737" y="128" text-anchor="middle" fill="var(--ink-faint)">separate lives — either one can</text>
+        <text class="svg-tiny" x="737" y="144" text-anchor="middle" fill="var(--ink-faint)">finish while the other times out</text>
+      </svg>
+    </div>
+    <figcaption><b>Matching by topic alone is what allows fan-out.</b> Both tasks start from one report. Their "I got it" reports then name the receiver, so each one finishes on its own.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:197</code> the topic-only query<code>backend/instance_engine/instance_engine.go:214-247</code> the loop that starts every matching task</span></figcaption>
+  </figure>
+</section>
+
+<!-- ============================================ 8 ============================================ -->
+<section id="states">
+  <h2><span class="num">08</span> The states a task can be in</h2>
+
+  <p>Every task moves through a small set of states, and so does every run. They are close to mirror images: a run reaches <code>COMPLETED</code> only when all of its tasks do, but it reaches <code>FAILED</code> the moment any one of them does.</p>
+
+  <figure class="bleed">
+    <div class="fig-body">
+      <svg viewBox="0 0 900 306" role="img" aria-label="Task state machine: PENDING to PUBLISHED on a publish report, then PUBLISHED to COMPLETED on a consume report, or PUBLISHED to FAILED on an explicit fail report or a reaper timeout. Workflow state machine: PENDING to COMPLETED when every task is COMPLETED, or PENDING to FAILED as soon as any single task is FAILED. Both are terminal, and either one archives the run to Postgres exactly once.">
+        <defs>
+          <marker id="d8-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+
+        <text class="svg-head" x="24" y="30" fill="var(--ink-faint)">ONE TASK</text>
+
+        <rect x="24" y="46" width="120" height="44" rx="4" fill="var(--surface-sunk)" stroke="var(--inert)" stroke-width="1.5"/>
+        <text class="svg-mono" x="84" y="73" text-anchor="middle" fill="var(--ink)">PENDING</text>
+
+        <line x1="148" y1="68" x2="228" y2="68" stroke="var(--warn)" stroke-width="1.75" marker-end="url(#d8-arr)" color="var(--warn)"/>
+        <text class="svg-mono" x="188" y="60" text-anchor="middle" fill="var(--warn)">"I sent it"</text>
+
+        <rect x="232" y="46" width="130" height="44" rx="4" fill="var(--warn-wash)" stroke="var(--warn)" stroke-width="1.75"/>
+        <text class="svg-mono" x="297" y="73" text-anchor="middle" fill="var(--ink)">PUBLISHED</text>
+        <text class="svg-tiny" x="297" y="106" text-anchor="middle" fill="var(--warn)">clock is running</text>
+
+        <path d="M 366 60 L 430 40 L 494 40" fill="none" stroke="var(--signal)" stroke-width="1.75" marker-end="url(#d8-arr)" color="var(--signal)"/>
+        <text class="svg-mono" x="430" y="30" text-anchor="middle" fill="var(--signal)">"I got it"</text>
+
+        <rect x="500" y="18" width="136" height="44" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.75"/>
+        <text class="svg-mono" x="568" y="45" text-anchor="middle" fill="var(--ink)">COMPLETED</text>
+
+        <path d="M 366 78 L 430 108 L 494 108" fill="none" stroke="var(--fail)" stroke-width="1.75" marker-end="url(#d8-arr)" color="var(--fail)"/>
+        <text class="svg-mono" x="430" y="128" text-anchor="middle" fill="var(--fail)">"it failed"  ·  clock ran out</text>
+
+        <rect x="500" y="86" width="136" height="44" rx="4" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.75"/>
+        <text class="svg-mono" x="568" y="113" text-anchor="middle" fill="var(--ink)">FAILED</text>
+
+        <text class="svg-tiny" x="660" y="45" fill="var(--ink-faint)">final</text>
+        <text class="svg-tiny" x="660" y="113" fill="var(--ink-faint)">final · the sender is called</text>
+
+        <line x1="24" y1="162" x2="876" y2="162" stroke="var(--rule)"/>
+
+        <text class="svg-head" x="24" y="192" fill="var(--ink-faint)">THE WHOLE RUN</text>
+
+        <rect x="24" y="200" width="120" height="44" rx="4" fill="var(--surface-sunk)" stroke="var(--inert)" stroke-width="1.5"/>
+        <text class="svg-mono" x="84" y="227" text-anchor="middle" fill="var(--ink)">PENDING</text>
+
+        <path d="M 148 214 L 205 194 L 268 194" fill="none" stroke="var(--signal)" stroke-width="1.75" marker-end="url(#d8-arr)" color="var(--signal)"/>
+        <text class="svg-mono" x="274" y="178" fill="var(--signal)">every task COMPLETED</text>
+
+        <rect x="274" y="186" width="136" height="44" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.75"/>
+        <text class="svg-mono" x="342" y="213" text-anchor="middle" fill="var(--ink)">COMPLETED</text>
+
+        <path d="M 148 230 L 205 250 L 268 250" fill="none" stroke="var(--fail)" stroke-width="1.75" marker-end="url(#d8-arr)" color="var(--fail)"/>
+        <text class="svg-mono" x="152" y="292" fill="var(--fail)">any task FAILED</text>
+
+        <rect x="274" y="242" width="136" height="44" rx="4" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.75"/>
+        <text class="svg-mono" x="342" y="269" text-anchor="middle" fill="var(--ink)">FAILED</text>
+
+        <path d="M 414 208 L 460 208 L 460 236 L 506 236" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#d8-arr)" color="var(--ink-faint)"/>
+        <path d="M 414 264 L 460 264 L 460 236 L 506 236" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" color="var(--ink-faint)"/>
+
+        <rect x="512" y="214" width="180" height="44" rx="4" fill="var(--surface)" stroke="var(--rule)" stroke-width="1.5"/>
+        <text class="svg-mono" x="602" y="235" text-anchor="middle" fill="var(--ink-soft)">copied to Postgres</text>
+        <text class="svg-tiny" x="602" y="251" text-anchor="middle" fill="var(--ink-faint)">and kept in Redis too</text>
+
+        <text class="svg-tiny" x="700" y="220" fill="var(--ink-faint)">both are final — archived</text>
+        <text class="svg-tiny" x="700" y="236" fill="var(--ink-faint)">once, by whichever writer</text>
+        <text class="svg-tiny" x="700" y="252" fill="var(--ink-faint)">gets there first</text>
+      </svg>
+    </div>
+    <figcaption><b>A run ends in one of two ways.</b> Every task COMPLETED makes the run COMPLETED. A single FAILED task makes the whole run FAILED at once — the saga is compensating and can never finish. Both states are final and both are archived.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:354-378</code> counts the tasks and picks the terminal state<code>backend/instance_engine/instance_engine.go:381-397</code> the only place a run changes state</span></figcaption>
+  </figure>
+
+  <p>The table below shows what each report does, depending on the task's current state. A <span class="pill inertp">403</span> means Sagawise refuses the report and tells the caller why.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Report</th><th>Task is PENDING</th><th>Task is PUBLISHED</th><th>Task is COMPLETED or FAILED</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">"I sent it"</td>
+          <td><span class="pill warnp">→ PUBLISHED</span><span class="sub">the clock starts</span></td>
+          <td><span class="pill inertp">403</span><span class="sub">already sent</span></td>
+          <td><span class="pill inertp">403</span></td>
+        </tr>
+        <tr>
+          <td class="mono">"I got it"</td>
+          <td><span class="pill inertp">403</span><span class="sub">nothing was sent yet</span></td>
+          <td><span class="pill ok">→ COMPLETED</span><span class="sub">the clock stops</span></td>
+          <td><span class="pill inertp">403</span></td>
+        </tr>
+        <tr>
+          <td class="mono">"it failed"</td>
+          <td><span class="pill inertp">403</span></td>
+          <td><span class="pill failp">→ FAILED</span><span class="sub">the sender is called</span></td>
+          <td><span class="pill inertp">403</span></td>
+        </tr>
+        <tr>
+          <td class="mono">clock ran out</td>
+          <td><span class="pill inertp">cannot happen</span><span class="sub">no clock exists yet</span></td>
+          <td><span class="pill failp">→ FAILED</span><span class="sub">the sender is called</span></td>
+          <td><span class="pill inertp">ignored</span><span class="sub">reaper's second check</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <span class="src"><code>backend/instance_engine/instance_engine.go:255-293</code> the "I got it" and "it failed" rules, which now share one function<code>backend/instance_engine/instance_engine.go:214-247</code> the "I sent it" rules<code>backend/instance_engine/reaper.go:67-69</code> the clock-ran-out rule</span>
+
+  <p>Every report accepts a flag called <code>is_retry</code>. When it is set to <code>true</code>, every <span class="pill inertp">403</span> in the table above is skipped and the change is forced through. It exists for cases where a message is delivered a second time. It removes all of the guards at once, so it should be used with care.</p>
+  <span class="src"><code>backend/instance_engine/instance_engine.go:165</code> where the flag is read<code>backend/instance_engine/instance_engine.go:222</code> overrides the "I sent it" guard<code>backend/instance_engine/instance_engine.go:270</code> overrides the "I got it" and "it failed" guard<code>backend/instance_engine/instance_engine.go:286</code> overrides the lost-deadline-race guard</span>
+</section>
+
+<!-- ============================================ 9 ============================================ -->
+<section id="code">
+  <h2><span class="num">09</span> Where the code lives</h2>
+
+  <p>Sagawise is written in Go. The source lives under <code>backend/</code>. Note that the Go module is still named <code>wtfsaga</code>, the project's former name, so imports read <code>wtfsaga/instance_engine</code> rather than <code>sagawise/...</code>.</p>
+
+  <p>The whole engine is about 950 lines across four files. Most of the thinking happens in two of them.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>File</th><th>Lines</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">instance_engine/instance_engine.go</td>
+          <td class="mono">538</td>
+          <td>Handles every report. Moves tasks and runs between states. Calls the sender on failure. Copies finished runs to Postgres. Also contains the read-only listing endpoints, which make up about a fifth of the file. The first eighty lines are small shared helpers that the rest of the file is written in terms of.</td>
+        </tr>
+        <tr>
+          <td class="mono">instance_engine/reaper.go</td>
+          <td class="mono">74</td>
+          <td>The sorted set of clocks and the loop that checks it. Short, but it is the only place Sagawise decides anything on its own.</td>
+        </tr>
+        <tr>
+          <td class="mono">templating/templating.go</td>
+          <td class="mono">121</td>
+          <td>Runs once at startup. Reads the workflow files into Redis, creates the search indexes, creates the Postgres table.</td>
+        </tr>
+        <tr>
+          <td class="mono">main.go</td>
+          <td class="mono">216</td>
+          <td>Wires the web endpoints, starts the reaper, handles shutdown. No logic of its own.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>The web endpoints a service calls are:</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Used for</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">POST /start_instance</td>
+          <td>Start a new run. Returns the instance ID.
+            <span class="sub">instance_engine.go:111-154 · routed at main.go:152</span></td>
+        </tr>
+        <tr>
+          <td class="mono">POST /update_instance</td>
+          <td>Every report. A query parameter <code>action_type</code> says which kind: <code>publish</code> ("I sent it"), <code>consume</code> ("I got it"), or <code>fail</code> ("it failed").
+            <span class="sub">instance_engine.go:157-191 · routed at main.go:153</span></td>
+        </tr>
+        <tr>
+          <td class="mono">GET /workflow_instances/get</td>
+          <td>Read one run's full document. The <code>doc_key</code> must include the <code>workflow_instance:</code> prefix, even though <code>/start_instance</code> returns the bare ID.
+            <span class="sub">instance_engine.go:520-538 · routed at main.go:156</span></td>
+        </tr>
+        <tr>
+          <td class="mono">GET /workflow_instances/list</td>
+          <td>Search for runs by name, state, topic, service, or recent time.
+            <span class="sub">instance_engine.go:460-517 · routed at main.go:155</span></td>
+        </tr>
+        <tr>
+          <td class="mono">GET /workflows/list</td>
+          <td>List the workflows Sagawise knows about.
+            <span class="sub">instance_engine.go:431-456 · routed at main.go:154</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Small client libraries wrap these calls: <code>sdk/nodejs/sagawise.js</code> and <code>sdk/python/sagawise/sagawise.py</code>. Both read the Sagawise address from the <code>SAGAWISE_URL</code> environment variable. They are hand-mirrored copies of the same four calls, so <strong>a change to one must be made to the other</strong>. Neither throws on error; both return the error object instead.</p>
+  <span class="src"><code>sdk/nodejs/sagawise.js:18-48</code> start a run<code>sdk/nodejs/sagawise.js:50-80</code> "I sent it"<code>sdk/nodejs/sagawise.js:82-111</code> "I got it"<code>sdk/nodejs/sagawise.js:113-136</code> "it failed"</span>
+
+  <p>The two example stacks are <code>examples/order_flow/</code>, the three-service saga used throughout this document, and <code>examples/api_examples/</code>, a larger four-service flow with a database and login. The order_flow services do not import the SDK; each keeps its own copy at <code>examples/order_flow/&lt;service&gt;/sagawiseClient.js</code>.</p>
+
+  <h3>Running it</h3>
+
+  <p>Everything runs through Docker; there is no way to run the binary directly, because it expects the workflow files at <code>/sagawise/</code> and <code>services.json</code> at the container root. The commands are in <code>Makefile</code> at the repository root.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Command</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">make start</td><td>Creates the shared Docker network, then builds and starts Sagawise, Redis, Postgres, and the two admin UIs. <span class="sub">Makefile:3-5</span></td></tr>
+        <tr><td class="mono">make restart</td><td>Stop, then start. This is what picks up an edited workflow file. <span class="sub">Makefile:13-14</span></td></tr>
+        <tr><td class="mono">make clean</td><td>Tears down everything including volumes and images. Needed after changing an index or the database list. <span class="sub">Makefile:16-20</span></td></tr>
+        <tr><td class="mono">make order_flow</td><td>Starts the main stack plus the three-service order example. <span class="sub">Makefile:25-27</span></td></tr>
+        <tr><td class="mono">make api_examples</td><td>Cleans, then starts the main stack plus the four-service example. <span class="sub">Makefile:22-23</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Ports: Sagawise <code>5000</code>, Postgres <code>5432</code>, Redis <code>6379</code>, Adminer <code>8090</code>, RedisInsight <code>5540</code>. The order example uses orders <code>4010</code>, payments <code>4011</code>, shipping <code>4012</code>. Settings come from the root <code>.env</code>, which feeds both <code>docker-compose.yml</code> and the container.</p>
+
+  <h3>Six things worth knowing before changing anything</h3>
+
+  <ul class="notes">
+    <li><strong>Workflow files and <code>services.json</code> are baked into the container image.</strong> Editing either one does nothing until the image is rebuilt with <code>make restart</code>.
+      <span class="src"><code>backend/Dockerfile:33-34</code><code>Makefile:13-14</code></span></li>
+    <li><strong>The Redis search indexes are created once and never updated.</strong> The create command fails quietly if the index already exists, because its error is discarded. If you change an index's shape, you must delete the Redis data before it takes effect.
+      <span class="src"><code>backend/templating/templating.go:70-106</code> the three index definitions</span></li>
+    <li><strong>Finished runs are copied to Postgres but deliberately left in Redis.</strong> Redis stays the live store that every read endpoint queries; Postgres is only the long-term archive. Nothing prunes Redis, so it grows without bound.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:418-426</code> the archive write, and the comment explaining why nothing is deleted</span></li>
+    <li><strong>Almost every read of the instance document goes through two helpers.</strong> RedisJSON path queries always return an array, so <code>jsonFirstMatch</code> and <code>jsonMatches</code> wrap the read-unmarshal-check-length dance that would otherwise be repeated at every call site. New code that reads the document should use them rather than calling <code>JSONGet</code> directly.
+      <span class="src"><code>backend/instance_engine/instance_engine.go:52-70</code> the two helpers</span></li>
+    <li><strong>A missing query parameter is reported for every parameter at once.</strong> <code>requireParams</code> builds one 400 response naming all of them, which is why the error bodies read like <code>action_type required. event_name required.</code>
+      <span class="src"><code>backend/instance_engine/instance_engine.go:36-48</code></span></li>
+    <li><strong>Database setup runs only on a first, empty volume.</strong> <code>postgres-dev/setup-databases.sh</code> creates one database per entry in <code>POSTGRES_DATABASE_LIST</code> in the root <code>.env</code>, but it does not run again if <code>db_data/</code> already exists.
+      <span class="src"><code>postgres-dev/setup-databases.sh</code><code>.env:13</code> the database list<code>Makefile:16-20</code> — <code>make clean</code> removes the volume</span></li>
+  </ul>
+</section>
+
+<!-- ============================================ glossary ============================================ -->
+<section id="glossary">
+  <h2><span class="num">—</span> Glossary</h2>
+
+  <p>Short definitions of every term used in this document, in the order a new reader is likely to need them.</p>
+
+  <dl class="glossary">
+    <dt>service</dt>
+    <dd>A small, separately running program that does one job and keeps its own data. Orders, payments, and shipping are each a service.</dd>
+
+    <dt>saga</dt>
+    <dd>A business action made of several steps, each in a different service, where every step has a matching undo. If a later step fails, the earlier steps are undone.</dd>
+
+    <dt>compensating action</dt>
+    <dd>The undo for one step of a saga. A refund is the compensating action for a charge.</dd>
+
+    <dt>Kafka</dt>
+    <dd>A message system that services use to send data to one another. Messages wait in Kafka until a service reads them.</dd>
+
+    <dt>topic</dt>
+    <dd>A named channel inside Kafka. A message is sent to a topic, and any service subscribed to that topic can read it.</dd>
+
+    <dt>publish / consume</dt>
+    <dd>To send a message to a topic, and to read a message from one. In this document, "I sent it" and "I got it".</dd>
+
+    <dt>report</dt>
+    <dd>An HTTP call from a service to Sagawise stating what the service just did. There are three kinds: publish, consume, and fail.</dd>
+
+    <dt>workflow</dt>
+    <dd>Sagawise's name for a saga. A JSON file that lists the tasks a saga is made of. Lives in <code>backend/sagawise/</code>.</dd>
+
+    <dt>task</dt>
+    <dd>One message that must travel from one service to another. Each task has a topic, a sender, a receiver, and a timeout.</dd>
+
+    <dt>timeout</dt>
+    <dd>How long Sagawise waits, in milliseconds, for "I got it" after "I sent it" before treating the task as failed.</dd>
+
+    <dt>instance / run</dt>
+    <dd>One live copy of a workflow, tracking one real saga as it happens. Stored as a single JSON document in Redis under the key <code>workflow_instance:&lt;id&gt;</code>.</dd>
+
+    <dt>Redis</dt>
+    <dd>A fast in-memory data store. Sagawise keeps all live runs and all clocks here.</dd>
+
+    <dt>sorted set</dt>
+    <dd>A Redis data structure: a set of entries, each with a number called a score, kept in score order. Sagawise uses one to store every running clock.</dd>
+
+    <dt>reaper</dt>
+    <dd>A background loop that runs once a second, finds overdue clocks, and marks their tasks as failed. Defined in <code>backend/instance_engine/reaper.go</code>. It is the only part of Sagawise that changes anything without being told to.</dd>
+
+    <dt>failure URL</dt>
+    <dd>The web address Sagawise calls to tell a service that one of the tasks it sent has failed. Listed per service in <code>services.json</code> at the repository root.</dd>
+
+    <dt>Postgres</dt>
+    <dd>A relational database. Sagawise copies each finished run here for long-term storage.</dd>
+
+    <dt>PENDING / PUBLISHED / COMPLETED / FAILED</dt>
+    <dd>The four states of a task: not yet sent, sent and waiting, received, and given up on. A run uses PENDING, COMPLETED, and FAILED — it has no PUBLISHED state of its own.</dd>
+  </dl>
+</section>
+
+<section id="filemap">
+  <h2><span class="num">—</span> Every file this document refers to</h2>
+
+  <p>All paths are relative to the root of the repository.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Path</th><th>What it is</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="mono">backend/main.go</td><td>Web endpoints, startup, shutdown. Starts the reaper at line 175.</td></tr>
+        <tr><td class="mono">backend/instance_engine/instance_engine.go</td><td>Handles every report; all state changes; the failure call. Opens with the shared helpers the rest of the file is built on.</td></tr>
+        <tr><td class="mono">backend/instance_engine/reaper.go</td><td>The clock store and the loop that finds overdue clocks.</td></tr>
+        <tr><td class="mono">backend/templating/templating.go</td><td>Startup: reads workflow files, creates indexes and the Postgres table.</td></tr>
+        <tr><td class="mono">backend/db_connect/</td><td>Connection setup for Redis (two clients) and Postgres.</td></tr>
+        <tr><td class="mono">backend/utils/</td><td>The Go structs for a workflow, a task, and a service entry.</td></tr>
+        <tr><td class="mono">backend/otel/</td><td>Tracing setup.</td></tr>
+        <tr><td class="mono">backend/sagawise/order_flow.json</td><td>The two-task workflow used throughout this document.</td></tr>
+        <tr><td class="mono">backend/sagawise/user_creation.json</td><td>A four-task workflow; the fan-out example in section 07.</td></tr>
+        <tr><td class="mono">backend/Dockerfile</td><td>Builds the image. Lines 33–34 bake in the workflow files and services.json.</td></tr>
+        <tr><td class="mono">services.json</td><td>Every service name and its failure URL.</td></tr>
+        <tr><td class="mono">.env</td><td>Settings for compose and the container. Line 13 lists the databases to create.</td></tr>
+        <tr><td class="mono">Makefile</td><td>All start, stop, and clean commands.</td></tr>
+        <tr><td class="mono">docker-compose.yml</td><td>The main stack: Sagawise, Redis, Postgres, Adminer, RedisInsight.</td></tr>
+        <tr><td class="mono">postgres-dev/setup-databases.sh</td><td>Creates one database per entry in POSTGRES_DATABASE_LIST, on first init only.</td></tr>
+        <tr><td class="mono">sdk/nodejs/sagawise.js</td><td>Node client for the four calls.</td></tr>
+        <tr><td class="mono">sdk/python/sagawise/sagawise.py</td><td>Python client. Must be kept in step with the Node one.</td></tr>
+        <tr><td class="mono">examples/order_flow/</td><td>The three-service example: orders, payments, shipping, and its own Kafka.</td></tr>
+        <tr><td class="mono">examples/api_examples/</td><td>A larger four-service example with a database and login.</td></tr>
+        <tr><td class="mono">charts/sagawise/</td><td>Helm chart for deploying to Kubernetes.</td></tr>
+        <tr><td class="mono">docs/</td><td>Postman collection and environment for calling the endpoints by hand.</td></tr>
+        <tr><td class="mono">backend/docs/engine-internals.html</td><td>This document.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>Written from the source on branch <code>correctness</code>, current as of the refactor that reduced the engine to two files of 538 and 74 lines. Line numbers refer to that branch and will drift as the code changes; the file paths are stable. This document is <code>backend/docs/engine-internals.html</code>.</p>
+</footer>
+
+</main>
+</div>
+
+</body>
+</html>
