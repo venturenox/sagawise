@@ -63,7 +63,7 @@ func Update_instance(w http.ResponseWriter, r *http.Request) {
 // The function List_workflows handles HTTP requests to list workflows using an instance engine and a
 // database connection.
 func List_workflows(w http.ResponseWriter, r *http.Request) {
-	instance_engine.List_workflows(r, w, rdb)
+	instance_engine.List_workflows(w, rdb)
 }
 
 // The function List_workflow_instances lists workflow instances using an instance engine and client.
@@ -175,9 +175,16 @@ func main() {
 	instance_engine.StartDeadlineReaper(ctx, rdb, conn, time.Second)
 
 	otelShutdown, err := otel.SetupOTelSDK(ctx)
-	defer func() {
-		err = errors.Join(err, otelShutdown(ctx))
-	}()
+	if err != nil {
+		log.Println("OpenTelemetry setup error: ", err)
+	}
+	if otelShutdown != nil {
+		defer func() {
+			if err := otelShutdown(context.Background()); err != nil {
+				log.Println("OpenTelemetry shutdown error: ", err)
+			}
+		}()
+	}
 
 	srv = &http.Server{
 		Addr:         ":5000",
@@ -191,14 +198,19 @@ func main() {
 		srvErr <- srv.ListenAndServe()
 	}()
 
+	log.Println("Server started listening on port 5000")
+
 	select {
-	case err = <-srvErr:
+	case err := <-srvErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Println("HTTP server error: ", err)
+		}
 		return
 	case <-ctx.Done():
 		stop()
 	}
 
-	log.Println("Server started listening on port 5000")
-
-	err = srv.Shutdown(context.Background())
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Println("HTTP server shutdown error: ", err)
+	}
 }

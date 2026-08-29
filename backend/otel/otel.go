@@ -6,9 +6,6 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
-
-	// "go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
-	// "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
@@ -79,35 +76,16 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
+// newTraceProvider returns a provider with no exporter configured: spans are created
+// and dropped. Add a trace.WithBatcher(...) here to ship them somewhere.
 func newTraceProvider() (*trace.TracerProvider, error) {
-	/* traceExporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint())
-	if err != nil {
-		return nil, err
-	} */
-
-	traceProvider := trace.NewTracerProvider(
-	/* trace.WithBatcher(
-		traceExporter,
-		// Default is 5s. Set to 1s for demonstrative purposes.
-		trace.WithBatchTimeout(time.Second),
-	), */
-	)
-	return traceProvider, nil
+	return trace.NewTracerProvider(), nil
 }
 
+// newMeterProvider returns a provider with no reader configured: metrics are recorded
+// and dropped. Add a metric.WithReader(...) here to ship them somewhere.
 func newMeterProvider() (*metric.MeterProvider, error) {
-	/* metricExporter, err := stdoutmetric.New()
-	if err != nil {
-		return nil, err
-	} */
-
-	meterProvider := metric.NewMeterProvider(
-	/* metric.WithReader(metric.NewPeriodicReader(metricExporter,
-	// Default is 1m. Set to 3s for demonstrative purposes.
-	metric.WithInterval(3*time.Second))), */
-	)
-	return meterProvider, nil
+	return metric.NewMeterProvider(), nil
 }
 
 func newLoggerProvider() (*log.LoggerProvider, error) {

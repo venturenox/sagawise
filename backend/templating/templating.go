@@ -3,7 +3,6 @@ package templating
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log"
 	"os"
@@ -34,8 +33,6 @@ func listFiles(dir string) []string {
 // The `ParseDSL` function reads DSL files, processes the data, stores templates in Redis, creates
 // indexes in Redis, and creates a table with an index in PostgreSQL.
 func ParseDSL(rdb *redis.Client, conn *pgx.Conn) {
-	var workflowData utils.WorkflowData
-
 	// List file
 	files := listFiles("/sagawise")
 
@@ -48,14 +45,21 @@ func ParseDSL(rdb *redis.Client, conn *pgx.Conn) {
 			// Read the JSON file
 			data, err := os.ReadFile(file)
 			if err != nil {
-				log.Printf("Error reading JSON file: %v", err)
+				log.Printf("Error reading JSON file %s: %v", file, err)
+				continue
 			}
 
-			// Unmarshal JSON into DSL struct
-			err = json.Unmarshal(data, &workflowData)
-			if err != nil {
-				fmt.Println("Error unmarshalling JSON:", err)
-				return
+			// Unmarshal JSON into DSL struct. One malformed DSL must not stop the remaining
+			// templates from loading, nor skip index creation below.
+			var workflowData utils.WorkflowData
+			if err := json.Unmarshal(data, &workflowData); err != nil {
+				log.Printf("Error unmarshalling JSON in %s: %v", file, err)
+				continue
+			}
+
+			if workflowData.Workflow.Name == "" {
+				log.Printf("Skipping %s: workflow has no name", file)
+				continue
 			}
 
 			workflow_err := rdb.JSONSet(ctx, "workflow_template:"+workflowData.Workflow.Name, ".", workflowData.Workflow).Err()
@@ -93,18 +97,6 @@ func ParseDSL(rdb *redis.Client, conn *pgx.Conn) {
 			"$..failedAt", "AS", "failed_at", "NUMERIC",
 		).Result()
 
-		// Create Tasks Index
-		rdb.Do(
-			ctx,
-			"FT.CREATE", "tasks_index",
-			"ON", "JSON",
-			"PREFIX", "1", "workflow_instance:",
-			"SCHEMA",
-			"$..state", "AS", "task_state", "TEXT",
-			"$..publishedAt", "AS", "published_at", "NUMERIC",
-			"$..consumedAt", "AS", "consumed_at", "NUMERIC",
-		).Result()
-
 		log.Println("Redis Indexes Created Successfully")
 
 		// Create PostgreSQL Table & Index
@@ -120,7 +112,6 @@ func ParseDSL(rdb *redis.Client, conn *pgx.Conn) {
 		ALTER TABLE "instance_history"
 		ADD CONSTRAINT "instance_history_id" PRIMARY KEY ("id");`
 		_, err := conn.Exec(ctx, query)
-		// conn.Close(ctx)
 		if err != nil {
 			log.Println("PostgreSQL Error: ", err)
 		} else {
