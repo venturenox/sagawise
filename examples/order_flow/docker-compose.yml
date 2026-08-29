@@ -14,7 +14,6 @@ services:
       KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
       SAGAWISE_URL: http://sagawise:5000
       WORKFLOW_NAME: order_flow
-      WORKFLOW_VERSION: "1.0"
     networks:
       - shared_network
 
@@ -34,7 +33,6 @@ services:
       KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
       KAFKA_GROUP_ID: ${UUID}order_flow_payments
       SAGAWISE_URL: http://sagawise:5000
-      WORKFLOW_VERSION: "1.0"
     networks:
       - shared_network
 
@@ -54,7 +52,6 @@ services:
       KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
       KAFKA_GROUP_ID: ${UUID}order_flow_shipping
       SAGAWISE_URL: http://sagawise:5000
-      WORKFLOW_VERSION: "1.0"
     networks:
       - shared_network
 

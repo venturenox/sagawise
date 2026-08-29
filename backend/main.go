@@ -23,9 +23,9 @@ var rdb = db_connect.DBConnect()
 var client = db_connect.ConnectRueidis()
 var conn = db_connect.ConnectPostgres()
 
-// The `http_tracing` function logs the received request URL path and then calls the next HTTP handler
+// The `httpTracing` function logs the received request URL path and then calls the next HTTP handler
 // function.
-func http_tracing(next http.HandlerFunc) http.HandlerFunc {
+func httpTracing(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Request Received: %s\n", r.URL.Path)
 
@@ -49,32 +49,32 @@ func ping(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Golang Server is up and running...!")
 }
 
-// The function "start_instance" initiates an instance using the instance_engine package and a Redis
+// The function "startInstance" initiates an instance using the instance_engine package and a Redis
 // database connection.
-func start_instance(w http.ResponseWriter, r *http.Request) {
-	instance_engine.Start_instance(r, w, rdb)
+func startInstance(w http.ResponseWriter, r *http.Request) {
+	instance_engine.StartInstance(r, w, rdb)
 }
 
-// The function Update_instance updates an instance using the instance_engine package.
-func Update_instance(w http.ResponseWriter, r *http.Request) {
-	instance_engine.Update_instance(r, w, rdb, conn)
+// The function updateInstance updates an instance using the instance_engine package.
+func updateInstance(w http.ResponseWriter, r *http.Request) {
+	instance_engine.UpdateInstance(r, w, rdb, conn)
 }
 
-// The function List_workflows handles HTTP requests to list workflows using an instance engine and a
+// The function listWorkflows handles HTTP requests to list workflows using an instance engine and a
 // database connection.
-func List_workflows(w http.ResponseWriter, r *http.Request) {
-	instance_engine.List_workflows(w, rdb)
+func listWorkflows(w http.ResponseWriter, r *http.Request) {
+	instance_engine.ListWorkflows(w, rdb)
 }
 
-// The function List_workflow_instances lists workflow instances using an instance engine and client.
-func List_workflow_instances(w http.ResponseWriter, r *http.Request) {
-	instance_engine.List_workflow_instances(r, w, client)
+// The function listWorkflowInstances lists workflow instances using an instance engine and client.
+func listWorkflowInstances(w http.ResponseWriter, r *http.Request) {
+	instance_engine.ListWorkflowInstances(r, w, client)
 }
 
-// The function `Get_workflow_instance` retrieves a workflow instance using the instance engine and
+// The function `getWorkflowInstance` retrieves a workflow instance using the instance engine and
 // database connection.
-func Get_workflow_instance(w http.ResponseWriter, r *http.Request) {
-	instance_engine.Get_workflow_instance(r, w, rdb)
+func getWorkflowInstance(w http.ResponseWriter, r *http.Request) {
+	instance_engine.GetWorkflowInstance(r, w, rdb)
 }
 
 // The `shutdown` function responds kubernetes graceful shutdown endpoint.
@@ -148,17 +148,17 @@ func newHTTPHandler() http.Handler {
 		mux.Handle(pattern, handler)
 	}
 
-	handleFunc("/ping", http_tracing(ping))
-	handleFunc("/start_instance", http_tracing(start_instance))
-	handleFunc("/update_instance", http_tracing(Update_instance))
-	handleFunc("/workflows/list", http_tracing(List_workflows))
-	handleFunc("/workflow_instances/list", http_tracing(List_workflow_instances))
-	handleFunc("/workflow_instances/get", http_tracing(Get_workflow_instance))
+	handleFunc("/ping", httpTracing(ping))
+	handleFunc("/start_instance", httpTracing(startInstance))
+	handleFunc("/update_instance", httpTracing(updateInstance))
+	handleFunc("/workflows/list", httpTracing(listWorkflows))
+	handleFunc("/workflow_instances/list", httpTracing(listWorkflowInstances))
+	handleFunc("/workflow_instances/get", httpTracing(getWorkflowInstance))
 
-	handleFunc("/shutdown", http_tracing(shutdown))
-	handleFunc("/live", http_tracing(live))
-	handleFunc("/ready", http_tracing(live))
-	handleFunc("/health", http_tracing(live))
+	handleFunc("/shutdown", httpTracing(shutdown))
+	handleFunc("/live", httpTracing(live))
+	handleFunc("/ready", httpTracing(live))
+	handleFunc("/health", httpTracing(live))
 
 	handler := otelhttp.NewHandler(mux, "/")
 	return handler

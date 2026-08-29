@@ -64,7 +64,7 @@ func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgx.Conn
 		key := "workflow_instance:" + id
 
 		// The deadline is a hint; the task state is the truth.
-		if state, _ := jsonFirst[string](rdb, key, "$."+index+".state"); state != "PUBLISHED" {
+		if state, _ := jsonFirstMatch[string](rdb, key, "$."+index+".state"); state != "PUBLISHED" {
 			continue
 		}
 
