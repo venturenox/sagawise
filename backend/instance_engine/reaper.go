@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -23,7 +23,7 @@ func deadlineMember(workflowInstanceID, taskIndex string) string {
 // StartDeadlineReaper runs a background loop that fails any PUBLISHED task
 // whose deadline has passed. It is stateless: it re-reads Redis on every
 // tick, so it picks up deadlines written by a previous process.
-func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgx.Conn, interval time.Duration) {
+func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -41,7 +41,7 @@ func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgx.Conn,
 	}()
 }
 
-func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgx.Conn) {
+func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool) {
 	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	members, err := rdb.ZRangeByScore(ctx, deadlinesKey, &redis.ZRangeBy{Min: "-inf", Max: now}).Result()
 	if err != nil {

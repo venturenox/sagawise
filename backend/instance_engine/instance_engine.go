@@ -16,7 +16,7 @@ import (
 
 	"wtfsaga/utils"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/redis/rueidis"
 )
@@ -151,7 +151,7 @@ func StartInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 }
 
 // UpdateInstance dispatches a publish/consume/fail report onto the instance.
-func UpdateInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, conn *pgx.Conn) {
+func UpdateInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, conn *pgxpool.Pool) {
 	if !requireParams(r, w, "action_type", "workflow_instance_id", "event_name", "is_retry") {
 		return
 	}
@@ -244,7 +244,7 @@ func handlePublish(rdb *redis.Client, id string, w http.ResponseWriter, topic st
 // handleConsumeOrFail resolves the task by topic + consuming service, then
 // completes it (consume) or fails it (fail). Both only act on a PUBLISHED task
 // unless the report is a retry.
-func handleConsumeOrFail(rdb *redis.Client, conn *pgx.Conn, id string, w http.ResponseWriter, topic, service, action string, isRetry bool) {
+func handleConsumeOrFail(rdb *redis.Client, conn *pgxpool.Pool, id string, w http.ResponseWriter, topic, service, action string, isRetry bool) {
 	key := "workflow_instance:" + id
 	index, ok := jsonFirstMatch[string](rdb, key, "$..[?(@.topic=='"+topic+"' && @.to=='"+service+"')].index")
 	if !ok {
@@ -287,7 +287,7 @@ func handleConsumeOrFail(rdb *redis.Client, conn *pgx.Conn, id string, w http.Re
 // reportFailure marks the task FAILED, archives the workflow if that made it
 // terminal, and POSTs the task payload to the publishing service's failure_url
 // so it can compensate.
-func reportFailure(rdb *redis.Client, conn *pgx.Conn, key, id, index string) {
+func reportFailure(rdb *redis.Client, conn *pgxpool.Pool, key, id, index string) {
 	// Whether this came from the reaper or an explicit fail report, the deadline is spent.
 	rdb.ZRem(ctx, deadlinesKey, deadlineMember(id, index))
 	markTask(rdb, key, index, "FAILED", "failedAt")
@@ -333,7 +333,7 @@ func reportFailure(rdb *redis.Client, conn *pgx.Conn, key, id, index string) {
 // to Postgres. A workflow is terminal in two ways: every task COMPLETED, or any
 // single task FAILED (a failed task means the saga is compensating and will
 // never complete).
-func checkWorkflowState(rdb *redis.Client, conn *pgx.Conn, key string) {
+func checkWorkflowState(rdb *redis.Client, conn *pgxpool.Pool, key string) {
 	doc, ok := jsonFirstMatch[map[string]interface{}](rdb, key, "$")
 	if !ok {
 		log.Printf("Failed to read instance %s", key)
@@ -407,7 +407,7 @@ func checkWorkflowState(rdb *redis.Client, conn *pgx.Conn, key string) {
 // archiveInstance inserts a finished workflow into Postgres. The instance is
 // intentionally left in Redis: Redis remains the live store the read endpoints
 // query; Postgres is the long-term archive.
-func archiveInstance(conn *pgx.Conn, key, name string, startedAt, finishedAt int64, document string) {
+func archiveInstance(conn *pgxpool.Pool, key, name string, startedAt, finishedAt int64, document string) {
 	id := strings.Split(key, ":")[1]
 	_, err := conn.Exec(ctx, `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
 		VALUES ($1, $2, TO_TIMESTAMP($3), TO_TIMESTAMP($4), $5)
