@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 	"github.com/redis/go-redis/v9"
 	"github.com/redis/rueidis"
@@ -73,29 +73,36 @@ func DisconnectRueidis(client rueidis.Client) {
 	log.Println("Redis (Rueidis) connection closed successfully")
 }
 
-func ConnectPostgres() *pgx.Conn {
-
-	time.Sleep(3 * time.Second)
-	var conn *pgx.Conn
-	var err error
+func ConnectPostgres() *pgxpool.Pool {
 
 	conn_str := "postgres://" + os.Getenv("POSTGRES_USERNAME") + ":" +
 		url.QueryEscape(os.Getenv("POSTGRES_PASSWORD")) + "@" + os.Getenv("POSTGRES_HOST") +
 		":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DATABASE")
 
-	conn, err = pgx.Connect(context.Background(), conn_str)
+	pool, err := pgxpool.New(context.Background(), conn_str)
 	if err != nil {
 		log.Printf("Unable to connect to database: %v\n", err)
+		return pool
 	}
 
-	return conn
+	// The pool dials lazily, but startup (templating.ParseDSL) needs Postgres to
+	// actually be up; under docker compose it may still be booting, so wait for
+	// a successful ping before proceeding.
+	for attempt := 1; ; attempt++ {
+		if err := pool.Ping(ctx); err == nil {
+			log.Println("Postgres connected Successfully")
+			break
+		} else if attempt >= 30 {
+			log.Printf("Postgres not reachable after %d attempts: %v", attempt, err)
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	return pool
 }
 
-func DisconnectPostgres(conn *pgx.Conn) {
-	err := conn.Close(context.Background())
-	if err != nil {
-		log.Println("Postgres connection close error: ", err)
-	} else {
-		log.Println("Postgres connection closed successfully")
-	}
+func DisconnectPostgres(pool *pgxpool.Pool) {
+	pool.Close()
+	log.Println("Postgres connection pool closed successfully")
 }

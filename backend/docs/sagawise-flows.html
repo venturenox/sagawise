@@ -1,0 +1,547 @@
+<title>Sagawise in Motion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F4F7F5;
+    --surface: #FFFFFF;
+    --ink: #1E2C27;
+    --muted: #5B6B65;
+    --line: #D6E0DB;
+    --ctrl: #0B7A68;
+    --ctrl-soft: #E0F0EC;
+    --fail: #B23B31;
+    --fail-soft: #F7E6E3;
+    --note: #8A6A1E;
+    --note-soft: #F5EEDA;
+    --code-bg: #EDF2EF;
+    --bar: #0B7A68;
+    --bar-store: #8A8F8C;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F1614;
+      --surface: #17211D;
+      --ink: #E3ECE7;
+      --muted: #92A39C;
+      --line: #2B3934;
+      --ctrl: #3EC2A9;
+      --ctrl-soft: #143B34;
+      --fail: #E5786C;
+      --fail-soft: #40211D;
+      --note: #D9B45C;
+      --note-soft: #33301E;
+      --code-bg: #1D2925;
+      --bar: #2E9B87;
+      --bar-store: #5E6B66;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1614;
+    --surface: #17211D;
+    --ink: #E3ECE7;
+    --muted: #92A39C;
+    --line: #2B3934;
+    --ctrl: #3EC2A9;
+    --ctrl-soft: #143B34;
+    --fail: #E5786C;
+    --fail-soft: #40211D;
+    --note: #D9B45C;
+    --note-soft: #33301E;
+    --code-bg: #1D2925;
+    --bar: #2E9B87;
+    --bar-store: #5E6B66;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Public Sans", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 48px 24px 96px; }
+
+  header.masthead { margin-bottom: 12px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ctrl);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: "Archivo", sans-serif;
+    font-weight: 700;
+    font-size: clamp(30px, 5vw, 44px);
+    line-height: 1.1;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .lede { max-width: 62ch; color: var(--muted); margin: 0; }
+  .lede strong { color: var(--ink); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 10px 24px;
+    margin: 28px 0 8px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13.5px;
+  }
+  .legend .key { display: flex; align-items: center; gap: 9px; }
+  .legend svg { flex: none; }
+  .legend .k-lbl { color: var(--muted); }
+
+  section { margin-top: 56px; }
+  .stage {
+    display: flex; align-items: baseline; gap: 14px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 8px; margin-bottom: 6px;
+  }
+  .stage .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px; color: var(--ctrl); letter-spacing: .1em;
+  }
+  h2 {
+    font-family: "Archivo", sans-serif;
+    font-weight: 600;
+    font-size: 24px;
+    margin: 0;
+  }
+  section > p { max-width: 68ch; }
+  section > p code, li code {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .85em;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  figure {
+    margin: 22px 0 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 16px 12px;
+  }
+  .scroll { overflow-x: auto; }
+  figure svg { display: block; min-width: 640px; max-width: 100%; height: auto; margin: 0 auto; color: var(--ink); }
+  figcaption {
+    font-size: 13.5px; color: var(--muted);
+    border-top: 1px solid var(--line);
+    margin-top: 14px; padding: 10px 6px 0;
+    max-width: 75ch;
+  }
+
+  /* --- diagram grammar --- */
+  .actor { fill: var(--surface); stroke: currentColor; stroke-width: 1.4; }
+  .actor-store { fill: var(--code-bg); stroke: var(--muted); stroke-width: 1.2; }
+  .actor-t { font-family: "Archivo", sans-serif; font-size: 13px; font-weight: 600; fill: currentColor; }
+  .actor-s { font-family: "IBM Plex Mono", monospace; font-size: 10px; fill: var(--muted); }
+  .ll { stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 3 5; }
+  .act { fill: var(--bar); rx: 2; }
+  .act-store { fill: var(--bar-store); rx: 2; }
+  .m-data { stroke: currentColor; stroke-width: 1.8; }
+  .m-ctrl { stroke: var(--ctrl); stroke-width: 1.6; }
+  .m-ret  { stroke: var(--ctrl); stroke-width: 1.3; stroke-dasharray: 5 4; }
+  .m-int  { stroke: var(--muted); stroke-width: 1.3; }
+  .m-fail { stroke: var(--fail); stroke-width: 1.8; }
+  .ah-data { fill: currentColor; }
+  .ah-ctrl { fill: var(--ctrl); }
+  .ah-int  { fill: var(--muted); }
+  .ah-fail { fill: var(--fail); }
+  .lbl { font-family: "IBM Plex Mono", monospace; font-size: 11px; fill: currentColor; }
+  .lbl-ctrl { fill: var(--ctrl); }
+  .lbl-int { fill: var(--muted); }
+  .lbl-fail { fill: var(--fail); }
+  .note { fill: var(--note-soft); stroke: var(--note); stroke-width: 1; }
+  .note-t { font-family: "Public Sans", sans-serif; font-size: 11px; font-style: italic; fill: var(--note); }
+  .gap-t { font-family: "Public Sans", sans-serif; font-size: 11.5px; font-style: italic; fill: var(--muted); }
+
+  /* --- redis anatomy --- */
+  .anatomy { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; }
+  @media (max-width: 720px) { .anatomy { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .panel h3 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px; font-weight: 500;
+    margin: 0 0 4px;
+  }
+  .panel .kind { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .panel pre {
+    margin: 0; overflow-x: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; line-height: 1.55;
+    background: var(--code-bg);
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .hl-ctrl { color: var(--ctrl); font-weight: 500; }
+  .hl-fail { color: var(--fail); font-weight: 500; }
+  .hl-mut { color: var(--muted); }
+  .panel p { font-size: 13.5px; color: var(--muted); margin: 12px 0 0; max-width: 55ch; }
+
+  .coda {
+    margin-top: 56px; padding: 18px 22px;
+    background: var(--ctrl-soft);
+    border-left: 3px solid var(--ctrl);
+    border-radius: 0 10px 10px 0;
+    max-width: 70ch;
+  }
+  .coda p { margin: 0; font-size: 15px; }
+
+  a { color: var(--ctrl); }
+  :focus-visible { outline: 2px solid var(--ctrl); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">saga tracker · order_flow example</p>
+    <h1>Sagawise in Motion</h1>
+    <p class="lede">Sagawise is a <strong>bookkeeper, not a broker</strong>. Services exchange real messages over Kafka on their own; separately, they gossip to Sagawise over HTTP — <em>“I published”</em>, <em>“I consumed”</em>, <em>“I failed”</em>. The only thing Sagawise infers by itself is <strong>silence</strong>: a message published but never consumed in time.</p>
+  </header>
+
+  <div class="legend" role="list" aria-label="Notation legend">
+    <span class="key" role="listitem">
+      <svg width="42" height="12" viewBox="0 0 42 12" aria-hidden="true"><line class="m-data" x1="0" y1="6" x2="34" y2="6"/><polygon class="ah-data" points="34,2 42,6 34,10"/></svg>
+      <span class="k-lbl">real message (Kafka — invisible to Sagawise)</span>
+    </span>
+    <span class="key" role="listitem">
+      <svg width="42" height="12" viewBox="0 0 42 12" aria-hidden="true"><line class="m-ctrl" x1="0" y1="6" x2="34" y2="6"/><polygon class="ah-ctrl" points="34,2 42,6 34,10"/></svg>
+      <span class="k-lbl">HTTP call to Sagawise</span>
+    </span>
+    <span class="key" role="listitem">
+      <svg width="42" height="12" viewBox="0 0 42 12" aria-hidden="true"><line class="m-ret" x1="0" y1="6" x2="34" y2="6"/><polygon class="ah-ctrl" points="34,2 42,6 34,10"/></svg>
+      <span class="k-lbl">reply to an earlier call</span>
+    </span>
+    <span class="key" role="listitem">
+      <svg width="42" height="12" viewBox="0 0 42 12" aria-hidden="true"><line class="m-int" x1="0" y1="6" x2="34" y2="6"/><polygon class="ah-int" points="34,2 42,6 34,10"/></svg>
+      <span class="k-lbl">internal store write</span>
+    </span>
+    <span class="key" role="listitem">
+      <svg width="42" height="12" viewBox="0 0 42 12" aria-hidden="true"><line class="m-fail" x1="0" y1="6" x2="34" y2="6"/><polygon class="ah-fail" points="34,2 42,6 34,10"/></svg>
+      <span class="k-lbl">failure path / webhook</span>
+    </span>
+    <span class="key" role="listitem">
+      <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><rect class="act" x="2" y="0" width="10" height="16" rx="2"/></svg>
+      <span class="k-lbl">activation — participant is busy for that stretch</span>
+    </span>
+  </div>
+
+  <!-- ===================== 1 · BOOT ===================== -->
+  <section>
+    <div class="stage"><span class="n">STAGE 1</span><h2>Boot — templates before traffic</h2></div>
+    <p>Before any order exists, <code>main()</code> runs <code>ParseDSL</code>: every DSL file baked into the image becomes a read-only template in Redis, the search indexes are created, and Postgres gets its archive table. Then the 1-second reaper starts and the server listens on <code>:5000</code>.</p>
+
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 860 330" role="img" aria-label="Boot sequence: Sagawise reads DSL files, writes templates and indexes to Redis, creates the archive table in Postgres, then starts the reaper and HTTP server. Sagawise is active for the whole stretch.">
+        <defs>
+          <marker id="b-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-int"/></marker>
+          <marker id="b-ctrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-ctrl"/></marker>
+        </defs>
+        <!-- actors -->
+        <rect class="actor" x="60" y="16" width="130" height="40" rx="7"/>
+        <text class="actor-t" x="125" y="34" text-anchor="middle">sagawise</text>
+        <text class="actor-s" x="125" y="48" text-anchor="middle">main()</text>
+        <rect class="actor-store" x="290" y="16" width="130" height="40" rx="7"/>
+        <text class="actor-t" x="355" y="34" text-anchor="middle">DSL files</text>
+        <text class="actor-s" x="355" y="48" text-anchor="middle">/sagawise/*.json</text>
+        <rect class="actor-store" x="520" y="16" width="130" height="40" rx="7"/>
+        <text class="actor-t" x="585" y="34" text-anchor="middle">Redis</text>
+        <text class="actor-s" x="585" y="48" text-anchor="middle">redis-stack</text>
+        <rect class="actor-store" x="710" y="16" width="130" height="40" rx="7"/>
+        <text class="actor-t" x="775" y="34" text-anchor="middle">Postgres</text>
+        <text class="actor-s" x="775" y="48" text-anchor="middle">archive</text>
+        <!-- lifelines -->
+        <line class="ll" x1="125" y1="56" x2="125" y2="310"/>
+        <line class="ll" x1="355" y1="56" x2="355" y2="310"/>
+        <line class="ll" x1="585" y1="56" x2="585" y2="310"/>
+        <line class="ll" x1="775" y1="56" x2="775" y2="310"/>
+        <!-- activations -->
+        <rect class="act" x="120" y="80" width="10" height="230" rx="2"/>
+        <rect class="act-store" x="350" y="84" width="10" height="16" rx="2"/>
+        <rect class="act-store" x="580" y="122" width="10" height="54" rx="2"/>
+        <rect class="act-store" x="770" y="198" width="10" height="16" rx="2"/>
+        <!-- messages -->
+        <line class="m-int" x1="130" y1="92" x2="347" y2="92" marker-end="url(#b-ink)"/>
+        <text class="lbl lbl-int" x="238" y="82" text-anchor="middle">read order_flow.json …</text>
+
+        <line class="m-int" x1="130" y1="130" x2="577" y2="130" marker-end="url(#b-ink)"/>
+        <text class="lbl lbl-int" x="353" y="120" text-anchor="middle">JSON.SET workflow_template:order_flow</text>
+
+        <line class="m-int" x1="130" y1="168" x2="577" y2="168" marker-end="url(#b-ink)"/>
+        <text class="lbl lbl-int" x="353" y="158" text-anchor="middle">FT.CREATE templates + instances indexes</text>
+
+        <line class="m-int" x1="130" y1="206" x2="767" y2="206" marker-end="url(#b-ink)"/>
+        <text class="lbl lbl-int" x="448" y="196" text-anchor="middle">CREATE TABLE IF NOT EXISTS instance_history</text>
+
+        <!-- self loops -->
+        <path class="m-ctrl" fill="none" d="M130,242 h64 v22 h-56" marker-end="url(#b-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="204" y="238" text-anchor="start">start reaper (ticks 1 s)</text>
+        <path class="m-ctrl" fill="none" d="M130,286 h64 v22 h-56" marker-end="url(#b-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="204" y="282" text-anchor="start">listen :5000</text>
+      </svg>
+      </div>
+      <figcaption>Everything here happens once, at container start; <code>main()</code> stays active throughout. Templates are read-only afterwards — changing a DSL file means rebuilding the image.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===================== 2 · HAPPY PATH ===================== -->
+  <section>
+    <div class="stage"><span class="n">STAGE 2</span><h2>Happy path — one order, two hops</h2></div>
+    <p>The DSL declares two tasks: <code>order_created</code> (orders → payments, 5 s) and <code>payment_done</code> (payments → shipping, 5 s). Every real Kafka message is bracketed by two reports: the sender announces <em>publish</em> before sending, the receiver announces <em>consume</em> after receiving. Sagawise activates briefly per HTTP call and always replies; each service stays active from the moment work reaches it until it hands the baton on.</p>
+
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 960 790" role="img" aria-label="Happy-path sequence with activation bars: orders starts an instance and publishes; payments consumes, works, publishes; shipping consumes; Sagawise activates per call, replies to each, and finally archives the completed instance.">
+        <defs>
+          <marker id="h-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-data"/></marker>
+          <marker id="h-ctrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-ctrl"/></marker>
+          <marker id="h-int" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-int"/></marker>
+        </defs>
+        <!-- actors -->
+        <rect class="actor" x="35" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="90" y="34" text-anchor="middle">orders</text>
+        <text class="actor-s" x="90" y="48" text-anchor="middle">service</text>
+        <rect class="actor" x="205" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="260" y="34" text-anchor="middle">payments</text>
+        <text class="actor-s" x="260" y="48" text-anchor="middle">service</text>
+        <rect class="actor" x="375" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="430" y="34" text-anchor="middle">shipping</text>
+        <text class="actor-s" x="430" y="48" text-anchor="middle">service</text>
+        <rect class="actor" x="590" y="16" width="120" height="40" rx="7"/>
+        <text class="actor-t" x="650" y="34" text-anchor="middle">sagawise</text>
+        <text class="actor-s" x="650" y="48" text-anchor="middle">:5000</text>
+        <rect class="actor-store" x="820" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="875" y="34" text-anchor="middle">Redis</text>
+        <text class="actor-s" x="875" y="48" text-anchor="middle">live store</text>
+        <!-- lifelines -->
+        <line class="ll" x1="90" y1="56" x2="90" y2="766"/>
+        <line class="ll" x1="260" y1="56" x2="260" y2="766"/>
+        <line class="ll" x1="430" y1="56" x2="430" y2="766"/>
+        <line class="ll" x1="650" y1="56" x2="650" y2="766"/>
+        <line class="ll" x1="875" y1="56" x2="875" y2="766"/>
+
+        <!-- activations -->
+        <rect class="act" x="85" y="86" width="10" height="238" rx="2"/>          <!-- orders: start → kafka sent -->
+        <rect class="act" x="255" y="312" width="10" height="264" rx="2"/>       <!-- payments: kafka in → kafka out -->
+        <rect class="act" x="425" y="566" width="10" height="134" rx="2"/>       <!-- shipping: kafka in → reply -->
+        <rect class="act" x="645" y="88" width="10" height="70" rx="2"/>         <!-- sagawise: start_instance -->
+        <rect class="act" x="645" y="220" width="10" height="70" rx="2"/>        <!-- sagawise: publish 1 -->
+        <rect class="act" x="645" y="342" width="10" height="70" rx="2"/>        <!-- sagawise: consume 1 -->
+        <rect class="act" x="645" y="474" width="10" height="70" rx="2"/>        <!-- sagawise: publish 2 -->
+        <rect class="act" x="645" y="596" width="10" height="98" rx="2"/>        <!-- sagawise: consume 2 + terminal -->
+        <rect class="act-store" x="870" y="116" width="10" height="14" rx="2"/>
+        <rect class="act-store" x="870" y="248" width="10" height="14" rx="2"/>
+        <rect class="act-store" x="870" y="370" width="10" height="14" rx="2"/>
+        <rect class="act-store" x="870" y="502" width="10" height="14" rx="2"/>
+        <rect class="act-store" x="870" y="624" width="10" height="42" rx="2"/>
+
+        <!-- start instance -->
+        <line class="m-ctrl" x1="95" y1="94" x2="643" y2="94" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="368" y="84" text-anchor="middle">POST /start_instance?workflow_name=order_flow</text>
+        <line class="m-int" x1="655" y1="122" x2="868" y2="122" marker-end="url(#h-int)"/>
+        <text class="lbl lbl-int" x="760" y="112" text-anchor="middle">clone template → instance:abc</text>
+        <line class="m-ret" x1="645" y1="150" x2="97" y2="150" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="368" y="142" text-anchor="middle">{ workflow_instance_id: "abc" }</text>
+
+        <!-- note: orders works -->
+        <rect class="note" x="102" y="172" width="104" height="24" rx="5"/>
+        <text class="note-t" x="154" y="188" text-anchor="middle">creates order</text>
+
+        <!-- publish hop 1 -->
+        <line class="m-ctrl" x1="95" y1="226" x2="643" y2="226" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="368" y="216" text-anchor="middle">publish "order_created" + payload</text>
+        <line class="m-int" x1="655" y1="254" x2="868" y2="254" marker-end="url(#h-int)"/>
+        <text class="lbl lbl-int" x="760" y="244" text-anchor="middle">task 0 → PUBLISHED · ⏱ 5 s armed</text>
+        <line class="m-ret" x1="645" y1="282" x2="97" y2="282" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="368" y="274" text-anchor="middle">200 Instance State Updated</text>
+
+        <!-- kafka hop 1 -->
+        <line class="m-data" x1="95" y1="318" x2="253" y2="318" marker-end="url(#h-data)"/>
+        <text class="lbl" x="174" y="308" text-anchor="middle">Kafka: order_created</text>
+
+        <!-- consume hop 1 -->
+        <line class="m-ctrl" x1="265" y1="348" x2="643" y2="348" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="454" y="338" text-anchor="middle">consume "order_created"</text>
+        <line class="m-int" x1="655" y1="376" x2="868" y2="376" marker-end="url(#h-int)"/>
+        <text class="lbl lbl-int" x="760" y="366" text-anchor="middle">⏱ disarmed · task 0 → COMPLETED</text>
+        <line class="m-ret" x1="645" y1="404" x2="267" y2="404" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="454" y="396" text-anchor="middle">200 Instance State Updated</text>
+
+        <!-- note: payments works -->
+        <rect class="note" x="272" y="426" width="112" height="24" rx="5"/>
+        <text class="note-t" x="328" y="442" text-anchor="middle">charges the card</text>
+
+        <!-- publish hop 2 -->
+        <line class="m-ctrl" x1="265" y1="480" x2="643" y2="480" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="454" y="470" text-anchor="middle">publish "payment_done" + payload</text>
+        <line class="m-int" x1="655" y1="508" x2="868" y2="508" marker-end="url(#h-int)"/>
+        <text class="lbl lbl-int" x="760" y="498" text-anchor="middle">task 1 → PUBLISHED · ⏱ 5 s armed</text>
+        <line class="m-ret" x1="645" y1="536" x2="267" y2="536" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="454" y="528" text-anchor="middle">200 Instance State Updated</text>
+
+        <!-- kafka hop 2 -->
+        <line class="m-data" x1="265" y1="572" x2="423" y2="572" marker-end="url(#h-data)"/>
+        <text class="lbl" x="344" y="562" text-anchor="middle">Kafka: payment_done</text>
+
+        <!-- consume hop 2 -->
+        <line class="m-ctrl" x1="435" y1="602" x2="643" y2="602" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="539" y="592" text-anchor="middle">consume "payment_done"</text>
+        <line class="m-int" x1="655" y1="630" x2="868" y2="630" marker-end="url(#h-int)"/>
+        <text class="lbl lbl-int" x="760" y="620" text-anchor="middle">⏱ disarmed · task 1 → COMPLETED</text>
+        <line class="m-int" x1="655" y1="658" x2="868" y2="658" marker-end="url(#h-int)"/>
+        <text class="lbl lbl-int" x="760" y="648" text-anchor="middle">all tasks done → instance COMPLETED</text>
+        <line class="m-ret" x1="645" y1="686" x2="437" y2="686" marker-end="url(#h-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="539" y="678" text-anchor="middle">200 Instance State Updated</text>
+
+        <!-- archive note -->
+        <rect class="note" x="562" y="716" width="330" height="24" rx="5"/>
+        <text class="note-t" x="727" y="732" text-anchor="middle">async: archive full doc → Postgres instance_history</text>
+      </svg>
+      </div>
+      <figcaption>Read the bars, not the gaps: orders is busy from starting the instance until its Kafka message is out; payments from receiving that message until its own message is out; Sagawise only wakes for the short green stretches. Vertical spacing is legibility, not duration — the real durations live in the ⏱ deadlines.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===================== 3 · TIMEOUT ===================== -->
+  <section>
+    <div class="stage"><span class="n">STAGE 3</span><h2>Timeout — when silence speaks</h2></div>
+    <p>Same start, but payments crashes before consuming. Nobody reports anything — and that <em>nothing</em> is exactly what Sagawise detects. The reaper claims the expired deadline atomically (<code>ZREM</code> returns 1 to exactly one caller, so a last-second consume and the reaper can never both win), fails the task, and calls the publisher back so it can compensate.</p>
+
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 960 540" role="img" aria-label="Timeout sequence with activation bars: orders publishes, payments crashes before consuming, five seconds pass, the reaper claims the expired deadline, marks the task failed, and Sagawise calls the orders failure webhook so it can compensate.">
+        <defs>
+          <marker id="t-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-data"/></marker>
+          <marker id="t-ctrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-ctrl"/></marker>
+          <marker id="t-int" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-int"/></marker>
+          <marker id="t-fail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="ah-fail"/></marker>
+        </defs>
+        <!-- actors -->
+        <rect class="actor" x="35" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="90" y="34" text-anchor="middle">orders</text>
+        <text class="actor-s" x="90" y="48" text-anchor="middle">has failure_url</text>
+        <rect class="actor" x="215" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="270" y="34" text-anchor="middle">payments</text>
+        <text class="actor-s" x="270" y="48" text-anchor="middle">service</text>
+        <rect class="actor" x="470" y="16" width="120" height="40" rx="7"/>
+        <text class="actor-t" x="530" y="34" text-anchor="middle">sagawise</text>
+        <text class="actor-s" x="530" y="48" text-anchor="middle">:5000</text>
+        <rect class="actor" x="640" y="16" width="120" height="40" rx="7"/>
+        <text class="actor-t" x="700" y="34" text-anchor="middle">reaper</text>
+        <text class="actor-s" x="700" y="48" text-anchor="middle">ticks every 1 s</text>
+        <rect class="actor-store" x="820" y="16" width="110" height="40" rx="7"/>
+        <text class="actor-t" x="875" y="34" text-anchor="middle">Redis</text>
+        <text class="actor-s" x="875" y="48" text-anchor="middle">task_deadlines</text>
+        <!-- lifelines -->
+        <line class="ll" x1="90" y1="56" x2="90" y2="516"/>
+        <line class="ll" x1="270" y1="56" x2="270" y2="516"/>
+        <line class="ll" x1="530" y1="56" x2="530" y2="516"/>
+        <line class="ll" x1="700" y1="56" x2="700" y2="516"/>
+        <line class="ll" x1="875" y1="56" x2="875" y2="516"/>
+
+        <!-- activations -->
+        <rect class="act" x="85" y="86" width="10" height="108" rx="2"/>     <!-- orders: publish → kafka out -->
+        <rect class="act" x="265" y="180" width="10" height="34" rx="2"/>    <!-- payments: brief, then crash -->
+        <rect class="act" x="525" y="88" width="10" height="70" rx="2"/>     <!-- sagawise: publish handling -->
+        <rect class="act" x="695" y="300" width="10" height="196" rx="2"/>   <!-- reaper tick -->
+        <rect class="act" x="525" y="366" width="10" height="120" rx="2"/>   <!-- sagawise: ReportFailure -->
+        <rect class="act" x="85" y="420" width="10" height="52" rx="2"/>     <!-- orders: compensating -->
+        <rect class="act-store" x="870" y="116" width="10" height="14" rx="2"/>
+        <rect class="act-store" x="870" y="304" width="10" height="42" rx="2"/>
+
+        <line class="m-ctrl" x1="95" y1="94" x2="523" y2="94" marker-end="url(#t-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="308" y="84" text-anchor="middle">publish "order_created" + payload</text>
+        <line class="m-int" x1="535" y1="122" x2="868" y2="122" marker-end="url(#t-int)"/>
+        <text class="lbl lbl-int" x="700" y="112" text-anchor="middle">PUBLISHED · ZADD abc:0 @ now+5 s</text>
+        <line class="m-ret" x1="525" y1="150" x2="97" y2="150" marker-end="url(#t-ctrl)"/>
+        <text class="lbl lbl-ctrl" x="308" y="142" text-anchor="middle">200 Instance State Updated</text>
+
+        <line class="m-data" x1="95" y1="186" x2="263" y2="186" marker-end="url(#t-data)"/>
+        <text class="lbl" x="178" y="176" text-anchor="middle">Kafka: order_created</text>
+
+        <rect class="note" x="282" y="200" width="150" height="24" rx="5"/>
+        <text class="note-t" x="357" y="216" text-anchor="middle">💥 crashes — no report</text>
+
+        <!-- time passes -->
+        <line class="ll" x1="40" y1="252" x2="920" y2="252"/>
+        <line class="ll" x1="40" y1="260" x2="920" y2="260"/>
+        <text class="gap-t" x="480" y="246" text-anchor="middle">5 seconds pass — Sagawise hears nothing (this gap IS duration)</text>
+
+        <line class="m-fail" x1="705" y1="310" x2="868" y2="310" marker-end="url(#t-fail)"/>
+        <text class="lbl lbl-fail" x="786" y="300" text-anchor="middle">ZREM abc:0 → claimed</text>
+        <line class="m-fail" x1="705" y1="338" x2="868" y2="338" marker-end="url(#t-fail)"/>
+        <text class="lbl lbl-fail" x="786" y="328" text-anchor="middle">task 0 → FAILED</text>
+        <line class="m-fail" x1="695" y1="376" x2="537" y2="376" marker-end="url(#t-fail)"/>
+        <text class="lbl lbl-fail" x="616" y="366" text-anchor="middle">ReportFailure(abc, 0)</text>
+
+        <line class="m-fail" x1="525" y1="426" x2="97" y2="426" marker-end="url(#t-fail)"/>
+        <text class="lbl lbl-fail" x="308" y="416" text-anchor="middle">POST failure_url — payload of task 0</text>
+        <rect class="note" x="102" y="444" width="150" height="24" rx="5"/>
+        <text class="note-t" x="177" y="460" text-anchor="middle">compensate: cancel order</text>
+
+        <line class="m-int" x1="535" y1="500" x2="868" y2="500" marker-end="url(#t-int)"/>
+        <text class="lbl lbl-int" x="700" y="492" text-anchor="middle">instance FAILED → archived to Postgres</text>
+      </svg>
+      </div>
+      <figcaption>Payments' activation bar cuts off at the crash and never resumes — that dead lifeline is the failure. The reaper's bar shows one long tick doing the whole cleanup. The deadline lives in Redis, not in memory, so a Sagawise restart cannot lose the timer.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ===================== 4 · WHAT LIVES IN REDIS ===================== -->
+  <section>
+    <div class="stage"><span class="n">STAGE 4</span><h2>What lives in Redis</h2></div>
+    <p>Per instance there are exactly two structures: one JSON document mutated in place, and members in one global sorted set. No tables, no per-instance keys beyond the doc.</p>
+
+    <div class="anatomy">
+      <div class="panel">
+        <h3>workflow_instance:abc</h3>
+        <p class="kind">RedisJSON document — one per saga run, mutated in place</p>
+        <pre>{
+  "name": "order_flow",
+  "version": "1.0",
+  "state": <span class="hl-ctrl">"PENDING → COMPLETED | FAILED"</span>,
+  "startedAt": 1756400000,
+  "0": {
+    "topic": "order_created",
+    "from": "orders", "to": "payments",
+    "state": <span class="hl-ctrl">"PENDING → PUBLISHED → …"</span>,
+    "timeout": 5000,
+    "payload": <span class="hl-mut">{ …stored on publish… }</span>,
+    "publishedAt": <span class="hl-mut">…</span>, "consumedAt": <span class="hl-mut">…</span>
+  },
+  "1": { "topic": "payment_done", <span class="hl-mut">…</span> }
+}</pre>
+        <p>Tasks are keyed by their array index. Reports find them by matching <code>topic</code> (+ consuming service for consume/fail) with a JSONPath query.</p>
+      </div>
+      <div class="panel">
+        <h3>task_deadlines</h3>
+        <p class="kind">Sorted set — one global timer wheel for all instances</p>
+        <pre>member          score
+──────────────  ─────────────────
+abc:0           1756400005000  <span class="hl-mut">← now + timeout (ms)</span>
+abc:1           <span class="hl-mut">…armed on publish</span>
+xyz:0           <span class="hl-mut">…other instances too</span>
+
+<span class="hl-ctrl">consume  → ZREM (disarm, task COMPLETED)</span>
+<span class="hl-fail">expired  → reaper ZREMs (claim, task FAILED)</span></pre>
+        <p>Whoever ZREMs the member first owns the outcome — that single atomic op is the whole race guard between a late consumer and the reaper.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="coda">
+    <p><strong>The one-sentence model:</strong> services do the real work over Kafka; Sagawise just keeps score — clone template, tick tasks forward on gossip, fail them on silence, archive the finished game to Postgres.</p>
+  </div>
+</div>

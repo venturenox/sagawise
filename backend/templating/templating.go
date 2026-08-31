@@ -10,7 +10,7 @@ import (
 
 	"wtfsaga/utils"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -32,7 +32,7 @@ func listFiles(dir string) []string {
 
 // The `ParseDSL` function reads DSL files, processes the data, stores templates in Redis, creates
 // indexes in Redis, and creates a table with an index in PostgreSQL.
-func ParseDSL(rdb *redis.Client, conn *pgx.Conn) {
+func ParseDSL(rdb *redis.Client, conn *pgxpool.Pool) {
 	// List file
 	files := listFiles("/sagawise")
 
