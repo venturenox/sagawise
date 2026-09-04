@@ -1,4 +1,4 @@
-.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status bench bench-compare
+.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status bench bench-profile bench-compare
 
 # --- CI (mirrors .github/workflows/ci.yml; bump versions in both places) ---
 STATICCHECK_VERSION   = v0.8.1
@@ -84,6 +84,15 @@ bench:
 	cd backend && go run ./cmd/bench run -label $(BENCH_LABEL) -out ../docs/benchmarks/runs $(BENCH_ARGS); \
 	status=$$?; cd .. && (docker compose start sagawise || true); exit $$status
 
+# Bottleneck hunt: saturation ramp, pprof at the knee, Redis command breakdown, scaling
+# curves (instances in Redis, tasks per workflow, payload size, simultaneous timeouts),
+# contention. Stored as runs/<date>_<sha>_profile-<label>/. ~10 minutes.
+bench-profile:
+	docker compose stop sagawise || true
+	cd backend && go run ./cmd/bench profile -label $(BENCH_LABEL) -out ../docs/benchmarks/runs $(BENCH_ARGS); \
+	status=$$?; cd .. && (docker compose start sagawise || true); exit $$status
+
 # make bench-compare A=runs/<before> B=runs/<after>   (paths relative to docs/benchmarks)
+# Works for two `bench` runs or two `bench-profile` runs.
 bench-compare:
 	cd backend && go run ./cmd/bench compare ../docs/benchmarks/$(A) ../docs/benchmarks/$(B) -out ../docs/benchmarks/comparisons

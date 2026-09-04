@@ -89,7 +89,42 @@ func loadRun(dir string) (*Results, error) {
 	return &r, nil
 }
 
+func loadProfile(dir string) (*Profile, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "profile.json")) // #nosec G304 -- operator-supplied run directory
+	if err != nil {
+		return nil, err
+	}
+	var p Profile
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, fmt.Errorf("%s: %w", dir, err)
+	}
+	return &p, nil
+}
+
 func compareRuns(dirA, dirB, out string) (string, error) {
+	// Profile runs (make bench-profile) carry profile.json instead of load.json.
+	if pa, err := loadProfile(dirA); err == nil {
+		pb, err := loadProfile(dirB)
+		if err != nil {
+			return "", fmt.Errorf("%s is a profile run but %s is not", dirA, dirB)
+		}
+		if err := os.MkdirAll(out, 0o750); err != nil {
+			return "", err
+		}
+		path := filepath.Join(out, fmt.Sprintf("%s_%s_vs_%s.md", time.Now().Format("2006-01-02"), pa.Label, pb.Label))
+		var w strings.Builder
+		fmt.Fprintf(&w, "# %s vs %s\n\n| | A: %s | B: %s |\n|---|---|---|\n| run | `%s` | `%s` |\n| commit | `%s` | `%s` |\n| machine | %s | %s |\n\n",
+			pa.Label, pb.Label, pa.Label, pb.Label, filepath.Base(dirA), filepath.Base(dirB), pa.Commit, pb.Commit, pa.Env["cpu"], pb.Env["cpu"])
+		if pa.Env["cpu"] != pb.Env["cpu"] || pa.Env["cpus"] != pb.Env["cpus"] {
+			w.WriteString("**Warning:** the two runs are from different machines; compare with care.\n\n")
+		}
+		w.WriteString(compareProfiles(pa, pb))
+		if err := os.WriteFile(path, []byte(w.String()), 0o600); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
+
 	a, err := loadRun(dirA)
 	if err != nil {
 		return "", err

@@ -51,10 +51,27 @@ func (l *loader) call(method, path, body string) (string, time.Duration, bool) {
 	return string(data), time.Since(start), resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
-// saga runs one full two-task flow and reports each request. It returns
-// true if every request succeeded.
-func (l *loader) saga(record func(sample)) bool {
-	body, d, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+flowName, "")
+// flowSpec describes one saga shape the loader can drive.
+type flowSpec struct {
+	workflow string
+	steps    []flowStep
+	payload  string // publish body
+}
+
+type flowStep struct{ action, topic, service string }
+
+// defaultFlow is the two-task bench_flow: 5 requests per saga.
+func defaultFlow() flowSpec {
+	return flowSpec{workflow: flowName, payload: `{"bench":1}`, steps: []flowStep{
+		{"publish", "bench_t0", ""}, {"consume", "bench_t0", "bench_b"},
+		{"publish", "bench_t1", ""}, {"consume", "bench_t1", "bench_c"},
+	}}
+}
+
+// saga runs one full flow and reports each request. It returns true if
+// every request succeeded.
+func (l *loader) saga(spec flowSpec, record func(sample)) bool {
+	body, d, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+spec.workflow, "")
 	record(sample{"start", d, ok})
 	if !ok {
 		return false
@@ -65,18 +82,14 @@ func (l *loader) saga(record func(sample)) bool {
 	if json.Unmarshal([]byte(body), &resp) != nil || resp.ID == "" {
 		return false
 	}
-	steps := []struct{ action, topic, service string }{
-		{"publish", "bench_t0", ""}, {"consume", "bench_t0", "bench_b"},
-		{"publish", "bench_t1", ""}, {"consume", "bench_t1", "bench_c"},
-	}
-	for _, s := range steps {
+	for _, s := range spec.steps {
 		path := "/update_instance?workflow_instance_id=" + resp.ID + "&action_type=" + s.action +
 			"&event_name=" + s.topic + "&is_retry=false"
 		payload := ""
 		if s.service != "" {
 			path += "&service_name=" + s.service
 		} else {
-			payload = `{"bench":1}`
+			payload = spec.payload
 		}
 		_, d, ok := l.call(http.MethodPost, path, payload)
 		record(sample{s.action, d, ok})
@@ -90,7 +103,7 @@ func (l *loader) saga(record func(sample)) bool {
 // runRate starts sagas at `rate` per second for `duration`, waits for them
 // to drain, and measures. rdb/db may be nil (warm-up) to skip the Redis and
 // archive accounting.
-func (l *loader) runRate(ctx context.Context, rate float64, duration time.Duration, rdb *redis.Client, db *pgxpool.Pool) RateResult {
+func (l *loader) runRate(ctx context.Context, spec flowSpec, rate float64, duration time.Duration, rdb *redis.Client, db *pgxpool.Pool) RateResult {
 	var (
 		mu        sync.Mutex
 		samples   = map[string][]time.Duration{}
@@ -122,7 +135,7 @@ func (l *loader) runRate(ctx context.Context, rate float64, duration time.Durati
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if l.saga(record) {
+			if l.saga(spec, record) {
 				mu.Lock()
 				completed++
 				mu.Unlock()
@@ -173,7 +186,7 @@ func (l *loader) runRate(ctx context.Context, rate float64, duration time.Durati
 
 // measureReaperLag publishes n tasks with a 2s timeout and never consumes
 // them, then measures deadline -> webhook arrival.
-func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n int) LagResult {
+func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n int, wait time.Duration) LagResult {
 	deadlines := map[string]time.Time{}
 	for i := 0; i < n; i++ {
 		body, _, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+timeoutName, "")
@@ -197,9 +210,9 @@ func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n
 	}
 
 	res := LagResult{Tasks: len(deadlines)}
-	wait := time.Now().Add(lagTimeout*time.Millisecond + 20*time.Second)
+	until := time.Now().Add(lagTimeout*time.Millisecond + wait)
 	var lags []time.Duration
-	for time.Now().Before(wait) {
+	for time.Now().Before(until) {
 		lags = lags[:0]
 		for id, dl := range deadlines {
 			if at, ok := hooks.arrival(id); ok {
@@ -257,6 +270,6 @@ func archiveRows(ctx context.Context, db *pgxpool.Pool) int {
 		return 0
 	}
 	var n int
-	_ = db.QueryRow(ctx, `SELECT count(*) FROM instance_history WHERE name = $1`, flowName).Scan(&n)
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM instance_history WHERE name LIKE 'bench_%'`).Scan(&n)
 	return n
 }

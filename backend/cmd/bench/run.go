@@ -133,7 +133,7 @@ func runBenchmark(cfg runConfig) (string, error) {
 
 	// --- warm-up ---
 	fmt.Fprintln(os.Stderr, "warm-up...")
-	l.runRate(ctx, 20, 3*time.Second, nil, nil)
+	l.runRate(ctx, defaultFlow(), 20, 3*time.Second, nil, nil)
 	cleanupBenchData(ctx, rdb, db)
 
 	// --- held rates ---
@@ -143,7 +143,7 @@ func runBenchmark(cfg runConfig) (string, error) {
 			return "", fmt.Errorf("bad rate %q", r)
 		}
 		fmt.Fprintf(os.Stderr, "rate %.0f sagas/s for %s...\n", rate, cfg.duration)
-		rr := l.runRate(ctx, rate, cfg.duration, rdb, db)
+		rr := l.runRate(ctx, defaultFlow(), rate, cfg.duration, rdb, db)
 		res.Rates = append(res.Rates, rr)
 		fmt.Fprintf(os.Stderr, "  achieved %.1f sagas/s, %d requests, %d errors, consume p99 %.1fms, archive missing %d\n",
 			rr.AchievedSagasPS, rr.Requests, rr.Errors, rr.Endpoints["consume"].P99ms, rr.ArchiveMissing)
@@ -152,7 +152,7 @@ func runBenchmark(cfg runConfig) (string, error) {
 
 	// --- reaper lag ---
 	fmt.Fprintf(os.Stderr, "reaper lag over %d timed-out tasks...\n", cfg.lagTasks)
-	res.ReaperLag = l.measureReaperLag(ctx, hooks, cfg.lagTasks)
+	res.ReaperLag = l.measureReaperLag(ctx, hooks, cfg.lagTasks, 20*time.Second)
 	fmt.Fprintf(os.Stderr, "  received %d/%d, p50 %.0fms, p99 %.0fms, max %.0fms\n",
 		res.ReaperLag.Received, res.ReaperLag.Tasks, res.ReaperLag.P50ms, res.ReaperLag.P99ms, res.ReaperLag.MaxMs)
 	cleanupBenchData(ctx, rdb, db)
@@ -186,6 +186,15 @@ func runBenchmark(cfg runConfig) (string, error) {
 		return "", err
 	}
 	return runDir, nil
+}
+
+// benchWorkflowNames lists every workflow any bench mode may load, for cleanup.
+func benchWorkflowNames() []string {
+	names := []string{flowName, timeoutName}
+	for _, n := range profileTaskCounts {
+		names = append(names, chainName(n))
+	}
+	return names
 }
 
 func benchWorkflows() []utils.Workflow {
@@ -364,7 +373,22 @@ func (r *webhookReceiver) Close() { _ = r.srv.Close() }
 // ---- cleanup ----
 
 func cleanupBenchData(ctx context.Context, rdb *redis.Client, db *pgxpool.Pool) {
-	for _, name := range []string{flowName, timeoutName} {
+	// Pre-populated instances (profile mode) are keyed workflow_instance:bp*.
+	var cursor uint64
+	for {
+		keys, next, err := rdb.Scan(ctx, cursor, "workflow_instance:bp*", 5000).Result()
+		if err != nil {
+			break
+		}
+		if len(keys) > 0 {
+			_ = rdb.Unlink(ctx, keys...).Err()
+		}
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+	for _, name := range benchWorkflowNames() {
 		for {
 			res := rdb.Do(ctx, "FT.SEARCH", "workflows_index", "@workflow_name:"+name, "NOCONTENT", "LIMIT", "0", "10000").Val()
 			m, _ := res.(map[interface{}]interface{})

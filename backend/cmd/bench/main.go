@@ -42,6 +42,25 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println(dir)
+	case "profile":
+		fs := flag.NewFlagSet("profile", flag.ExitOnError)
+		cfg := profileConfig{}
+		fs.StringVar(&cfg.label, "label", "baseline", "run label; the run is stored as profile-<label>")
+		fs.StringVar(&cfg.out, "out", "../docs/benchmarks/runs", "directory that receives one sub-directory per run")
+		fs.Float64Var(&cfg.rampStart, "ramp-start", 200, "first ramp rate in sagas/s (×1.5 per step)")
+		fs.Float64Var(&cfg.rampMax, "ramp-max", 8000, "stop the ramp at this rate even if the SLO holds")
+		fs.DurationVar(&cfg.rampHold, "ramp-hold", 6e9, "time to hold each ramp step")
+		fs.StringVar(&cfg.instances, "instances", "10000,100000", "pre-populated instance counts to measure at")
+		fs.StringVar(&cfg.payloads, "payloads", "100,10000,500000", "publish payload sizes in bytes")
+		fs.StringVar(&cfg.timeouts, "timeouts", "100,500,2000", "simultaneous timeout counts for reaper lag")
+		fs.IntVar(&cfg.pprofSeconds, "pprof-seconds", 10, "CPU profile length at the knee")
+		_ = fs.Parse(os.Args[2:])
+		dir, err := runProfile(cfg)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "bench profile:", err)
+			os.Exit(1)
+		}
+		fmt.Println(dir)
 	case "compare":
 		fs := flag.NewFlagSet("compare", flag.ExitOnError)
 		out := fs.String("out", "../docs/benchmarks/comparisons", "directory that receives the comparison report")
@@ -67,6 +86,6 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage:\n  bench run [-label L] [-out DIR] [-rates 50,100,200] [-duration 20s] [-lag-tasks 200]\n  bench compare RUN_A RUN_B [-out DIR]")
+	fmt.Fprintln(os.Stderr, "usage:\n  bench run [-label L] [-out DIR] [-rates 50,100,200] [-duration 20s] [-lag-tasks 200]\n  bench profile [-label L] [-out DIR] [-ramp-start 200] [-ramp-max 8000] [-instances 10000,100000] [-payloads 100,10000,500000] [-timeouts 100,500,2000]\n  bench compare RUN_A RUN_B [-out DIR]")
 	os.Exit(2)
 }
