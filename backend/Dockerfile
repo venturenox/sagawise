@@ -5,7 +5,7 @@
 # - Source code is copied separately to invalidate cache only on code changes
 # - Build cache is mounted to speed up subsequent builds
 # =============================================================================
-FROM golang:1.22.2 AS build-stage
+FROM golang:1.27.1 AS build-stage
 
 WORKDIR /usr/src/app
 

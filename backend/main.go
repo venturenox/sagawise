@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-var srv = &http.Server{}
+var srv *http.Server
 var rdb = db_connect.DBConnect()
 var client = db_connect.ConnectRueidis()
 var conn = db_connect.ConnectPostgres()
@@ -143,9 +143,10 @@ func live(w http.ResponseWriter, r *http.Request) {
 func newHTTPHandler() http.Handler {
 	mux := http.NewServeMux()
 
+	// otelhttp.NewHandler reads the matched ServeMux pattern from r.Pattern
+	// (Go 1.23+) and records it as http.route, so no per-route wrapper is needed.
 	handleFunc := func(pattern string, handlerFunc func(http.ResponseWriter, *http.Request)) {
-		handler := otelhttp.WithRouteTag(pattern, http.HandlerFunc(handlerFunc))
-		mux.Handle(pattern, handler)
+		mux.HandleFunc(pattern, handlerFunc)
 	}
 
 	handleFunc("/ping", httpTracing(ping))
@@ -187,11 +188,12 @@ func main() {
 	}
 
 	srv = &http.Server{
-		Addr:         ":5000",
-		BaseContext:  func(_ net.Listener) context.Context { return ctx },
-		ReadTimeout:  time.Second,
-		WriteTimeout: 10 * time.Second,
-		Handler:      newHTTPHandler(),
+		Addr:              ":5000",
+		BaseContext:       func(_ net.Listener) context.Context { return ctx },
+		ReadHeaderTimeout: time.Second,
+		ReadTimeout:       time.Second,
+		WriteTimeout:      10 * time.Second,
+		Handler:           newHTTPHandler(),
 	}
 	srvErr := make(chan error, 1)
 	go func() {

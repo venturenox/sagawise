@@ -3,11 +3,12 @@ package instance_engine
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -27,8 +28,11 @@ var ctx = context.Background()
 
 func httpError(w http.ResponseWriter, code int, msg string) {
 	log.Println(msg)
+	// msg can echo caller-supplied params; pin the content type so it is never sniffed as HTML.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	fmt.Fprint(w, msg)
+	fmt.Fprint(w, msg) // #nosec G705 -- Content-Type is pinned to text/plain with nosniff above; never rendered as HTML
 }
 
 // requireParams writes a 400 listing every missing query parameter and returns
@@ -81,7 +85,11 @@ var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ123456
 func generateID() string {
 	b := make([]rune, 20)
 	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		if err != nil {
+			panic("crypto/rand unavailable: " + err.Error())
+		}
+		b[i] = letters[n.Int64()]
 	}
 	return string(b)
 }

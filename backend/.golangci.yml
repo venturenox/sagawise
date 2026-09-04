@@ -1,0 +1,15 @@
+# golangci-lint v2 config. Run from backend/: golangci-lint run ./...
+version: "2"
+
+linters:
+  default: standard   # govet, ineffassign, staticcheck, unused, errcheck
+  disable:
+    # errcheck is OFF for now. The ~14 unchecked errors it reports are the
+    # "errors are systematically swallowed" theme of
+    # docs/correctness-audit-2026-08-29.md (#7, #8). They are fixed in roadmap
+    # phases 5 and 6 (docs/TODO.md). Re-enable errcheck in the PR that fixes #7.
+    - errcheck
+
+formatters:
+  enable:
+    - gofmt

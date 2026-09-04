@@ -43,7 +43,7 @@ func ParseDSL(rdb *redis.Client, conn *pgxpool.Pool) {
 		for _, file := range files {
 
 			// Read the JSON file
-			data, err := os.ReadFile(file)
+			data, err := os.ReadFile(file) // #nosec G304 -- file comes from a fixed glob over /sagawise, not user input
 			if err != nil {
 				log.Printf("Error reading JSON file %s: %v", file, err)
 				continue
