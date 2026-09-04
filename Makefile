@@ -1,4 +1,14 @@
-.PHONY: start status stop restart clean api_examples order_flow
+.PHONY: start status stop restart clean api_examples order_flow ci ci-tools
+
+# --- CI (mirrors .github/workflows/ci.yml; bump versions in both places) ---
+STATICCHECK_VERSION   = v0.8.1
+GOLANGCI_LINT_VERSION = v2.13.2
+GOSEC_VERSION         = v2.29.0
+GOVULNCHECK_VERSION   = v1.7.0
+# G104 (unhandled errors) and G706 (log injection): see docs/correctness-audit-2026-08-29.md #7
+# and docs/TODO.md phases 5, 6, 9. Remove from this list when those land.
+GOSEC_EXCLUDE         = G104,G706
+GOBIN                ?= $(shell go env GOPATH)/bin
 
 start:
 	docker network create shared_network || true
@@ -25,3 +35,19 @@ api_examples:
 order_flow:
 	docker network create shared_network || true
 	make start && cd examples/order_flow && UUID=$(shell whoami)$(shell hostname) docker compose up -d --build
+
+ci-tools:
+	cd backend && go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+	cd backend && go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	cd backend && go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
+	cd backend && go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+ci:
+	cd backend && test -z "$$(gofmt -l .)" || (echo "gofmt needed:"; gofmt -l .; exit 1)
+	cd backend && go vet ./...
+	cd backend && $(GOBIN)/staticcheck ./...
+	cd backend && $(GOBIN)/golangci-lint run ./...
+	cd backend && $(GOBIN)/gosec -quiet -exclude=$(GOSEC_EXCLUDE) ./...
+	cd backend && $(GOBIN)/govulncheck ./...
+	cd backend && go test -race -count=1 ./...
+	docker build -f backend/Dockerfile -t sagawise:ci .

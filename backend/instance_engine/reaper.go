@@ -43,7 +43,7 @@ func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgxpool.P
 
 func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool) {
 	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	members, err := rdb.ZRangeByScore(ctx, deadlinesKey, &redis.ZRangeBy{Min: "-inf", Max: now}).Result()
+	members, err := rdb.ZRangeArgs(ctx, redis.ZRangeArgs{Key: deadlinesKey, Start: "-inf", Stop: now, ByScore: true}).Result()
 	if err != nil {
 		log.Printf("Reaper: error reading deadlines: %v", err)
 		return

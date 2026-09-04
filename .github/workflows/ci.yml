@@ -1,0 +1,137 @@
+# Sagawise CI — roadmap phase 0 (docs/TODO.md).
+# Every step here can be run locally with `make ci` (tools via `make ci-tools`).
+# Tool versions are pinned in the Makefile and here; bump both together.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  STATICCHECK_VERSION: v0.8.1
+  GOLANGCI_LINT_VERSION: v2.13.2
+  GOSEC_VERSION: v2.29.0
+  GOVULNCHECK_VERSION: v1.7.0
+  # G104 (unhandled errors) and G706 (log injection) are tracked in
+  # docs/correctness-audit-2026-08-29.md (#7) and docs/TODO.md phases 5, 6, 9.
+  GOSEC_EXCLUDE: G104,G706
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "gofmt needed on:"; echo "$out"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
+          staticcheck ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: backend
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gosec
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}
+          gosec -exclude=${GOSEC_EXCLUDE} ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}
+          govulncheck ./...
+
+  test:
+    name: Test (race)
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis/redis-stack-server:latest
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      postgres:
+        image: postgres:16-alpine
+        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: venturenox
+          POSTGRES_DB: sagawise
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Same names the binary reads (see .env). Integration tests in later
+      # phases connect to the service containers above.
+      REDIS_CONNECTION_STRING: redis://localhost:6379
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USERNAME: postgres
+      POSTGRES_PASSWORD: venturenox
+      POSTGRES_DATABASE: sagawise
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: go build
+        run: go build ./...
+      - name: go test -race
+        run: go test -race -count=1 -v ./...
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build image (runs go test inside run-stage)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          tags: sagawise:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
