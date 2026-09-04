@@ -1,0 +1,30 @@
+goos: linux
+goarch: amd64
+pkg: wtfsaga/instance_engine
+cpu: AMD Ryzen 9 9900X 12-Core Processor            
+BenchmarkStartInstance-12    	      50	    601093 ns/op	   16743 B/op	     199 allocs/op
+BenchmarkStartInstance-12    	      50	    639500 ns/op	   16747 B/op	     199 allocs/op
+BenchmarkStartInstance-12    	      50	    582032 ns/op	   16743 B/op	     199 allocs/op
+BenchmarkStartInstance-12    	      50	    604147 ns/op	   17300 B/op	     201 allocs/op
+BenchmarkPublish-12          	      50	   2202269 ns/op	   29573 B/op	     303 allocs/op
+BenchmarkPublish-12          	      50	   2236585 ns/op	   29576 B/op	     303 allocs/op
+BenchmarkPublish-12          	      50	   2242966 ns/op	   29577 B/op	     303 allocs/op
+BenchmarkPublish-12          	      50	   2259544 ns/op	   29685 B/op	     303 allocs/op
+BenchmarkConsume-12          	      50	   1964950 ns/op	   30716 B/op	     344 allocs/op
+BenchmarkConsume-12          	      50	   1938690 ns/op	   30943 B/op	     345 allocs/op
+BenchmarkConsume-12          	      50	   1938671 ns/op	   31044 B/op	     345 allocs/op
+BenchmarkConsume-12          	      50	   1923581 ns/op	   30570 B/op	     344 allocs/op
+BenchmarkSaga-12             	      50	  10012023 ns/op	  158638 B/op	    1757 allocs/op
+BenchmarkSaga-12             	      50	  10061659 ns/op	  158006 B/op	    1755 allocs/op
+BenchmarkSaga-12             	      50	  10113883 ns/op	  158253 B/op	    1756 allocs/op
+BenchmarkSaga-12             	      50	   9985444 ns/op	  159163 B/op	    1760 allocs/op
+BenchmarkReaperTick/overdue=10-12         	      50	  35824279 ns/op	  568458 B/op	    6731 allocs/op
+BenchmarkReaperTick/overdue=10-12         	      50	  35707656 ns/op	  572420 B/op	    6738 allocs/op
+BenchmarkReaperTick/overdue=10-12         	      50	  35826860 ns/op	  561365 B/op	    6719 allocs/op
+BenchmarkReaperTick/overdue=10-12         	      50	  35623441 ns/op	  570050 B/op	    6728 allocs/op
+BenchmarkReaperTick/overdue=50-12         	      50	 177557396 ns/op	 2591859 B/op	   33026 allocs/op
+BenchmarkReaperTick/overdue=50-12         	      50	 180275974 ns/op	 2582108 B/op	   32963 allocs/op
+BenchmarkReaperTick/overdue=50-12         	      50	 181779217 ns/op	 2595870 B/op	   33019 allocs/op
+BenchmarkReaperTick/overdue=50-12         	      50	 179978390 ns/op	 2580328 B/op	   33007 allocs/op
+PASS
+ok  	wtfsaga/instance_engine	123.190s

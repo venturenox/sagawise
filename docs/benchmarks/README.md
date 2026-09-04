@@ -64,3 +64,4 @@ compare them.
 
 | run | label | commit | purpose |
 |---|---|---|---|
+| `runs/2026-09-05_0122_093c4d6_baseline` | baseline | 093c4d6 | Main after phases 0–3, before any audit fix. 0 errors and 0 lost archives up to 200 sagas/s; ~3 ms per report; 36 Redis commands per saga; reaper lag p50 ≈ 1 s for 200 simultaneous timeouts (sequential tick). |

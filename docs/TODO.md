@@ -74,7 +74,7 @@ Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/b
 - [x] Measure Redis commands per request. → `INFO commandstats` delta per saga
 - [x] Measure archive completeness under load (lost `instance_history` rows, #9).
 - [x] Save results in `docs/benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
-- [ ] Baseline run recorded on main before phase 5 (`runs/*_baseline`).
+- [x] Baseline run recorded before phase 5: `docs/benchmarks/runs/2026-09-05_0122_093c4d6_baseline`.
 - [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and commit the comparison.
 
 ## Phase 5 — Quick wins PR

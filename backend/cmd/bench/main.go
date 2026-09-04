@@ -45,11 +45,17 @@ func main() {
 	case "compare":
 		fs := flag.NewFlagSet("compare", flag.ExitOnError)
 		out := fs.String("out", "../docs/benchmarks/comparisons", "directory that receives the comparison report")
+		// Accept flags before or after the two run paths.
 		_ = fs.Parse(os.Args[2:])
-		if fs.NArg() != 2 {
+		args := fs.Args()
+		if len(args) > 2 {
+			_ = fs.Parse(args[2:])
+			args = args[:2]
+		}
+		if len(args) != 2 {
 			usage()
 		}
-		path, err := compareRuns(fs.Arg(0), fs.Arg(1), *out)
+		path, err := compareRuns(args[0], args[1], *out)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "bench compare:", err)
 			os.Exit(1)

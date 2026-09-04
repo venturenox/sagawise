@@ -91,7 +91,7 @@ func runBenchmark(cfg runConfig) (string, error) {
 	defer os.RemoveAll(work)
 	bin := filepath.Join(work, "sagawise")
 	fmt.Fprintln(os.Stderr, "building server...")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil { // #nosec G204 -- fixed argv; bin is a temp path we created
 		return "", fmt.Errorf("go build: %v\n%s", err, out)
 	}
 
@@ -262,7 +262,6 @@ func envText(res *Results) string {
 type server struct {
 	cmd  *exec.Cmd
 	addr string
-	out  bytes.Buffer
 	done chan struct{}
 }
 
