@@ -14,8 +14,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var ctx = context.Background()
-
 // The `listFiles` function takes a directory path as input, lists all JSON files in that directory,
 // and returns a slice of file paths.
 func listFiles(dir string) []string {
@@ -30,11 +28,12 @@ func listFiles(dir string) []string {
 	return files
 }
 
-// The `ParseDSL` function reads DSL files, processes the data, stores templates in Redis, creates
-// indexes in Redis, and creates a table with an index in PostgreSQL.
-func ParseDSL(rdb *redis.Client, conn *pgxpool.Pool) {
+// ParseDSL reads every *.json DSL file in dir, stores each workflow as a
+// RedisJSON template, creates the RediSearch indexes, and creates the
+// Postgres instance_history table.
+func ParseDSL(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, dir string) {
 	// List file
-	files := listFiles("/sagawise")
+	files := listFiles(dir)
 
 	if len(files) == 0 {
 		log.Println("No DSL files found...!!")
@@ -43,7 +42,7 @@ func ParseDSL(rdb *redis.Client, conn *pgxpool.Pool) {
 		for _, file := range files {
 
 			// Read the JSON file
-			data, err := os.ReadFile(file) // #nosec G304 -- file comes from a fixed glob over /sagawise, not user input
+			data, err := os.ReadFile(file) // #nosec G304 -- file comes from a fixed glob over the DSL dir, not user input
 			if err != nil {
 				log.Printf("Error reading JSON file %s: %v", file, err)
 				continue

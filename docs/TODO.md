@@ -22,10 +22,13 @@ Temporary exclusions (remove when the linked phase lands):
 
 ## Phase 1 — Make the code testable
 
-- [ ] Pass Redis and Postgres clients into the engine. No package-level globals.
-- [ ] Replace `context.Background()` vars with request contexts.
-- [ ] Add a clock interface so the reaper can be tested with a fake clock.
-- [ ] Put integration tests behind a build tag so the Docker build stage still passes.
+Done on branch `testability` (2026-09-04), stacked on `ci/phase-0`.
+
+- [x] Pass Redis and Postgres clients into the engine. No package-level globals. (`Engine` struct in `instance_engine/engine.go`)
+- [x] Replace `context.Background()` vars with request contexts. (archive goroutine uses `context.WithoutCancel`)
+- [x] Add a clock interface so the reaper can be tested with a fake clock. (`Clock`; also `ServiceRegistry` and `HTTPClient` seams for webhooks)
+- [x] Put integration tests behind a build tag so the Docker build stage still passes. (`-tags integration`; `make test-integration`; CI runs them against service containers)
+- [x] DSL dir and services file are parameters (`SAGAWISE_DSL_DIR`, `SAGAWISE_SERVICES_FILE`), so tests and local runs need no `/sagawise` mount.
 
 ## Phase 2 — Write the contract
 

@@ -1,6 +1,10 @@
 # golangci-lint v2 config. Run from backend/: golangci-lint run ./...
 version: "2"
 
+run:
+  build-tags:
+    - integration
+
 linters:
   default: standard   # govet, ineffassign, staticcheck, unused, errcheck
   disable:

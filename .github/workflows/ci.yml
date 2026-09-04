@@ -45,7 +45,7 @@ jobs:
           out=$(gofmt -l .)
           if [ -n "$out" ]; then echo "gofmt needed on:"; echo "$out"; exit 1; fi
       - name: go vet
-        run: go vet ./...
+        run: go vet -tags integration ./...
       - name: staticcheck
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION}
@@ -55,6 +55,7 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           working-directory: backend
+          args: --build-tags integration
 
   security:
     name: Security scan
@@ -117,8 +118,8 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: go build
         run: go build ./...
-      - name: go test -race
-        run: go test -race -count=1 -v ./...
+      - name: go test -race (unit + integration)
+        run: go test -race -count=1 -tags integration -v ./...
 
   docker:
     name: Docker image

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -23,7 +22,7 @@ func deadlineMember(workflowInstanceID, taskIndex string) string {
 // StartDeadlineReaper runs a background loop that fails any PUBLISHED task
 // whose deadline has passed. It is stateless: it re-reads Redis on every
 // tick, so it picks up deadlines written by a previous process.
-func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, interval time.Duration) {
+func (e *Engine) StartDeadlineReaper(ctx context.Context, interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -35,15 +34,18 @@ func StartDeadlineReaper(ctx context.Context, rdb *redis.Client, conn *pgxpool.P
 				log.Println("Deadline reaper stopped")
 				return
 			case <-ticker.C:
-				reapExpiredDeadlines(ctx, rdb, conn)
+				e.reapExpiredDeadlines(ctx)
 			}
 		}
 	}()
 }
 
-func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool) {
-	now := strconv.FormatInt(time.Now().UnixMilli(), 10)
-	members, err := rdb.ZRangeArgs(ctx, redis.ZRangeArgs{Key: deadlinesKey, Start: "-inf", Stop: now, ByScore: true}).Result()
+// reapExpiredDeadlines performs one reaper tick against e.Clock.Now(). It is
+// what StartDeadlineReaper calls on every tick; tests call it directly with a
+// fake clock instead of waiting for real time to pass.
+func (e *Engine) reapExpiredDeadlines(ctx context.Context) {
+	now := strconv.FormatInt(e.Clock.Now().UnixMilli(), 10)
+	members, err := e.RDB.ZRangeArgs(ctx, redis.ZRangeArgs{Key: deadlinesKey, Start: "-inf", Stop: now, ByScore: true}).Result()
 	if err != nil {
 		log.Printf("Reaper: error reading deadlines: %v", err)
 		return
@@ -51,7 +53,7 @@ func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgxpool.
 
 	for _, member := range members {
 		// Atomic claim: ZREM returns 1 for exactly one caller.
-		removed, err := rdb.ZRem(ctx, deadlinesKey, member).Result()
+		removed, err := e.RDB.ZRem(ctx, deadlinesKey, member).Result()
 		if err != nil || removed == 0 {
 			continue
 		}
@@ -61,14 +63,14 @@ func reapExpiredDeadlines(ctx context.Context, rdb *redis.Client, conn *pgxpool.
 			log.Printf("Reaper: malformed deadline member %q", member)
 			continue
 		}
-		key := "workflow_instance:" + id
+		key := instanceKey(id)
 
 		// The deadline is a hint; the task state is the truth.
-		if state, _ := jsonFirstMatch[string](rdb, key, "$."+index+".state"); state != "PUBLISHED" {
+		if state, _ := jsonFirstMatch[string](ctx, e.RDB, key, "$."+index+".state"); state != "PUBLISHED" {
 			continue
 		}
 
 		log.Printf("Reaper: timeout for %s task %s", id, index)
-		reportFailure(rdb, conn, key, id, index)
+		e.reportFailure(ctx, key, id, index)
 	}
 }
