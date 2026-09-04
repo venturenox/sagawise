@@ -121,6 +121,30 @@ jobs:
       - name: go test -race (unit + integration)
         run: go test -race -count=1 -tags integration -v ./...
 
+  sdk:
+    name: SDK tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/nodejs/package-lock.json
+      - name: Node SDK
+        run: cd nodejs && npm ci --no-audit --no-fund && npm test
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Python SDK
+        run: |
+          cd python
+          python -m pip install --quiet -r requirements.txt pytest
+          python -m pytest -q tests
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest

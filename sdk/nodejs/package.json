@@ -4,17 +4,17 @@
   "description": "A Node.js SDK for interacting with Sagawise workflows.",
   "main": "sagawise.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/venturenox/sagawise.git"
   },
   "keywords": [
-	"saga",
-	"communication",
-	"inter-service communication",
-	"registry",
+    "saga",
+    "communication",
+    "inter-service communication",
+    "registry",
     "sagawise",
     "workflows",
     "microservices"

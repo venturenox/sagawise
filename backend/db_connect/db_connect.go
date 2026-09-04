@@ -78,11 +78,7 @@ func DisconnectRueidis(client rueidis.Client) {
 // attempts, one per second) for a successful ping.
 func ConnectPostgres(ctx context.Context) *pgxpool.Pool {
 
-	conn_str := "postgres://" + os.Getenv("POSTGRES_USERNAME") + ":" +
-		url.QueryEscape(os.Getenv("POSTGRES_PASSWORD")) + "@" + os.Getenv("POSTGRES_HOST") +
-		":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DATABASE")
-
-	pool, err := pgxpool.New(ctx, conn_str)
+	pool, err := pgxpool.New(ctx, PostgresURL())
 	if err != nil {
 		log.Printf("Unable to connect to database: %v\n", err)
 		return pool
@@ -103,6 +99,13 @@ func ConnectPostgres(ctx context.Context) *pgxpool.Pool {
 	}
 
 	return pool
+}
+
+// PostgresURL builds the connection string from the POSTGRES_* variables.
+func PostgresURL() string {
+	return "postgres://" + os.Getenv("POSTGRES_USERNAME") + ":" +
+		url.QueryEscape(os.Getenv("POSTGRES_PASSWORD")) + "@" + os.Getenv("POSTGRES_HOST") +
+		":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DATABASE")
 }
 
 func DisconnectPostgres(pool *pgxpool.Pool) {

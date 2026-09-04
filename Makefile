@@ -1,4 +1,4 @@
-.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration
+.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status
 
 # --- CI (mirrors .github/workflows/ci.yml; bump versions in both places) ---
 STATICCHECK_VERSION   = v0.8.1
@@ -50,6 +50,7 @@ ci:
 	cd backend && $(GOBIN)/gosec -quiet -exclude=$(GOSEC_EXCLUDE) ./...
 	cd backend && $(GOBIN)/govulncheck ./...
 	$(MAKE) test-integration
+	$(MAKE) test-sdk
 	docker build -f backend/Dockerfile -t sagawise:ci .
 
 # Unit tests only (no external services). This is what the Docker build runs.
@@ -61,3 +62,14 @@ test:
 # the same REDIS_*/POSTGRES_* variables the binary reads.
 test-integration:
 	cd backend && go test -race -count=1 -tags integration ./...
+
+# SDK tests. Node: `node --test` (todo = known failing). Python: pytest (xfail = known failing).
+test-sdk:
+	cd sdk/nodejs && npm install --no-audit --no-fund --silent && npm test
+	cd sdk/python && python3 -m pytest -q tests
+
+# Contract status: which contract tests are still known-failing (XFAIL), grouped by audit finding.
+# Every line here is a bug the roadmap still owes; the list shrinks as phases 5 and 6 land.
+test-status:
+	@cd backend && go test -count=1 -short -tags integration -v ./... 2>/dev/null \
+		| grep -oE 'XFAIL [^ ]+ \(known failing' | grep -v self-test | sed 's/ (known failing//' | sort | uniq -c | sort -rn
