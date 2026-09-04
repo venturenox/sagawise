@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -160,6 +161,12 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 	setDefault(t, "POSTGRES_PASSWORD", "venturenox")
 	setDefault(t, "POSTGRES_DATABASE", "sagawise")
 	t.Setenv("REDIS_CONNECTION_STRING", "")
+
+	// The engine logs every request; that noise swamps test and benchmark
+	// output. Restore the logger on cleanup.
+	prevOut := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
 
 	ctx := context.Background()
 	rdb := db_connect.DBConnect(ctx)

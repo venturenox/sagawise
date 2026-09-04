@@ -1,0 +1,262 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+)
+
+// loader drives sagas over HTTP. It is open-loop: sagas start on a fixed
+// schedule regardless of how the server keeps up, so latency under load is
+// measured, not hidden by back-pressure.
+type loader struct {
+	base   string
+	client *http.Client
+}
+
+type sample struct {
+	endpoint string
+	dur      time.Duration
+	ok       bool
+}
+
+// call performs one request and returns the body and whether it was 2xx.
+func (l *loader) call(method, path, body string) (string, time.Duration, bool) {
+	var rd io.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	}
+	start := time.Now()
+	req, err := http.NewRequest(method, l.base+path, rd)
+	if err != nil {
+		return "", time.Since(start), false
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := l.client.Do(req)
+	if err != nil {
+		return "", time.Since(start), false
+	}
+	data, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	return string(data), time.Since(start), resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
+// saga runs one full two-task flow and reports each request. It returns
+// true if every request succeeded.
+func (l *loader) saga(record func(sample)) bool {
+	body, d, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+flowName, "")
+	record(sample{"start", d, ok})
+	if !ok {
+		return false
+	}
+	var resp struct {
+		ID string `json:"workflow_instance_id"`
+	}
+	if json.Unmarshal([]byte(body), &resp) != nil || resp.ID == "" {
+		return false
+	}
+	steps := []struct{ action, topic, service string }{
+		{"publish", "bench_t0", ""}, {"consume", "bench_t0", "bench_b"},
+		{"publish", "bench_t1", ""}, {"consume", "bench_t1", "bench_c"},
+	}
+	for _, s := range steps {
+		path := "/update_instance?workflow_instance_id=" + resp.ID + "&action_type=" + s.action +
+			"&event_name=" + s.topic + "&is_retry=false"
+		payload := ""
+		if s.service != "" {
+			path += "&service_name=" + s.service
+		} else {
+			payload = `{"bench":1}`
+		}
+		_, d, ok := l.call(http.MethodPost, path, payload)
+		record(sample{s.action, d, ok})
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// runRate starts sagas at `rate` per second for `duration`, waits for them
+// to drain, and measures. rdb/db may be nil (warm-up) to skip the Redis and
+// archive accounting.
+func (l *loader) runRate(ctx context.Context, rate float64, duration time.Duration, rdb *redis.Client, db *pgxpool.Pool) RateResult {
+	var (
+		mu        sync.Mutex
+		samples   = map[string][]time.Duration{}
+		requests  int
+		errs      int
+		completed int
+		started   int
+		wg        sync.WaitGroup
+	)
+	record := func(s sample) {
+		mu.Lock()
+		requests++
+		if s.ok {
+			samples[s.endpoint] = append(samples[s.endpoint], s.dur)
+		} else {
+			errs++
+		}
+		mu.Unlock()
+	}
+
+	cmdsBefore := redisCommandCalls(ctx, rdb)
+	rowsBefore := archiveRows(ctx, db)
+
+	begin := time.Now()
+	ticker := time.NewTicker(time.Duration(float64(time.Second) / rate))
+	for time.Since(begin) < duration {
+		<-ticker.C
+		started++
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.saga(record) {
+				mu.Lock()
+				completed++
+				mu.Unlock()
+			}
+		}()
+	}
+	ticker.Stop()
+	wg.Wait()
+	elapsed := time.Since(begin)
+
+	rr := RateResult{
+		TargetSagasPerSec: rate, Duration: duration.String(), SagasStarted: started, SagasCompleted: completed,
+		AchievedSagasPS: float64(completed) / elapsed.Seconds(), Requests: requests, Errors: errs,
+		Endpoints: map[string]LatencyResult{},
+	}
+	if requests > 0 {
+		rr.ErrorRate = float64(errs) / float64(requests)
+	}
+	for ep, s := range samples {
+		rr.Endpoints[ep] = latencyStats(s)
+	}
+	if rdb != nil && started > 0 {
+		rr.RedisCmdsPerSaga = float64(redisCommandCalls(ctx, rdb)-cmdsBefore) / float64(started)
+	}
+	if db != nil {
+		// Archiving is asynchronous; wait until the row count stops moving.
+		rr.ArchiveExpected = completed
+		last := -1
+		for i := 0; i < 100; i++ {
+			n := archiveRows(ctx, db) - rowsBefore
+			if n == last && n >= completed {
+				break
+			}
+			if n == last && i > 20 { // stable for 2s and still short: rows are gone
+				break
+			}
+			last = n
+			time.Sleep(100 * time.Millisecond)
+		}
+		rr.ArchiveRows = archiveRows(ctx, db) - rowsBefore
+		rr.ArchiveMissing = completed - rr.ArchiveRows
+		if rr.ArchiveMissing < 0 {
+			rr.ArchiveMissing = 0
+		}
+	}
+	return rr
+}
+
+// measureReaperLag publishes n tasks with a 2s timeout and never consumes
+// them, then measures deadline -> webhook arrival.
+func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n int) LagResult {
+	deadlines := map[string]time.Time{}
+	for i := 0; i < n; i++ {
+		body, _, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+timeoutName, "")
+		if !ok {
+			continue
+		}
+		var resp struct {
+			ID string `json:"workflow_instance_id"`
+		}
+		if json.Unmarshal([]byte(body), &resp) != nil || resp.ID == "" {
+			continue
+		}
+		payload := fmt.Sprintf(`{"bench_id":%q}`, resp.ID)
+		_, _, ok = l.call(http.MethodPost, "/update_instance?workflow_instance_id="+resp.ID+
+			"&action_type=publish&event_name=bench_tt&is_retry=false", payload)
+		// The server stamps the deadline from its clock during the request;
+		// the response time is within one request latency of it.
+		if ok {
+			deadlines[resp.ID] = time.Now().Add(lagTimeout * time.Millisecond)
+		}
+	}
+
+	res := LagResult{Tasks: len(deadlines)}
+	wait := time.Now().Add(lagTimeout*time.Millisecond + 20*time.Second)
+	var lags []time.Duration
+	for time.Now().Before(wait) {
+		lags = lags[:0]
+		for id, dl := range deadlines {
+			if at, ok := hooks.arrival(id); ok {
+				lags = append(lags, at.Sub(dl))
+			}
+		}
+		if len(lags) == len(deadlines) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	res.Received = len(lags)
+	res.Missing = res.Tasks - res.Received
+	if len(lags) > 0 {
+		st := latencyStats(lags)
+		res.P50ms, res.P99ms, res.MaxMs = st.P50ms, st.P99ms, st.MaxMs
+		min := lags[0]
+		for _, d := range lags {
+			if d < min {
+				min = d
+			}
+		}
+		res.MinMs = float64(min) / 1e6
+	}
+	return res
+}
+
+// redisCommandCalls sums total_calls across INFO commandstats.
+func redisCommandCalls(ctx context.Context, rdb *redis.Client) int64 {
+	if rdb == nil {
+		return 0
+	}
+	info, err := rdb.Info(ctx, "commandstats").Result()
+	if err != nil {
+		return 0
+	}
+	var total int64
+	for _, line := range strings.Split(info, "\n") {
+		if !strings.HasPrefix(line, "cmdstat_") {
+			continue
+		}
+		for _, kv := range strings.Split(strings.SplitN(line, ":", 2)[1], ",") {
+			if strings.HasPrefix(kv, "calls=") {
+				var n int64
+				fmt.Sscanf(kv, "calls=%d", &n)
+				total += n
+			}
+		}
+	}
+	return total
+}
+
+func archiveRows(ctx context.Context, db *pgxpool.Pool) int {
+	if db == nil {
+		return 0
+	}
+	var n int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM instance_history WHERE name = $1`, flowName).Scan(&n)
+	return n
+}

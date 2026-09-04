@@ -1,4 +1,4 @@
-.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status
+.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status bench bench-compare
 
 # --- CI (mirrors .github/workflows/ci.yml; bump versions in both places) ---
 STATICCHECK_VERSION   = v0.8.1
@@ -73,3 +73,17 @@ test-sdk:
 test-status:
 	@cd backend && go test -count=1 -short -tags integration -v ./... 2>/dev/null \
 		| grep -oE 'XFAIL [^ ]+ \(known failing' | grep -v self-test | sed 's/ (known failing//' | sort | uniq -c | sort -rn
+
+# --- Benchmarks (docs/benchmarks/README.md) ---
+BENCH_LABEL ?= baseline
+BENCH_ARGS  ?=
+# Stops the sagawise container for the run: its reaper shares task_deadlines with the
+# server under test and would steal the reaper-lag measurement.
+bench:
+	docker compose stop sagawise || true
+	cd backend && go run ./cmd/bench run -label $(BENCH_LABEL) -out ../docs/benchmarks/runs $(BENCH_ARGS); \
+	status=$$?; cd .. && (docker compose start sagawise || true); exit $$status
+
+# make bench-compare A=runs/<before> B=runs/<after>   (paths relative to docs/benchmarks)
+bench-compare:
+	cd backend && go run ./cmd/bench compare ../docs/benchmarks/$(A) ../docs/benchmarks/$(B) -out ../docs/benchmarks/comparisons
