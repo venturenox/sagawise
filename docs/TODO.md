@@ -38,7 +38,7 @@ Done: `docs/contract.md` (branch `contract`, 2026-09-04). Seven decisions (D1–
 - [x] Define the full task and instance state machine. Every allowed transition. → contract §2, §3
 - [x] Define what happens to sibling tasks when an instance goes terminal. (#3) → contract I5, decision D1
 - [x] Define error responses: 4xx for client mistakes, 5xx for infra failures. (#7) → contract §9
-- [ ] Sign off decisions D1–D7 in `docs/contract.md`.
+- [x] Sign off decisions D1–D7 in `docs/contract.md`. All seven accepted 2026-09-04.
 
 ## Phase 3 — Test suite
 

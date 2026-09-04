@@ -1,6 +1,6 @@
 # Sagawise Behavioral Contract
 
-**Status:** v1 draft, 2026-09-04. Roadmap phase 2 (`docs/TODO.md`).
+**Status:** v1, accepted 2026-09-04 (decisions D1–D7 all accepted). Roadmap phase 2 (`docs/TODO.md`).
 **Purpose:** the single source of truth for what the engine must do. Phase 3 turns every rule here into a test. Phases 5 and 6 make the code match. Where current code disagrees with this document, the document wins and the audit finding is noted as `#N` (`docs/correctness-audit-2026-08-29.md`).
 
 Decisions that change today's observable behavior are marked **[DECISION]** and listed at the end for sign-off.
@@ -49,7 +49,7 @@ States: `PENDING` → `COMPLETED` | `FAILED`. Both are terminal.
 - **I1.** The instance becomes `COMPLETED` the moment its last task becomes COMPLETED.
 - **I2.** The instance becomes `FAILED` the moment any task becomes FAILED.
 - **I3.** The transition to a terminal state happens in the same atomic step as the task transition that caused it. Exactly one task transition can cause it; a second cannot. (#1)
-- **I4.** A terminal instance rejects every report with 409 `INSTANCE_TERMINAL`, whatever the target task's state and whatever `is_retry` says. (#3)
+- **I4.** A terminal instance rejects every state-changing report with 409 `INSTANCE_TERMINAL`, whatever the target task's state. The only reports it still answers with 200 are idempotent duplicates under `is_retry=true` (§4), and in a terminal instance those have no side effects at all: a duplicate `publish` does not re-arm a deadline or replace the payload. (#2, #3)
 - **I5. Siblings freeze.** When an instance becomes FAILED, every other task keeps the state it has. PENDING stays PENDING. PUBLISHED stays PUBLISHED, and its deadline is removed in the same step, so the reaper never touches it and no second webhook fires. **[DECISION D1]** One failure per instance, one webhook per instance. (#3)
 - **I6.** An instance with zero tasks cannot be started; the DSL validation in §7 guarantees this.
 
@@ -61,7 +61,7 @@ A **duplicate** is a report that asks for a transition the task has already made
 
 | Duplicate report | `is_retry=false` | `is_retry=true` |
 |---|---|---|
-| `publish` on PUBLISHED | 409 `TASK_ALREADY_PUBLISHED`, no change | 200, payload replaced, **deadline re-armed** from now **[DECISION D2]** |
+| `publish` on PUBLISHED | 409 `TASK_ALREADY_PUBLISHED`, no change | 200, payload replaced, **deadline re-armed** from now **[DECISION D2]** (no side effects if the instance is terminal, I4) |
 | `consume` on COMPLETED | 409 `TASK_ALREADY_COMPLETED`, no change | 200, no change |
 | `fail` on FAILED | 409 `TASK_ALREADY_FAILED`, no change | 200, no change |
 
@@ -151,7 +151,7 @@ Error codes are stable strings: `MISSING_PARAM`, `INVALID_PARAM`, `INVALID_BODY`
 
 ### Read endpoints
 
-- `/workflow_instances/list` returns a page, never a silent cap: `limit` (default 50, max 1000) and `offset`, plus `total`. Filter values are escaped; a hyphenated name matches literally. An index error is 500, not 404. (#10)
+- `/workflow_instances/list` returns a page, never a silent cap: `limit` (default 50, max 1000) and `offset`, plus `total`. Filter values are escaped; a hyphenated name matches literally. No matches is 200 with an empty page and `total: 0`, not 404. An index error is 500, not 404. (#10)
 - `/workflow_instances/get` accepts only a `workflow_instance_id`; it never reads an arbitrary Redis key. **[DECISION D7]**
 
 ## 10. Concurrency guarantees, in one place
