@@ -32,10 +32,13 @@ Done on branch `testability` (2026-09-04), stacked on `ci/phase-0`.
 
 ## Phase 2 — Write the contract
 
-- [ ] Define what `is_retry` means. One page. (#2)
-- [ ] Define the full task and instance state machine. Every allowed transition.
-- [ ] Define what happens to sibling tasks when an instance goes terminal. (#3)
-- [ ] Define error responses: 4xx for client mistakes, 5xx for infra failures. (#7)
+Done: `docs/contract.md` (branch `contract`, 2026-09-04). Seven decisions (D1–D7) at the end of it need sign-off before phase 3 encodes them.
+
+- [x] Define what `is_retry` means. One page. (#2) → contract §4
+- [x] Define the full task and instance state machine. Every allowed transition. → contract §2, §3
+- [x] Define what happens to sibling tasks when an instance goes terminal. (#3) → contract I5, decision D1
+- [x] Define error responses: 4xx for client mistakes, 5xx for infra failures. (#7) → contract §9
+- [ ] Sign off decisions D1–D7 in `docs/contract.md`.
 
 ## Phase 3 — Test suite
 
