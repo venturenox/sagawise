@@ -148,7 +148,7 @@ func (s *server) handler() http.Handler {
 }
 
 // The main function connects the stores, loads the DSL, starts the reaper,
-// and serves HTTP on port 5000 until interrupted.
+// and serves HTTP on SAGAWISE_ADDR (default :5000) until interrupted.
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -175,9 +175,10 @@ func main() {
 		}()
 	}
 
+	addr := envOr("SAGAWISE_ADDR", ":5000")
 	s := &server{eng: eng}
 	s.srv = &http.Server{
-		Addr:              ":5000",
+		Addr:              addr,
 		BaseContext:       func(_ net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: time.Second,
 		ReadTimeout:       time.Second,
@@ -189,7 +190,7 @@ func main() {
 		srvErr <- s.srv.ListenAndServe()
 	}()
 
-	log.Println("Server started listening on port 5000")
+	log.Println("Server started listening on " + addr)
 
 	select {
 	case err := <-srvErr:
