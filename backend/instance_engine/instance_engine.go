@@ -10,19 +10,14 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"wtfsaga/utils"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/redis/rueidis"
 )
-
-var ctx = context.Background()
 
 // ---- shared helpers ----
 
@@ -53,7 +48,7 @@ func requireParams(r *http.Request, w http.ResponseWriter, names ...string) bool
 
 // jsonMatches runs a RedisJSON path query (which always yields an array) and
 // unmarshals the matches.
-func jsonMatches[T any](rdb *redis.Client, key, path string) []T {
+func jsonMatches[T any](ctx context.Context, rdb *redis.Client, key, path string) []T {
 	res, err := rdb.JSONGet(ctx, key, path).Result()
 	if err != nil {
 		return nil
@@ -64,8 +59,8 @@ func jsonMatches[T any](rdb *redis.Client, key, path string) []T {
 }
 
 // jsonFirstMatch returns the first match of a RedisJSON path query, if any.
-func jsonFirstMatch[T any](rdb *redis.Client, key, path string) (T, bool) {
-	out := jsonMatches[T](rdb, key, path)
+func jsonFirstMatch[T any](ctx context.Context, rdb *redis.Client, key, path string) (T, bool) {
+	out := jsonMatches[T](ctx, rdb, key, path)
 	if len(out) == 0 {
 		var zero T
 		return zero, false
@@ -74,10 +69,10 @@ func jsonFirstMatch[T any](rdb *redis.Client, key, path string) (T, bool) {
 }
 
 // markTask sets a task's state and stamps the matching timestamp field.
-func markTask(rdb *redis.Client, key, index, state, stampField string) {
+func (e *Engine) markTask(ctx context.Context, key, index, state, stampField string) {
 	s, _ := json.Marshal(state)
-	rdb.JSONSet(ctx, key, "$."+index+".state", s)
-	rdb.JSONSet(ctx, key, "$."+index+"."+stampField, time.Now().Unix())
+	e.RDB.JSONSet(ctx, key, "$."+index+".state", s)
+	e.RDB.JSONSet(ctx, key, "$."+index+"."+stampField, e.Clock.Now().Unix())
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
@@ -94,37 +89,19 @@ func generateID() string {
 	return string(b)
 }
 
-// failureURL looks up a service's failure webhook in services.json.
-func failureURL(service string) string {
-	data, err := os.ReadFile("services.json")
-	var services []utils.Service
-	if err == nil {
-		err = json.Unmarshal(data, &services)
-	}
-	if err != nil {
-		log.Printf("Error reading services.json: %v", err)
-		return ""
-	}
-	for _, s := range services {
-		if s.ServiceName == service {
-			return s.FailureUrl
-		}
-	}
-	return ""
-}
-
 // ---- instance lifecycle ----
 
 // StartInstance clones a workflow template into a new workflow_instance doc.
 // The template is the single source of truth for the version; any
 // workflow_version query parameter is ignored.
-func StartInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
+func (e *Engine) StartInstance(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	if !requireParams(r, w, "workflow_name") {
 		return
 	}
 	name := r.URL.Query().Get("workflow_name")
 
-	workflow, ok := jsonFirstMatch[utils.Workflow](rdb, "workflow_template:"+name, "$")
+	workflow, ok := jsonFirstMatch[utils.Workflow](ctx, e.RDB, "workflow_template:"+name, "$")
 	if !ok {
 		httpError(w, 400, "workflow_name does not exist")
 		return
@@ -135,7 +112,7 @@ func StartInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 		"version":        workflow.Version,
 		"schema_version": workflow.Schema_version,
 		"state":          "PENDING",
-		"startedAt":      time.Now().Unix(),
+		"startedAt":      e.Clock.Now().Unix(),
 	}
 	for i, task := range workflow.Tasks {
 		index := strconv.Itoa(i)
@@ -150,7 +127,7 @@ func StartInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 	}
 
 	id := generateID()
-	if err := rdb.JSONSet(ctx, "workflow_instance:"+id, ".", instance).Err(); err != nil {
+	if err := e.RDB.JSONSet(ctx, instanceKey(id), ".", instance).Err(); err != nil {
 		httpError(w, 500, "Error: "+err.Error())
 		return
 	}
@@ -159,7 +136,8 @@ func StartInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
 }
 
 // UpdateInstance dispatches a publish/consume/fail report onto the instance.
-func UpdateInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, conn *pgxpool.Pool) {
+func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	if !requireParams(r, w, "action_type", "workflow_instance_id", "event_name", "is_retry") {
 		return
 	}
@@ -174,27 +152,26 @@ func UpdateInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client, c
 		return
 	}
 
-	key := "workflow_instance:" + id
-	if _, ok := jsonFirstMatch[string](rdb, key, "$.version"); !ok {
+	if _, ok := jsonFirstMatch[string](ctx, e.RDB, instanceKey(id), "$.version"); !ok {
 		httpError(w, 400, "workflow_instance Not Found")
 		return
 	}
 
 	if action == "publish" {
-		handlePublish(rdb, id, w, topic, isRetry, r.Body)
+		e.handlePublish(ctx, w, id, topic, isRetry, r.Body)
 		return
 	}
 	if !requireParams(r, w, "service_name") {
 		return
 	}
-	handleConsumeOrFail(rdb, conn, id, w, topic, q.Get("service_name"), action, isRetry)
+	e.handleConsumeOrFail(ctx, w, id, topic, q.Get("service_name"), action, isRetry)
 }
 
 // handlePublish marks every task carrying the topic as PUBLISHED, stores the
 // message payload, and schedules a consumption deadline per task.
-func handlePublish(rdb *redis.Client, id string, w http.ResponseWriter, topic string, isRetry bool, body io.ReadCloser) {
-	key := "workflow_instance:" + id
-	indexes := jsonMatches[string](rdb, key, "$..[?(@.topic=='"+topic+"')].index")
+func (e *Engine) handlePublish(ctx context.Context, w http.ResponseWriter, id, topic string, isRetry bool, body io.ReadCloser) {
+	key := instanceKey(id)
+	indexes := jsonMatches[string](ctx, e.RDB, key, "$..[?(@.topic=='"+topic+"')].index")
 	if len(indexes) == 0 {
 		httpError(w, http.StatusNotFound, "Task Not Found")
 		return
@@ -213,7 +190,7 @@ func handlePublish(rdb *redis.Client, id string, w http.ResponseWriter, topic st
 
 	allOk := true
 	for _, index := range indexes {
-		state, ok := jsonFirstMatch[string](rdb, key, "$."+index+".state")
+		state, ok := jsonFirstMatch[string](ctx, e.RDB, key, "$."+index+".state")
 		if !ok {
 			log.Printf("Task %s has no state; skipping", index)
 			allOk = false
@@ -225,16 +202,16 @@ func handlePublish(rdb *redis.Client, id string, w http.ResponseWriter, topic st
 			continue
 		}
 
-		markTask(rdb, key, index, "PUBLISHED", "publishedAt")
-		rdb.JSONSet(ctx, key, "$."+index+".payload", payload)
+		e.markTask(ctx, key, index, "PUBLISHED", "publishedAt")
+		e.RDB.JSONSet(ctx, key, "$."+index+".payload", payload)
 
-		timeout, ok := jsonFirstMatch[int](rdb, key, "$."+index+".timeout")
+		timeout, ok := jsonFirstMatch[int](ctx, e.RDB, key, "$."+index+".timeout")
 		if !ok {
 			log.Printf("Task %s has no timeout; no deadline scheduled", index)
 			continue
 		}
-		err := rdb.ZAdd(ctx, deadlinesKey, redis.Z{
-			Score:  float64(time.Now().UnixMilli() + int64(timeout)),
+		err := e.RDB.ZAdd(ctx, deadlinesKey, redis.Z{
+			Score:  float64(e.Clock.Now().UnixMilli() + int64(timeout)),
 			Member: deadlineMember(id, index),
 		}).Err()
 		if err != nil {
@@ -252,14 +229,14 @@ func handlePublish(rdb *redis.Client, id string, w http.ResponseWriter, topic st
 // handleConsumeOrFail resolves the task by topic + consuming service, then
 // completes it (consume) or fails it (fail). Both only act on a PUBLISHED task
 // unless the report is a retry.
-func handleConsumeOrFail(rdb *redis.Client, conn *pgxpool.Pool, id string, w http.ResponseWriter, topic, service, action string, isRetry bool) {
-	key := "workflow_instance:" + id
-	index, ok := jsonFirstMatch[string](rdb, key, "$..[?(@.topic=='"+topic+"' && @.to=='"+service+"')].index")
+func (e *Engine) handleConsumeOrFail(ctx context.Context, w http.ResponseWriter, id, topic, service, action string, isRetry bool) {
+	key := instanceKey(id)
+	index, ok := jsonFirstMatch[string](ctx, e.RDB, key, "$..[?(@.topic=='"+topic+"' && @.to=='"+service+"')].index")
 	if !ok {
 		httpError(w, http.StatusNotFound, "Task Not Found")
 		return
 	}
-	state, ok := jsonFirstMatch[string](rdb, key, "$."+index+".state")
+	state, ok := jsonFirstMatch[string](ctx, e.RDB, key, "$."+index+".state")
 	if !ok {
 		httpError(w, http.StatusNotFound, "Task Not Found")
 		return
@@ -274,7 +251,7 @@ func handleConsumeOrFail(rdb *redis.Client, conn *pgxpool.Pool, id string, w htt
 	}
 
 	if action == "fail" {
-		reportFailure(rdb, conn, key, id, index)
+		e.reportFailure(ctx, key, id, index)
 		fmt.Fprint(w, "Instance State Updated")
 		return
 	}
@@ -282,38 +259,42 @@ func handleConsumeOrFail(rdb *redis.Client, conn *pgxpool.Pool, id string, w htt
 	// Claim the deadline before completing the task. ZREM returns 1 for exactly
 	// one caller, so this loses to a reaper that already claimed it and is about
 	// to mark the task FAILED.
-	removed, err := rdb.ZRem(ctx, deadlinesKey, deadlineMember(id, index)).Result()
+	removed, err := e.RDB.ZRem(ctx, deadlinesKey, deadlineMember(id, index)).Result()
 	if err == nil && removed == 0 && !isRetry {
 		httpError(w, http.StatusForbidden, "Task Already FAILED")
 		return
 	}
-	markTask(rdb, key, index, "COMPLETED", "consumedAt")
+	e.markTask(ctx, key, index, "COMPLETED", "consumedAt")
 	fmt.Fprint(w, "Instance State Updated")
-	checkWorkflowState(rdb, conn, key)
+	e.checkWorkflowState(ctx, key)
 }
 
 // reportFailure marks the task FAILED, archives the workflow if that made it
 // terminal, and POSTs the task payload to the publishing service's failure_url
 // so it can compensate.
-func reportFailure(rdb *redis.Client, conn *pgxpool.Pool, key, id, index string) {
+func (e *Engine) reportFailure(ctx context.Context, key, id, index string) {
 	// Whether this came from the reaper or an explicit fail report, the deadline is spent.
-	rdb.ZRem(ctx, deadlinesKey, deadlineMember(id, index))
-	markTask(rdb, key, index, "FAILED", "failedAt")
-	checkWorkflowState(rdb, conn, key)
+	e.RDB.ZRem(ctx, deadlinesKey, deadlineMember(id, index))
+	e.markTask(ctx, key, index, "FAILED", "failedAt")
+	e.checkWorkflowState(ctx, key)
 
-	from, okFrom := jsonFirstMatch[string](rdb, key, "$."+index+".from")
-	to, okTo := jsonFirstMatch[string](rdb, key, "$."+index+".to")
+	from, okFrom := jsonFirstMatch[string](ctx, e.RDB, key, "$."+index+".from")
+	to, okTo := jsonFirstMatch[string](ctx, e.RDB, key, "$."+index+".to")
 	if !okFrom || !okTo {
 		log.Printf("Task %s of %s has no from/to service; cannot report failure", index, key)
 		return
 	}
 	// A task that timed out before anything was published has no payload; report with an empty one.
-	payload, _ := jsonFirstMatch[map[string]interface{}](rdb, key, "$."+index+".payload")
+	payload, _ := jsonFirstMatch[map[string]interface{}](ctx, e.RDB, key, "$."+index+".payload")
 	if payload == nil {
 		payload = map[string]interface{}{}
 	}
 
-	url := failureURL(from)
+	url, err := e.Services.FailureURL(from)
+	if err != nil {
+		log.Printf("Error looking up failure_url for %q: %v", from, err)
+		return
+	}
 	if url == "" {
 		log.Printf("No failure_url registered for service %q; skipping failure report", from)
 		return
@@ -321,14 +302,16 @@ func reportFailure(rdb *redis.Client, conn *pgxpool.Pool, key, id, index string)
 
 	log.Println("Reporting Failure to: " + from)
 	body, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	// #nosec G704 -- url is operator configuration (the ServiceRegistry, e.g. services.json)
+	// looked up by a DSL-declared service name; it never comes from request input.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		log.Printf("Error building failure request for %s: %v", from, err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.URL.RawQuery = "service=" + to
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := e.HTTPClient.Do(req) // #nosec G704 -- see above
 	if err != nil {
 		log.Printf("Failed to send request: %v", err)
 		return
@@ -341,8 +324,8 @@ func reportFailure(rdb *redis.Client, conn *pgxpool.Pool, key, id, index string)
 // to Postgres. A workflow is terminal in two ways: every task COMPLETED, or any
 // single task FAILED (a failed task means the saga is compensating and will
 // never complete).
-func checkWorkflowState(rdb *redis.Client, conn *pgxpool.Pool, key string) {
-	doc, ok := jsonFirstMatch[map[string]interface{}](rdb, key, "$")
+func (e *Engine) checkWorkflowState(ctx context.Context, key string) {
+	doc, ok := jsonFirstMatch[map[string]interface{}](ctx, e.RDB, key, "$")
 	if !ok {
 		log.Printf("Failed to read instance %s", key)
 		return
@@ -381,24 +364,27 @@ func checkWorkflowState(rdb *redis.Client, conn *pgxpool.Pool, key string) {
 	// Only the first writer to move the instance out of a non-terminal state
 	// archives it, so a second failing task in the same workflow does not
 	// produce a duplicate archive row.
-	if cur, _ := jsonFirstMatch[string](rdb, key, "$.state"); cur == "COMPLETED" || cur == "FAILED" {
+	if cur, _ := jsonFirstMatch[string](ctx, e.RDB, key, "$.state"); cur == "COMPLETED" || cur == "FAILED" {
 		return
 	}
 
 	log.Printf("Workflow %s...", terminal)
-	finishedAt := time.Now().Unix()
+	finishedAt := e.Clock.Now().Unix()
 	state, _ := json.Marshal(terminal)
-	if err := rdb.JSONSet(ctx, key, "$.state", state).Err(); err != nil {
+	if err := e.RDB.JSONSet(ctx, key, "$.state", state).Err(); err != nil {
 		log.Printf("Error setting state on %s: %v", key, err)
 		return
 	}
-	if err := rdb.JSONSet(ctx, key, "$.completedAt", finishedAt).Err(); err != nil {
+	if err := e.RDB.JSONSet(ctx, key, "$.completedAt", finishedAt).Err(); err != nil {
 		log.Printf("Error setting completedAt on %s: %v", key, err)
 	}
 
+	// The archive must outlive the request that triggered it, so detach from
+	// the caller's cancellation while keeping its values (trace context).
+	bg := context.WithoutCancel(ctx)
 	go func() {
 		// Re-read so the archived document includes the terminal state.
-		final, ok := jsonFirstMatch[map[string]interface{}](rdb, key, "$")
+		final, ok := jsonFirstMatch[map[string]interface{}](bg, e.RDB, key, "$")
 		if !ok {
 			log.Printf("Error re-reading %s for archive", key)
 			return
@@ -408,16 +394,16 @@ func checkWorkflowState(rdb *redis.Client, conn *pgxpool.Pool, key string) {
 			log.Printf("Error encoding %s for archive: %v", key, err)
 			return
 		}
-		archiveInstance(conn, key, name, int64(startedAt), finishedAt, string(data))
+		e.archiveInstance(bg, key, name, int64(startedAt), finishedAt, string(data))
 	}()
 }
 
 // archiveInstance inserts a finished workflow into Postgres. The instance is
 // intentionally left in Redis: Redis remains the live store the read endpoints
 // query; Postgres is the long-term archive.
-func archiveInstance(conn *pgxpool.Pool, key, name string, startedAt, finishedAt int64, document string) {
+func (e *Engine) archiveInstance(ctx context.Context, key, name string, startedAt, finishedAt int64, document string) {
 	id := strings.Split(key, ":")[1]
-	_, err := conn.Exec(ctx, `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
+	_, err := e.DB.Exec(ctx, `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
 		VALUES ($1, $2, TO_TIMESTAMP($3), TO_TIMESTAMP($4), $5)
 		ON CONFLICT ("id") DO NOTHING`, id, name, startedAt, finishedAt, document)
 	if err != nil {
@@ -428,8 +414,9 @@ func archiveInstance(conn *pgxpool.Pool, key, name string, startedAt, finishedAt
 // ---- read endpoints ----
 
 // ListWorkflows returns the names of all registered workflow templates.
-func ListWorkflows(w http.ResponseWriter, rdb *redis.Client) {
-	result, err := rdb.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
+func (e *Engine) ListWorkflows(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	result, err := e.RDB.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
 	if err != nil {
 		log.Printf("Error searching workflow templates: %v", err)
 		httpError(w, 500, "Error searching workflow templates")
@@ -457,9 +444,10 @@ func ListWorkflows(w http.ResponseWriter, rdb *redis.Client) {
 
 // ListWorkflowInstances returns instance IDs matching the query-string
 // filters, ANDed together; with no filters it returns everything.
-func ListWorkflowInstances(r *http.Request, w http.ResponseWriter, client rueidis.Client) {
+func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	q := r.URL.Query()
-	now := time.Now()
+	now := e.Clock.Now()
 
 	// timeCond turns "5m"/"15m" into a RediSearch numeric range on a field.
 	timeCond := func(field, val string) string {
@@ -501,8 +489,8 @@ func ListWorkflowInstances(r *http.Request, w http.ResponseWriter, client rueidi
 		query = strings.Join(clauses, " && ")
 	}
 
-	cmd := client.B().FtSearch().Index("workflows_index").Query(query).Build()
-	n, resp, _ := client.Do(ctx, cmd).AsFtSearch()
+	cmd := e.Search.B().FtSearch().Index("workflows_index").Query(query).Build()
+	n, resp, _ := e.Search.Do(ctx, cmd).AsFtSearch()
 	if n == 0 {
 		httpError(w, 404, "No Instances Found")
 		return
@@ -517,7 +505,8 @@ func ListWorkflowInstances(r *http.Request, w http.ResponseWriter, client rueidi
 }
 
 // GetWorkflowInstance returns the full JSON document for one instance.
-func GetWorkflowInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Client) {
+func (e *Engine) GetWorkflowInstance(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	docKey := r.URL.Query().Get("doc_key")
 	if docKey == "" {
 		httpError(w, 400, "doc_key required. ")
@@ -528,7 +517,7 @@ func GetWorkflowInstance(r *http.Request, w http.ResponseWriter, rdb *redis.Clie
 		return
 	}
 
-	instance, ok := jsonFirstMatch[map[string]interface{}](rdb, docKey, "$")
+	instance, ok := jsonFirstMatch[map[string]interface{}](ctx, e.RDB, docKey, "$")
 	if !ok {
 		httpError(w, 404, "Instance Not Found")
 		return

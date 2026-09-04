@@ -18,10 +18,20 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-var srv *http.Server
-var rdb = db_connect.DBConnect()
-var client = db_connect.ConnectRueidis()
-var conn = db_connect.ConnectPostgres()
+// envOr returns the environment variable or a default when it is unset.
+func envOr(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
+}
+
+// server wires the engine and its connections to the HTTP surface. It is the
+// composition root: nothing here is package-level state.
+type server struct {
+	eng *instance_engine.Engine
+	srv *http.Server
+}
 
 // The `httpTracing` function logs the received request URL path and then calls the next HTTP handler
 // function.
@@ -49,49 +59,21 @@ func ping(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Golang Server is up and running...!")
 }
 
-// The function "startInstance" initiates an instance using the instance_engine package and a Redis
-// database connection.
-func startInstance(w http.ResponseWriter, r *http.Request) {
-	instance_engine.StartInstance(r, w, rdb)
-}
-
-// The function updateInstance updates an instance using the instance_engine package.
-func updateInstance(w http.ResponseWriter, r *http.Request) {
-	instance_engine.UpdateInstance(r, w, rdb, conn)
-}
-
-// The function listWorkflows handles HTTP requests to list workflows using an instance engine and a
-// database connection.
-func listWorkflows(w http.ResponseWriter, r *http.Request) {
-	instance_engine.ListWorkflows(w, rdb)
-}
-
-// The function listWorkflowInstances lists workflow instances using an instance engine and client.
-func listWorkflowInstances(w http.ResponseWriter, r *http.Request) {
-	instance_engine.ListWorkflowInstances(r, w, client)
-}
-
-// The function `getWorkflowInstance` retrieves a workflow instance using the instance engine and
-// database connection.
-func getWorkflowInstance(w http.ResponseWriter, r *http.Request) {
-	instance_engine.GetWorkflowInstance(r, w, rdb)
-}
-
 // The `shutdown` function responds kubernetes graceful shutdown endpoint.
-func shutdown(w http.ResponseWriter, r *http.Request) {
-	log.Println("Gracefully Shitting Down...!")
+func (s *server) shutdown(w http.ResponseWriter, r *http.Request) {
+	log.Println("Gracefully Shutting Down...!")
 
 	// Disconnect Redis (rdb)
-	db_connect.RDBDisconnect(rdb)
+	db_connect.RDBDisconnect(s.eng.RDB)
 
 	// Shutdown Redis (rueidis)
-	db_connect.DisconnectRueidis(client)
+	db_connect.DisconnectRueidis(s.eng.Search)
 
 	// Shutdown Postgres
-	db_connect.DisconnectPostgres(conn)
+	db_connect.DisconnectPostgres(s.eng.DB)
 
 	// Shutdown HTTP Server
-	err := srv.Shutdown(context.Background())
+	err := s.srv.Shutdown(context.Background())
 	if err != nil {
 		log.Println("HTTP Server shutdown error: ", err)
 		return
@@ -102,10 +84,11 @@ func shutdown(w http.ResponseWriter, r *http.Request) {
 }
 
 // The `live` function responds kubernetes live endpoint.
-func live(w http.ResponseWriter, r *http.Request) {
+func (s *server) live(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
 	// Check RDB (go-redis)
-	res := rdb.Ping(context.Background()).String()
+	res := s.eng.RDB.Ping(ctx).String()
 	if res == "ping: PONG" {
 		log.Println("Redis (go-redis) ping Successfully")
 	} else {
@@ -115,8 +98,8 @@ func live(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check Rueidis
-	cmd := client.B().Ping().Build()
-	result := client.Do(context.Background(), cmd)
+	cmd := s.eng.Search.B().Ping().Build()
+	result := s.eng.Search.Do(ctx, cmd)
 	pong, err := result.ToString()
 	if err != nil {
 		log.Println("Ping Redis (Rueidis) Error: ", err)
@@ -127,7 +110,7 @@ func live(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check Postgres
-	err = conn.Ping(context.Background())
+	err = s.eng.DB.Ping(ctx)
 	if err != nil {
 		log.Println("Ping Postgres Error: ", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -139,8 +122,8 @@ func live(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 }
 
-// The function `newHTTPHandler` creates a new HTTP handler with tracing for various endpoints.
-func newHTTPHandler() http.Handler {
+// handler builds the HTTP mux with tracing for every endpoint.
+func (s *server) handler() http.Handler {
 	mux := http.NewServeMux()
 
 	// otelhttp.NewHandler reads the matched ServeMux pattern from r.Pattern
@@ -150,30 +133,35 @@ func newHTTPHandler() http.Handler {
 	}
 
 	handleFunc("/ping", httpTracing(ping))
-	handleFunc("/start_instance", httpTracing(startInstance))
-	handleFunc("/update_instance", httpTracing(updateInstance))
-	handleFunc("/workflows/list", httpTracing(listWorkflows))
-	handleFunc("/workflow_instances/list", httpTracing(listWorkflowInstances))
-	handleFunc("/workflow_instances/get", httpTracing(getWorkflowInstance))
+	handleFunc("/start_instance", httpTracing(s.eng.StartInstance))
+	handleFunc("/update_instance", httpTracing(s.eng.UpdateInstance))
+	handleFunc("/workflows/list", httpTracing(s.eng.ListWorkflows))
+	handleFunc("/workflow_instances/list", httpTracing(s.eng.ListWorkflowInstances))
+	handleFunc("/workflow_instances/get", httpTracing(s.eng.GetWorkflowInstance))
 
-	handleFunc("/shutdown", httpTracing(shutdown))
-	handleFunc("/live", httpTracing(live))
-	handleFunc("/ready", httpTracing(live))
-	handleFunc("/health", httpTracing(live))
+	handleFunc("/shutdown", httpTracing(s.shutdown))
+	handleFunc("/live", httpTracing(s.live))
+	handleFunc("/ready", httpTracing(s.live))
+	handleFunc("/health", httpTracing(s.live))
 
-	handler := otelhttp.NewHandler(mux, "/")
-	return handler
+	return otelhttp.NewHandler(mux, "/")
 }
 
-// The main function sets up an HTTP server, handles signals for graceful shutdown, and starts
-// listening on port 5000.
+// The main function connects the stores, loads the DSL, starts the reaper,
+// and serves HTTP on port 5000 until interrupted.
 func main() {
-
-	templating.ParseDSL(rdb, conn)
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	instance_engine.StartDeadlineReaper(ctx, rdb, conn, time.Second)
+
+	rdb := db_connect.DBConnect(ctx)
+	search := db_connect.ConnectRueidis()
+	db := db_connect.ConnectPostgres(ctx)
+
+	templating.ParseDSL(ctx, rdb, db, envOr("SAGAWISE_DSL_DIR", "/sagawise"))
+
+	eng := instance_engine.New(rdb, search, db)
+	eng.Services = instance_engine.FileRegistry{Path: envOr("SAGAWISE_SERVICES_FILE", "services.json")}
+	eng.StartDeadlineReaper(ctx, time.Second)
 
 	otelShutdown, err := otel.SetupOTelSDK(ctx)
 	if err != nil {
@@ -187,17 +175,18 @@ func main() {
 		}()
 	}
 
-	srv = &http.Server{
+	s := &server{eng: eng}
+	s.srv = &http.Server{
 		Addr:              ":5000",
 		BaseContext:       func(_ net.Listener) context.Context { return ctx },
 		ReadHeaderTimeout: time.Second,
 		ReadTimeout:       time.Second,
 		WriteTimeout:      10 * time.Second,
-		Handler:           newHTTPHandler(),
+		Handler:           s.handler(),
 	}
 	srvErr := make(chan error, 1)
 	go func() {
-		srvErr <- srv.ListenAndServe()
+		srvErr <- s.srv.ListenAndServe()
 	}()
 
 	log.Println("Server started listening on port 5000")
@@ -212,7 +201,7 @@ func main() {
 		stop()
 	}
 
-	if err := srv.Shutdown(context.Background()); err != nil {
+	if err := s.srv.Shutdown(context.Background()); err != nil {
 		log.Println("HTTP server shutdown error: ", err)
 	}
 }

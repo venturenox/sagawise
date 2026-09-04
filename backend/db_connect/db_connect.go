@@ -13,9 +13,9 @@ import (
 	"github.com/redis/rueidis"
 )
 
-var ctx = context.Background()
-
-func DBConnect() *redis.Client {
+// DBConnect builds the go-redis client from REDIS_CONNECTION_STRING or
+// REDIS_HOST/REDIS_PORT and pings it once.
+func DBConnect(ctx context.Context) *redis.Client {
 	var rdb *redis.Client
 
 	if os.Getenv("REDIS_CONNECTION_STRING") == "" {
@@ -56,6 +56,7 @@ func RDBDisconnect(rdb *redis.Client) {
 	}
 }
 
+// ConnectRueidis builds the rueidis client from REDIS_HOST/REDIS_PORT.
 func ConnectRueidis() rueidis.Client {
 
 	// Connect to a single redis node:
@@ -73,13 +74,15 @@ func DisconnectRueidis(client rueidis.Client) {
 	log.Println("Redis (Rueidis) connection closed successfully")
 }
 
-func ConnectPostgres() *pgxpool.Pool {
+// ConnectPostgres builds the pgx pool from POSTGRES_* and waits (up to 30
+// attempts, one per second) for a successful ping.
+func ConnectPostgres(ctx context.Context) *pgxpool.Pool {
 
 	conn_str := "postgres://" + os.Getenv("POSTGRES_USERNAME") + ":" +
 		url.QueryEscape(os.Getenv("POSTGRES_PASSWORD")) + "@" + os.Getenv("POSTGRES_HOST") +
 		":" + os.Getenv("POSTGRES_PORT") + "/" + os.Getenv("POSTGRES_DATABASE")
 
-	pool, err := pgxpool.New(context.Background(), conn_str)
+	pool, err := pgxpool.New(ctx, conn_str)
 	if err != nil {
 		log.Printf("Unable to connect to database: %v\n", err)
 		return pool
