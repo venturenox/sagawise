@@ -30,9 +30,9 @@ Four events act on a task. Three are reports; one is the reaper.
 | PENDING | → PUBLISHED, deadline armed | 409 `TASK_NOT_PUBLISHED` | 409 `TASK_NOT_PUBLISHED` | impossible (no deadline exists) |
 | PUBLISHED | dup (see §4) | → COMPLETED, deadline removed | → FAILED, deadline removed, webhook | → FAILED, webhook |
 | COMPLETED | dup | dup | 409 `TASK_ALREADY_COMPLETED` | no-op (stale deadline is discarded) |
-| FAILED | 409 `TASK_ALREADY_FAILED` | 409 `TASK_ALREADY_FAILED` | dup | no-op |
+| FAILED | dup | 409 `TASK_ALREADY_FAILED` | dup | no-op |
 
-"dup" means the report repeats a transition that already happened. §4 defines what happens.
+"dup" means the report repeats a transition that already happened at some point in the task's life (a `publish` on any task that was ever published; a `consume` on a COMPLETED task; a `fail` on a FAILED task). §4 defines what happens.
 
 Rules:
 
@@ -62,8 +62,11 @@ A **duplicate** is a report that asks for a transition the task has already made
 | Duplicate report | `is_retry=false` | `is_retry=true` |
 |---|---|---|
 | `publish` on PUBLISHED | 409 `TASK_ALREADY_PUBLISHED`, no change | 200, payload replaced, **deadline re-armed** from now **[DECISION D2]** (no side effects if the instance is terminal, I4) |
+| `publish` on COMPLETED or FAILED | 409 `TASK_ALREADY_COMPLETED` / `TASK_ALREADY_FAILED`, no change | 200, no change (T1: never re-arms, never leaves the terminal state) |
 | `consume` on COMPLETED | 409 `TASK_ALREADY_COMPLETED`, no change | 200, no change |
 | `fail` on FAILED | 409 `TASK_ALREADY_FAILED`, no change | 200, no change |
+
+In one sentence: `is_retry=true` asks "did this transition already happen?". Yes means 200 and nothing changes (except D2). No means the normal rules of §2 apply unchanged.
 
 Everything that is not a duplicate ignores `is_retry`:
 
@@ -73,7 +76,7 @@ Everything that is not a duplicate ignores `is_retry`:
 - `is_retry=true` `fail` on a COMPLETED task is 409 (T1).
 - `is_retry=true` anything on a terminal instance is 409 (I4).
 
-`is_retry` must be exactly `true` or `false`. Anything else is 400 `INVALID_PARAM`. Today it silently becomes `false`.
+`is_retry` must be `true` or `false`, case-insensitive (the Python SDK sends `True`/`False`). Anything else, including `1`/`0`/`t`/`f`, is 400 `INVALID_PARAM`. Today anything unparseable silently becomes `false`.
 
 Rationale for D2: a re-published message means the consumer gets a fresh copy, so it gets a fresh window. This is the only case where a retry has a side effect.
 
