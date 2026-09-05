@@ -11,6 +11,7 @@ const event_functions = Object.freeze({
 		const resp = await axios({
 			method: 'post',
 			url: process.env.SAGAWISE_URL+'/update_instance',
+			headers: { Authorization: `Bearer ${process.env.SAGAWISE_API_KEY}` },
 			params: {
 				workflow_instance_id: data.workflow_instance_id,
 				workflow_version: '1.0',
@@ -27,6 +28,7 @@ const event_functions = Object.freeze({
 		const resp2 = await axios({
 			method: 'post',
 			url: process.env.SAGAWISE_URL+'/update_instance',
+			headers: { Authorization: `Bearer ${process.env.SAGAWISE_API_KEY}` },
 			params: {
 				workflow_instance_id: data.workflow_instance_id,
 				workflow_version: '1.0',

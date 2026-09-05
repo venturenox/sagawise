@@ -12,7 +12,8 @@ import (
 
 // Contract §2, §3, §4: every (state, action, is_retry) cell of the task
 // state machine, plus the terminal-instance rows of I4/I5. One instance per
-// row. Rows today's code cannot pass carry the audit finding in `known`.
+// row. A row the code cannot pass yet would carry the audit finding in
+// `known`; since phase 6 every row passes.
 
 type setup string
 
@@ -79,9 +80,9 @@ func transitionRows() []trow {
 		{pending, "publish", f, true, "PUBLISHED", "armed", 0, ""},
 		{pending, "publish", t, true, "PUBLISHED", "armed", 0, ""},
 		{pending, "consume", f, false, "PENDING", "none", 0, ""},
-		{pending, "consume", t, false, "PENDING", "none", 0, "#2"},
+		{pending, "consume", t, false, "PENDING", "none", 0, ""},
 		{pending, "fail", f, false, "PENDING", "none", 0, ""},
-		{pending, "fail", t, false, "PENDING", "none", 0, "#2"},
+		{pending, "fail", t, false, "PENDING", "none", 0, ""},
 		// ---- task 0 PUBLISHED ----
 		{published, "publish", f, false, "PUBLISHED", "same", 0, ""},
 		{published, "publish", t, true, "PUBLISHED", "rearmed", 0, ""}, // D2
@@ -91,39 +92,39 @@ func transitionRows() []trow {
 		{published, "fail", t, true, "FAILED", "none", 1, ""},
 		// ---- task 0 COMPLETED ----
 		{completed, "publish", f, false, "COMPLETED", "none", 0, ""},
-		{completed, "publish", t, true, "COMPLETED", "none", 0, "#2"},
+		{completed, "publish", t, true, "COMPLETED", "none", 0, ""},
 		{completed, "consume", f, false, "COMPLETED", "none", 0, ""},
 		{completed, "consume", t, true, "COMPLETED", "none", 0, ""},
 		{completed, "fail", f, false, "COMPLETED", "none", 0, ""},
-		{completed, "fail", t, false, "COMPLETED", "none", 0, "#2"},
+		{completed, "fail", t, false, "COMPLETED", "none", 0, ""},
 		// ---- task 0 FAILED (instance terminal) ----
 		{failedTask, "publish", f, false, "FAILED", "none", 1, ""},
-		{failedTask, "publish", t, true, "FAILED", "none", 1, "#2"},
+		{failedTask, "publish", t, true, "FAILED", "none", 1, ""},
 		{failedTask, "consume", f, false, "FAILED", "none", 1, ""},
-		{failedTask, "consume", t, false, "FAILED", "none", 1, "#2"},
+		{failedTask, "consume", t, false, "FAILED", "none", 1, ""},
 		{failedTask, "fail", f, false, "FAILED", "none", 1, ""},
-		{failedTask, "fail", t, true, "FAILED", "none", 1, "#2"},
+		{failedTask, "fail", t, true, "FAILED", "none", 1, ""},
 		// ---- instance FAILED, sibling task 1 PENDING (I4) ----
-		{sibPending, "publish", f, false, "PENDING", "none", 1, "#3"},
-		{sibPending, "publish", t, false, "PENDING", "none", 1, "#3"},
+		{sibPending, "publish", f, false, "PENDING", "none", 1, ""},
+		{sibPending, "publish", t, false, "PENDING", "none", 1, ""},
 		{sibPending, "consume", f, false, "PENDING", "none", 1, ""},
-		{sibPending, "consume", t, false, "PENDING", "none", 1, "#2"},
+		{sibPending, "consume", t, false, "PENDING", "none", 1, ""},
 		{sibPending, "fail", f, false, "PENDING", "none", 1, ""},
-		{sibPending, "fail", t, false, "PENDING", "none", 1, "#2"},
+		{sibPending, "fail", t, false, "PENDING", "none", 1, ""},
 		// ---- instance FAILED, sibling task 1 PUBLISHED and frozen (I4, I5) ----
-		{sibPublished, "publish", f, false, "PUBLISHED", "none", 1, "#3"},
-		{sibPublished, "publish", t, true, "PUBLISHED", "none", 1, "#3"},
-		{sibPublished, "consume", f, false, "PUBLISHED", "none", 1, "#3"},
-		{sibPublished, "consume", t, false, "PUBLISHED", "none", 1, "#3"},
-		{sibPublished, "fail", f, false, "PUBLISHED", "none", 1, "#3"},
-		{sibPublished, "fail", t, false, "PUBLISHED", "none", 1, "#3"},
+		{sibPublished, "publish", f, false, "PUBLISHED", "none", 1, ""},
+		{sibPublished, "publish", t, true, "PUBLISHED", "none", 1, ""},
+		{sibPublished, "consume", f, false, "PUBLISHED", "none", 1, ""},
+		{sibPublished, "consume", t, false, "PUBLISHED", "none", 1, ""},
+		{sibPublished, "fail", f, false, "PUBLISHED", "none", 1, ""},
+		{sibPublished, "fail", t, false, "PUBLISHED", "none", 1, ""},
 		// ---- instance COMPLETED, task 1 COMPLETED (I4 + duplicates) ----
 		{instCompleted, "publish", f, false, "COMPLETED", "none", 0, ""},
-		{instCompleted, "publish", t, true, "COMPLETED", "none", 0, "#2"},
+		{instCompleted, "publish", t, true, "COMPLETED", "none", 0, ""},
 		{instCompleted, "consume", f, false, "COMPLETED", "none", 0, ""},
 		{instCompleted, "consume", t, true, "COMPLETED", "none", 0, ""},
 		{instCompleted, "fail", f, false, "COMPLETED", "none", 0, ""},
-		{instCompleted, "fail", t, false, "COMPLETED", "none", 0, "#2"},
+		{instCompleted, "fail", t, false, "COMPLETED", "none", 0, ""},
 	}
 }
 

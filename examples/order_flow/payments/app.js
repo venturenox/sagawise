@@ -71,7 +71,7 @@ async function main() {
 				await handleOrderCreated(data);
 			} catch (err) {
 				// Reporting to sagawise can legitimately fail -- the task may have
-				// already timed out (403), or sagawise may be briefly unreachable.
+				// already timed out (409), or sagawise may be briefly unreachable.
 				// Swallow it: one bad message must not kill the consumer for every
 				// message behind it.
 				console.error(`[payments] could not process ${data.workflow_instance_id}: ${err.message}`);

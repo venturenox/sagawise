@@ -9,6 +9,7 @@ Easy to adopt workflow tracking which instantly lets developers bring resilience
 ## Table of Contents
 
 - [Features](#features)
+- [Authentication and webhook signatures](#authentication-and-webhook-signatures)
 - [Installing](#installing)
 - [Importing](#importing)
 - [Start Workflow](#start-workflow)
@@ -17,6 +18,30 @@ Easy to adopt workflow tracking which instantly lets developers bring resilience
 - [Fail](#fail)
 
 ---
+
+## Authentication and webhook signatures
+
+Set `SAGAWISE_API_KEY` alongside `SAGAWISE_URL`; every call then carries
+`Authorization: Bearer <key>`. Sagawise answers 401 `UNAUTHORIZED` without it.
+
+Failure webhooks are signed when the server has `SAGAWISE_WEBHOOK_SECRET`.
+Verify against the raw body before trusting a compensation request:
+
+```js
+const sagawise = require('@venturenox/sagawise');
+
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
+app.post('/failure_report', (req, res) => {
+	if (!sagawise.verify_signature({ secret: process.env.SAGAWISE_WEBHOOK_SECRET, headers: req.headers, rawBody: req.rawBody })) {
+		return res.sendStatus(401);
+	}
+	// compensate ...
+	res.sendStatus(200);
+});
+```
+
+`verify_signature` returns `true` only when `X-Sagawise-Signature` matches
+and `X-Sagawise-Timestamp` is within 5 minutes of now (`toleranceSeconds`).
 
 ## Features
 
@@ -61,6 +86,8 @@ Once the package is installed, you can import the library using `require` approa
 const sagawise = require("sagawise");
 ```
 
+The client reads `SAGAWISE_URL` (base URL of the Sagawise server) at import time, and `SAGAWISE_TIMEOUT_MS` (per-request timeout, default `1000`).
+
 ---
 
 ## Start Workflow
@@ -76,11 +103,14 @@ The `start_workflow` function requires an **object** with the following **requir
 
 ### Return
 
-The `start_workflow` function may return any of these:
+The `start_workflow` function resolves to the workflow instance ID (STRING).
 
-- Workflow instance ID (STRING) - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+It **rejects** (throws when awaited) instead of returning a value when:
+
+- a required key is missing or empty (`Error`)
+- Sagawise is unreachable, times out, or answers with a non-2xx status (an axios error; `error.response.status` and `error.response.data` carry Sagawise's answer)
+
+Errors are never caught and returned as values, so an `await` inside a `try`/`catch` is enough to notice a failed report.
 
 ### Example
 
@@ -104,19 +134,15 @@ The `publish_message` function requires an **object** with the following **requi
 - workflow_instance_id (STRING)
 - workflow_version (STRING)
 - event_name (STRING)
-- data (Object)
+- payload (Object, non-null)
 
 Optional Key:
 
-- is_retry (BOOLEAN). Default value is `false`
+- is_retry (BOOLEAN, must be a real boolean). Default value is `false`
 
 ### Return
 
-The `publish_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `publish_message` function resolves to `undefined` on success. It **rejects** when a required key is missing or empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 
@@ -146,15 +172,11 @@ The `consume_message` function requires an **object** with the following **requi
 
 Optional Key:
 
-- is_retry (BOOLEAN). Default value is `false`
+- is_retry (BOOLEAN, must be a real boolean). Default value is `false`
 
 ### Return
 
-The `consume_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `consume_message` function resolves to `undefined` on success. It **rejects** when a required key is missing or empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 
@@ -184,15 +206,11 @@ The `fail_message` function requires an **object** with the following **required
 
 Optional Key:
 
-- is_retry (BOOLEAN). Default value is `false`
+- is_retry (BOOLEAN, must be a real boolean). Default value is `false`
 
 ### Return
 
-The `fail_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `fail_message` function resolves to `undefined` on success. It **rejects** when a required key is missing or empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 

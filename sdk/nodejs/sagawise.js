@@ -1,140 +1,182 @@
 const axios = require('axios');
+const crypto = require('node:crypto');
+
+// Requests to Sagawise time out after this many milliseconds.
+const DEFAULT_TIMEOUT_MS = 1000;
+
+// Every request carries the API key from SAGAWISE_API_KEY as a bearer
+// token; Sagawise refuses requests without one (401 UNAUTHORIZED) unless it
+// runs with SAGAWISE_AUTH=off.
+const headers = {};
+if (process.env.SAGAWISE_API_KEY) {
+	headers.Authorization = `Bearer ${process.env.SAGAWISE_API_KEY}`;
+}
 
 const axios_instance = axios.create({
 	baseURL: process.env.SAGAWISE_URL,
-	timeout: 1000,
+	timeout: Number(process.env.SAGAWISE_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
 	withCredentials: false,
+	headers,
 });
 
-class sagawise {
+// How far a webhook's timestamp may be from this clock before it is
+// treated as a replay (seconds).
+const DEFAULT_TOLERANCE_SECONDS = 300;
 
 /**
- * The function `start_workflow` asynchronously starts a workflow by sending an HTTP request to a
- * specified endpoint and returns the workflow instance ID.
- * @returns The function `start_workflow` is returning the `workflow_instance_id` from the data
- * received in the HTTP response after starting the workflow instance. If there is an error during the
- * process, it will log the error and return the error object.
+ * Verifies the signature of a failure webhook Sagawise delivered
+ * (`X-Sagawise-Timestamp` and `X-Sagawise-Signature` headers, HMAC-SHA256
+ * of `<timestamp>.<raw body>`). `rawBody` must be the body bytes as
+ * received (a Buffer or string), before any JSON parsing. Returns true only
+ * when the signature is valid and the timestamp is within `toleranceSeconds`
+ * of now. With Express use `express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })`
+ * to keep the raw bytes.
  */
-	async start_workflow({ workflow_name, workflow_version }) {
-		try {
-			if (workflow_name == '' || workflow_version == '') {
-				throw new Error('workflow_name and workflow_version are required.');
-			}
-
-			// send HTTP request to Sagawise app
-			const req = await axios_instance.request({
-				url: '/start_instance',
-				method: 'post',
-				params: {
-					workflow_name,
-					workflow_version,
-				}
-			});
-			
-			return req.data.workflow_instance_id;
-	
-		} catch (error) {
-			console.log('Error: ', error);
-			return error;
-		}
+function verify_signature({ secret, headers: h, rawBody, toleranceSeconds = DEFAULT_TOLERANCE_SECONDS, now = Date.now() / 1000 } = {}) {
+	if (!secret || !h || rawBody === undefined || rawBody === null) {
+		return false;
 	}
-
-	/**
-	 * The function `publish_message` sends an HTTP request to update a workflow instance with specified
-	 * parameters and payload, handling errors and validation checks.
-	 * @returns The function `publish_message` will return an error object if any of the required keys
-	 * (`workflow_instance_id`, `workflow_version`, `event_name`, `payload`) are missing or if the payload
-	 * is an empty object. If an error occurs during the execution of the function (e.g., an error in the
-	 * HTTP request), it will catch the error, log it to the console, and return the
-	 */
-	async publish_message({ workflow_instance_id, workflow_version, event_name, is_retry = false, payload }) {
-		try {
-			if ( workflow_instance_id == '' || workflow_version == '' || event_name == '' || is_retry == '' || payload == '' || Object.is(payload, {}) ) {
-				throw new Error('Required keys: workflow_instance_id, workflow_version, event_name, payload');
-			}
-			
-			// send HTTP request to Sagawise app
-			await axios_instance.request({
-				url: '/update_instance',
-				method: 'post',
-				params: {
-					workflow_instance_id,
-					workflow_version,
-					event_name,
-					action_type: 'publish',
-					is_retry,
-				},
-				data: payload,
-			});
-
-		} catch (error) {
-			console.log('Error: ', error);
-			return error;
-		}
+	const get = (name) => {
+		const v = h[name] ?? h[name.toLowerCase()];
+		return Array.isArray(v) ? v[0] : v;
+	};
+	const tsHeader = get('X-Sagawise-Timestamp');
+	const sigHeader = get('X-Sagawise-Signature');
+	if (!tsHeader || !sigHeader || !/^\s*\d+\s*$/.test(tsHeader)) {
+		return false;
 	}
-
-	/**
-	 * The function `consume_message` asynchronously sends an HTTP request to update a workflow instance
-	 * in a Sagawise app with specified parameters, handling errors and returning any encountered errors.
-	 * @returns The `consume_message` function is returning the error object caught in the `catch` block
-	 * if an error occurs during the execution of the function.
-	 */
-	async consume_message({ workflow_instance_id, workflow_version, event_name, service_name, is_retry = false }) {
-		try {
-			if ( workflow_instance_id == '' || workflow_version == '' || event_name == '' || is_retry == '' || service_name == '' ) {
-				throw new Error('Required keys: workflow_instance_id, workflow_version, event_name, service_name');
-			}
-
-			// send HTTP request to Sagawise app
-			await axios_instance.request({
-				url: '/update_instance',
-				method: 'post',
-				params: {
-					workflow_instance_id,
-					workflow_version,
-					event_name,
-					action_type: 'consume',
-					service_name,
-					is_retry,
-				}
-			});
-	
-		} catch (error) {
-			console.log('Error: ', error);
-			return error;
-		}
+	const ts = Number(tsHeader);
+	if (Math.abs(Math.floor(now) - ts) > toleranceSeconds) {
+		return false;
 	}
-
-	/**
-	 * The function `fail_message` sends a POST request to update an instance in a Sagawise app with
-	 * specified parameters and handles any errors that occur.
-	 * @returns The `fail_message` function is returning the error object caught in the `catch` block.
-	 */
-	async fail_message({ workflow_instance_id, workflow_version, event_name, service_name, is_retry = false }) {
+	const expected = crypto.createHmac('sha256', secret).update(`${ts}.`).update(rawBody).digest();
+	// Several v1= values may be present during a secret rotation.
+	return sigHeader.split(',').some((part) => {
+		const p = part.trim();
+		if (!p.startsWith('v1=')) return false;
+		let got;
 		try {
-			if ( workflow_instance_id == '' || workflow_version == '' || event_name == '' || is_retry == '' || service_name == '' ) {
-				throw new Error('Required keys: workflow_instance_id, workflow_version, event_name');
-			}
-
-			// send HTTP request to Sagawise app
-			await axios_instance.request({
-				url: '/update_instance',
-				method: 'post',
-				params: {
-					workflow_instance_id,
-					workflow_version,
-					event_name,
-					action_type: 'fail',
-					service_name,
-					is_retry,
-				}
-			});
-	
-		} catch (error) {
-			console.log('Error: ', error);
-			return error;
+			got = Buffer.from(p.slice(3), 'hex');
+		} catch {
+			return false;
 		}
+		return got.length === expected.length && crypto.timingSafeEqual(got, expected);
+	});
+}
+
+// requireKeys throws if any named key is missing or empty. Presence is
+// checked explicitly (`undefined`, `null`, `''`), never with loose equality:
+// `false == ''` is true in JavaScript, which is how `is_retry = false` once
+// made every non-retry call a silent no-op.
+function requireKeys(obj, keys) {
+	const missing = keys.filter((k) => obj[k] === undefined || obj[k] === null || obj[k] === '');
+	if (missing.length > 0) {
+		throw new Error(`Required keys: ${missing.join(', ')}`);
 	}
 }
 
-module.exports = new sagawise();
+function requireBoolean(name, value) {
+	if (typeof value !== 'boolean') {
+		throw new Error(`${name} must be a boolean`);
+	}
+}
+
+// Every method sends exactly the HTTP request it describes and lets any
+// failure propagate as a rejected promise: a missing key, an unreachable
+// Sagawise, or a non-2xx response (an axios error whose `response` carries
+// the status and body). Nothing is caught and returned as a value.
+class Sagawise {
+	/**
+	 * Starts a workflow instance and resolves to its `workflow_instance_id`.
+	 * Required keys: `workflow_name`, `workflow_version`.
+	 */
+	async start_workflow({ workflow_name, workflow_version } = {}) {
+		requireKeys({ workflow_name, workflow_version }, ['workflow_name', 'workflow_version']);
+
+		const res = await axios_instance.request({
+			url: '/start_instance',
+			method: 'post',
+			params: { workflow_name, workflow_version },
+		});
+		return res.data.workflow_instance_id;
+	}
+
+	/**
+	 * Reports that a message was published on `event_name`. Required keys:
+	 * `workflow_instance_id`, `workflow_version`, `event_name`, `payload`
+	 * (a non-null object; it becomes the failure webhook body). Optional:
+	 * `is_retry` (boolean, default false).
+	 */
+	async publish_message({ workflow_instance_id, workflow_version, event_name, is_retry = false, payload } = {}) {
+		requireKeys({ workflow_instance_id, workflow_version, event_name }, ['workflow_instance_id', 'workflow_version', 'event_name']);
+		requireBoolean('is_retry', is_retry);
+		if (payload === undefined || payload === null || typeof payload !== 'object') {
+			throw new Error('Required keys: payload (must be an object)');
+		}
+
+		await axios_instance.request({
+			url: '/update_instance',
+			method: 'post',
+			params: {
+				workflow_instance_id,
+				workflow_version,
+				event_name,
+				action_type: 'publish',
+				is_retry: String(is_retry),
+			},
+			data: payload,
+		});
+	}
+
+	/**
+	 * Reports that `service_name` consumed the message on `event_name`.
+	 * Required keys: `workflow_instance_id`, `workflow_version`, `event_name`,
+	 * `service_name`. Optional: `is_retry` (boolean, default false).
+	 */
+	async consume_message({ workflow_instance_id, workflow_version, event_name, service_name, is_retry = false } = {}) {
+		requireKeys({ workflow_instance_id, workflow_version, event_name, service_name },
+			['workflow_instance_id', 'workflow_version', 'event_name', 'service_name']);
+		requireBoolean('is_retry', is_retry);
+
+		await axios_instance.request({
+			url: '/update_instance',
+			method: 'post',
+			params: {
+				workflow_instance_id,
+				workflow_version,
+				event_name,
+				action_type: 'consume',
+				service_name,
+				is_retry: String(is_retry),
+			},
+		});
+	}
+
+	/**
+	 * Reports that `service_name` failed to process the message on
+	 * `event_name`. Required keys: `workflow_instance_id`, `workflow_version`,
+	 * `event_name`, `service_name`. Optional: `is_retry` (boolean, default false).
+	 */
+	async fail_message({ workflow_instance_id, workflow_version, event_name, service_name, is_retry = false } = {}) {
+		requireKeys({ workflow_instance_id, workflow_version, event_name, service_name },
+			['workflow_instance_id', 'workflow_version', 'event_name', 'service_name']);
+		requireBoolean('is_retry', is_retry);
+
+		await axios_instance.request({
+			url: '/update_instance',
+			method: 'post',
+			params: {
+				workflow_instance_id,
+				workflow_version,
+				event_name,
+				action_type: 'fail',
+				service_name,
+				is_retry: String(is_retry),
+			},
+		});
+	}
+}
+
+const sagawise = new Sagawise();
+sagawise.verify_signature = verify_signature;
+module.exports = sagawise;

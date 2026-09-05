@@ -32,6 +32,29 @@ Easy to adopt workflow tracking which instantly lets developers bring resilience
 
 ---
 
+## Authentication and webhook signatures
+
+Set `SAGAWISE_API_KEY` alongside `SAGAWISE_URL` (or pass `Sagawise(api_key=...)`);
+every call then carries `Authorization: Bearer <key>`. Sagawise answers 401
+`UNAUTHORIZED` without it.
+
+Failure webhooks are signed when the server has `SAGAWISE_WEBHOOK_SECRET`.
+Verify against the raw body before trusting a compensation request:
+
+```python
+from sagawise.sagawise import verify_signature
+
+@app.post('/failure_report')
+def failure_report():
+    if not verify_signature(os.environ['SAGAWISE_WEBHOOK_SECRET'], request.headers, request.get_data()):
+        abort(401)
+    # compensate ...
+    return '', 200
+```
+
+`verify_signature` returns `True` only when `X-Sagawise-Signature` matches
+and `X-Sagawise-Timestamp` is within 5 minutes of now (`tolerance_seconds`).
+
 ## Features
 
 - Call functions to interact with Sagawise
@@ -64,8 +87,11 @@ Once the package is installed, you can import the library using `import` approac
 ```python
 from sagawise import Sagawise
 
-sagawise_instance = Sagawise()
+sagawise_instance = Sagawise()            # per-request timeout: 1 second
+sagawise_instance = Sagawise(timeout=5)   # seconds
 ```
+
+The client reads `SAGAWISE_URL` (base URL of the Sagawise server) from the environment. `timeout` is in **seconds**, the unit `requests` uses.
 
 ---
 
@@ -82,11 +108,15 @@ The `start_workflow` function **requires** the following keys:
 
 ### Return
 
-The `start_workflow` function may return any of these:
+The `start_workflow` function returns the workflow instance ID (STRING).
 
-- Workflow instance ID (STRING) - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+It **raises** instead of returning a value when:
+
+- a required argument is empty (`ValueError`)
+- Sagawise is unreachable or times out (`requests.exceptions.ConnectionError` / `Timeout`)
+- Sagawise answers with a non-2xx status (`requests.exceptions.HTTPError`; `error.response` carries the answer)
+
+All request failures are subclasses of `requests.exceptions.RequestException`. Exceptions are never caught and returned as values.
 
 ### Example
 
@@ -107,7 +137,7 @@ The `publish_message` function **requires** the following keys:
 - workflow_instance_id (STRING)
 - workflow_version (STRING)
 - event_name (STRING)
-- data (Object)
+- payload (dict, non-empty)
 
 Optional Key:
 
@@ -115,11 +145,7 @@ Optional Key:
 
 ### Return
 
-The `publish_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `publish_message` function returns `None` on success. It **raises** when a required argument is empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 
@@ -153,11 +179,7 @@ Optional Key:
 
 ### Return
 
-The `consume_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `consume_message` function returns `None` on success. It **raises** when a required argument is empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 
@@ -191,11 +213,7 @@ Optional Key:
 
 ### Return
 
-The `fail_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `fail_message` function returns `None` on success. It **raises** when a required argument is empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 

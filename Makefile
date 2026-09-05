@@ -1,13 +1,13 @@
-.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status
+.PHONY: start status stop restart clean api_examples order_flow ci ci-tools test test-integration test-sdk test-status bench bench-profile bench-compare
 
 # --- CI (mirrors .github/workflows/ci.yml; bump versions in both places) ---
 STATICCHECK_VERSION   = v0.8.1
 GOLANGCI_LINT_VERSION = v2.13.2
 GOSEC_VERSION         = v2.29.0
 GOVULNCHECK_VERSION   = v1.7.0
-# G104 (unhandled errors) and G706 (log injection): see docs/correctness-audit-2026-08-29.md #7
-# and docs/TODO.md phases 5, 6, 9. Remove from this list when those land.
-GOSEC_EXCLUDE         = G104,G706
+# G706 (log injection: raw query params in logs) is tracked in docs/TODO.md phase 9
+# (structured logging). Remove it from this list when that lands.
+GOSEC_EXCLUDE         = G706
 GOBIN                ?= $(shell go env GOPATH)/bin
 
 start:
@@ -72,4 +72,28 @@ test-sdk:
 # Every line here is a bug the roadmap still owes; the list shrinks as phases 5 and 6 land.
 test-status:
 	@cd backend && go test -count=1 -short -tags integration -v ./... 2>/dev/null \
-		| grep -oE 'XFAIL [^ ]+ \(known failing' | grep -v self-test | sed 's/ (known failing//' | sort | uniq -c | sort -rn
+		| grep -oE 'XFAIL [^ ]+ \(known failing' | grep -v self-test | sed 's/ (known failing//' | sort | uniq -c | sort -rn \
+		| { grep . || echo "none: every contract test passes"; }
+
+# --- Benchmarks (docs/benchmarks/README.md) ---
+BENCH_LABEL ?= baseline
+BENCH_ARGS  ?=
+# Stops the sagawise container for the run: its reaper shares task_deadlines with the
+# server under test and would steal the reaper-lag measurement.
+bench:
+	docker compose stop sagawise || true
+	cd backend && go run ./cmd/bench run -label $(BENCH_LABEL) -out ../docs/benchmarks/runs $(BENCH_ARGS); \
+	status=$$?; cd .. && (docker compose start sagawise || true); exit $$status
+
+# Bottleneck hunt: saturation ramp, pprof at the knee, Redis command breakdown, scaling
+# curves (instances in Redis, tasks per workflow, payload size, simultaneous timeouts),
+# contention. Stored as runs/<date>_<sha>_profile-<label>/. ~10 minutes.
+bench-profile:
+	docker compose stop sagawise || true
+	cd backend && go run ./cmd/bench profile -label $(BENCH_LABEL) -out ../docs/benchmarks/runs $(BENCH_ARGS); \
+	status=$$?; cd .. && (docker compose start sagawise || true); exit $$status
+
+# make bench-compare A=runs/<before> B=runs/<after>   (paths relative to docs/benchmarks)
+# Works for two `bench` runs or two `bench-profile` runs.
+bench-compare:
+	cd backend && go run ./cmd/bench compare ../docs/benchmarks/$(A) ../docs/benchmarks/$(B) -out ../docs/benchmarks/comparisons

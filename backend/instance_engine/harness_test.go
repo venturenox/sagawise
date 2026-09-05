@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +39,8 @@ type webhookCall struct {
 	Service string // the `service=` query value (the consuming service)
 	Path    string
 	Body    map[string]interface{}
+	Raw     []byte      // the body byte for byte (what a signature covers)
+	Header  http.Header // the delivery's request headers
 }
 
 type webhookSink struct {
@@ -49,7 +53,8 @@ func (s *webhookSink) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(raw, &body)
 	s.mu.Lock()
-	s.calls = append(s.calls, webhookCall{Service: r.URL.Query().Get("service"), Path: r.URL.Path, Body: body})
+	s.calls = append(s.calls, webhookCall{Service: r.URL.Query().Get("service"), Path: r.URL.Path, Body: body,
+		Raw: raw, Header: r.Header.Clone()})
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusOK)
 }
@@ -161,9 +166,15 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 	setDefault(t, "POSTGRES_DATABASE", "sagawise")
 	t.Setenv("REDIS_CONNECTION_STRING", "")
 
+	// The engine logs every request; that noise swamps test and benchmark
+	// output. Restore the logger on cleanup.
+	prevOut := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+
 	ctx := context.Background()
-	rdb := db_connect.DBConnect(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
 		t.Fatalf("redis not reachable: %v", err)
 	}
 	faults := &redisFaults{}
@@ -190,10 +201,15 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 	}
 
 	e.hook = httptest.NewServer(e.sink)
-	e.eng = New(rdb, db_connect.ConnectRueidis(), db)
+	e.eng = New(rdb, db)
 	e.eng.Clock = e.clock
 	e.eng.Services = MapRegistry{}
 	e.eng.HTTPClient = e.hook.Client()
+	// A hanging webhook must not hold a test for the production 5 s.
+	e.eng.HTTPClient.Timeout = 2 * time.Second
+	if err := e.eng.LoadScripts(ctx); err != nil {
+		t.Fatalf("load scripts: %v", err)
+	}
 
 	if len(workflows) == 0 {
 		workflows = []utils.Workflow{twoTaskFlow()}
@@ -224,7 +240,9 @@ func (e *env) loadDSL(workflows ...utils.Workflow) {
 			e.eng.Services.(MapRegistry)[task.From] = e.hook.URL + "/fail"
 		}
 	}
-	templating.ParseDSL(e.ctx, e.eng.RDB, e.eng.DB, dir)
+	if _, err := templating.ParseDSL(e.ctx, e.eng.RDB, e.eng.DB, dir); err != nil {
+		e.t.Fatalf("ParseDSL: %v", err)
+	}
 }
 
 func (e *env) cleanup() {
@@ -239,7 +257,7 @@ func (e *env) cleanup() {
 	}
 	// Belt and braces: anything indexed under our workflow names.
 	for _, name := range names {
-		res := e.eng.RDB.Do(e.ctx, "FT.SEARCH", "workflows_index", "@workflow_name:"+name, "NOCONTENT", "LIMIT", "0", "10000").Val()
+		res := e.eng.RDB.Do(e.ctx, "FT.SEARCH", "workflows_index", "@workflow_name:{"+escapeTag(name)+"}", "NOCONTENT", "LIMIT", "0", "10000").Val()
 		if m, ok := res.(map[interface{}]interface{}); ok {
 			if results, ok := m["results"].([]interface{}); ok {
 				for _, r := range results {
@@ -252,14 +270,23 @@ func (e *env) cleanup() {
 			}
 		}
 	}
-	members, _ := e.eng.RDB.ZRange(e.ctx, deadlinesKey, 0, -1).Result()
+	deadlines, _ := e.eng.RDB.ZRange(e.ctx, deadlinesKey, 0, -1).Result()
+	webhooks, _ := e.eng.RDB.ZRange(e.ctx, webhookQueueKey, 0, -1).Result()
 	for id := range seen {
 		e.eng.RDB.Del(e.ctx, instanceKey(id))
-		for _, m := range members {
+		for _, m := range deadlines {
 			if strings.HasPrefix(m, id+":") {
 				e.eng.RDB.ZRem(e.ctx, deadlinesKey, m)
 			}
 		}
+		for _, m := range webhooks {
+			if strings.HasPrefix(m, id+":") {
+				e.eng.RDB.ZRem(e.ctx, webhookQueueKey, m)
+				e.eng.RDB.HDel(e.ctx, webhookAttemptsKey, m)
+			}
+		}
+		e.eng.RDB.ZRem(e.ctx, archiveQueueKey, id)
+		e.eng.RDB.HDel(e.ctx, archiveAttemptsKey, id)
 		_, _ = e.eng.DB.Exec(e.ctx, `DELETE FROM instance_history WHERE id = $1`, id)
 	}
 	for _, name := range names {
@@ -267,8 +294,7 @@ func (e *env) cleanup() {
 		_, _ = e.eng.DB.Exec(e.ctx, `DELETE FROM instance_history WHERE name = $1`, name)
 	}
 	e.eng.DB.Close()
-	e.eng.Search.Close()
-	e.eng.RDB.Close()
+	_ = e.eng.RDB.Close()
 }
 
 // ---- driving the engine ----
@@ -307,14 +333,27 @@ func (e *env) start(name ...string) string {
 }
 
 // report sends one /update_instance call. service may be empty for publish.
-// retry is passed verbatim so tests can send malformed values.
+// retry is passed verbatim so tests can send malformed values. The queue
+// workers are drained afterwards, so a webhook or archive the report caused
+// has happened by the time it returns (in production the handler's nudge
+// makes the workers run right away).
 func (e *env) report(id, action, topic, service, retry, payload string) *httptest.ResponseRecorder {
 	target := "/update_instance?workflow_instance_id=" + id + "&action_type=" + action +
 		"&event_name=" + topic + "&is_retry=" + retry
 	if service != "" {
 		target += "&service_name=" + service
 	}
-	return e.do(e.eng.UpdateInstance, http.MethodPost, target, payload)
+	w := e.do(e.eng.UpdateInstance, http.MethodPost, target, payload)
+	e.drain()
+	return w
+}
+
+// drain runs one tick of each queue worker at the fake clock's current time.
+// Jobs whose retry is not yet due stay queued; advance the clock and drain
+// again to reach them.
+func (e *env) drain() {
+	e.eng.Webhooks.tick(e.ctx)
+	e.eng.Archiver.tick(e.ctx)
 }
 
 func (e *env) publish(id, topic string) *httptest.ResponseRecorder {
@@ -337,29 +376,42 @@ func (e *env) mustOK(w *httptest.ResponseRecorder, what string) {
 
 func accepted(w *httptest.ResponseRecorder) bool { return w.Code >= 200 && w.Code < 300 }
 
-// tick runs one reaper pass at the fake clock's current time.
-func (e *env) tick() { e.eng.reapExpiredDeadlines(e.ctx) }
+// tick runs one reaper pass at the fake clock's current time, then drains
+// the queue workers so the webhooks and archives it caused have happened.
+func (e *env) tick() {
+	e.eng.reapExpiredDeadlines(e.ctx)
+	e.drain()
+}
 
 // ---- reading state ----
 
 func (e *env) doc(id string) map[string]interface{} {
 	e.t.Helper()
-	d, ok := jsonFirstMatch[map[string]interface{}](e.ctx, e.eng.RDB, instanceKey(id), "$")
-	if !ok {
-		e.t.Fatalf("instance %s not found in redis", id)
+	var docs []map[string]interface{}
+	if err := e.eng.jsonGet(e.ctx, instanceKey(id), &docs, "$"); err != nil || len(docs) == 0 {
+		e.t.Fatalf("instance %s not found in redis: %v", id, err)
 	}
-	return d
+	return docs[0]
+}
+
+// task returns $.tasks[index] of the instance document.
+func (e *env) task(id, index string) map[string]interface{} {
+	tasks, _ := e.doc(id)["tasks"].([]interface{})
+	i, _ := strconv.Atoi(index)
+	if i < 0 || i >= len(tasks) {
+		return nil
+	}
+	task, _ := tasks[i].(map[string]interface{})
+	return task
 }
 
 func (e *env) taskState(id, index string) string {
-	task, _ := e.doc(id)[index].(map[string]interface{})
-	s, _ := task["state"].(string)
+	s, _ := e.task(id, index)["state"].(string)
 	return s
 }
 
 func (e *env) taskPayload(id, index string) map[string]interface{} {
-	task, _ := e.doc(id)[index].(map[string]interface{})
-	p, _ := task["payload"].(map[string]interface{})
+	p, _ := e.task(id, index)["payload"].(map[string]interface{})
 	return p
 }
 
@@ -370,7 +422,8 @@ func (e *env) instanceState(id string) string {
 
 // deadline returns the scheduled deadline (unix ms) for a task, if any.
 func (e *env) deadline(id, index string) (float64, bool) {
-	score, err := e.eng.RDB.ZScore(e.ctx, deadlinesKey, deadlineMember(id, index)).Result()
+	i, _ := strconv.Atoi(index)
+	score, err := e.eng.RDB.ZScore(e.ctx, deadlinesKey, deadlineMember(id, i)).Result()
 	if err != nil {
 		return 0, false
 	}
@@ -394,6 +447,7 @@ func (e *env) waitArchived(id string, timeout time.Duration) string {
 		if s := e.archived(id); s != "" {
 			return s
 		}
+		e.drain()
 		time.Sleep(50 * time.Millisecond)
 	}
 	return ""
