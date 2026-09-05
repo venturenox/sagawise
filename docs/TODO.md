@@ -76,7 +76,7 @@ Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/b
 - [x] Save results in `docs/benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
 - [x] Baseline run recorded before phase 5: `docs/benchmarks/runs/2026-09-05_0517_8f8e27c_baseline`.
 - [x] Bottleneck profile (`make bench-profile`): saturation ramp with pprof at the knee, Redis command breakdown, scaling curves (instances, tasks per workflow, payload size, simultaneous timeouts), contention. Baseline: `runs/2026-09-05_0521_8f8e27c_profile-baseline`. Verdict: Redis CPU is the ceiling (JSON.SET re-index per state write); recursive-descent JSONPath scales with document size; reaper lag is linear in simultaneous timeouts.
-- [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phases 6, 7 pending.
+- [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 pending.
 
 ## Phase 5 — Quick wins PR
 

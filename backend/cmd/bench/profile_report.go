@@ -33,7 +33,7 @@ func findings(p *Profile) []string {
 		}
 	}
 	if len(perEp) > 0 {
-		f = append(f, fmt.Sprintf("Redis round-trips per request: start %.1f, publish %.1f, consume %.1f, final consume %.1f. Each round-trip is a sequential network hop, so per-request latency is roughly round-trips × RTT.",
+		f = append(f, fmt.Sprintf("Redis commands per request: start %.1f, publish %.1f, consume %.1f, final consume %.1f (INFO commandstats; commands run inside the transition script count too, so this is Redis work, not client round-trips, which are 2 per report since phase 6).",
 			perEp["start"], perEp["publish"], perEp["consume"], perEp["consume(final)"]))
 		if worst.Command != "" {
 			f = append(f, fmt.Sprintf("Most expensive Redis work per request: %s on %s (%.1f calls × %.0f µs).", worst.Command, worst.Endpoint, worst.CallsPerRequest, worst.UsecPerCall))
@@ -48,7 +48,7 @@ func findings(p *Profile) []string {
 			}
 		}
 		if getUs > 0 && setUs > 3*getUs {
-			f = append(f, fmt.Sprintf("JSON.SET costs %.0f µs against %.0f µs for JSON.GET (%.0f×). Every state write re-indexes the whole document in RediSearch (`workflows_index` covers `$..topic/from/to/failedAt`), so write count, not read count, is what Redis CPU pays for. A final consume does %.0f writes.", setUs, getUs, setUs/getUs, countCalls(p.Commands, "consume(final)", "json.set")))
+			f = append(f, fmt.Sprintf("JSON.SET costs %.0f µs against %.0f µs for JSON.GET (%.0f×). Every state write re-indexes the whole document in RediSearch (`workflows_index` covers `$.tasks[*].topic/from/to` and the instance stamps), so write count, not read count, is what Redis CPU pays for. A final consume does %.0f writes.", setUs, getUs, setUs/getUs, countCalls(p.Commands, "consume(final)", "json.set")))
 		}
 	}
 	rel := func(rows []ScaleRow, ep string) (first, last float64) {
@@ -62,21 +62,21 @@ func findings(p *Profile) []string {
 			a, b, p.Instances[0].Level, p.Instances[len(p.Instances)-1].Level, (b-a)/a*100, p.Instances[0].Extra["list_p50_ms"], p.Instances[len(p.Instances)-1].Extra["list_p50_ms"]))
 	}
 	if a, b := rel(p.TasksPerWorkflow, "consume"); a > 0 {
-		f = append(f, fmt.Sprintf("Tasks per workflow: consume p50 %.1f → %.1f ms from %s to %s tasks (%+.0f%%) at a constant ~1000 req/s. Growth here is the recursive-descent JSONPath and whole-document reads scaling with document size.",
+		f = append(f, fmt.Sprintf("Tasks per workflow: consume p50 %.1f → %.1f ms from %s to %s tasks (%+.0f%%) at a constant ~1000 req/s. Growth here is document size: the script reads every task's state and each JSON.SET re-indexes the document.",
 			a, b, p.TasksPerWorkflow[0].Level, p.TasksPerWorkflow[len(p.TasksPerWorkflow)-1].Level, (b-a)/a*100))
 	}
 	if a, b := rel(p.PayloadSize, "consume"); a > 0 {
-		f = append(f, fmt.Sprintf("Payload size: consume p50 %.1f → %.1f ms from %s to %s (%+.0f%%). Payloads live inside the document every JSONPath query scans; a consume never needs the payload.",
+		f = append(f, fmt.Sprintf("Payload size: consume p50 %.1f → %.1f ms from %s to %s (%+.0f%%). The payload travels with the publish and is written by the script's JSON.SET; a consume never reads it.",
 			a, b, p.PayloadSize[0].Level, p.PayloadSize[len(p.PayloadSize)-1].Level, (b-a)/a*100))
 	}
 	if len(p.Timeouts) > 1 {
 		a, b := p.Timeouts[0], p.Timeouts[len(p.Timeouts)-1]
 		perTask := (b.MaxMs - a.MaxMs) / float64(b.Tasks-a.Tasks)
-		f = append(f, fmt.Sprintf("Simultaneous timeouts: max lag %.0f ms at %d → %.0f ms at %d, i.e. ~%.1f ms per overdue task. The reaper is sequential; lag grows linearly with the number of tasks that expire together. Missing webhooks: %d.",
+		f = append(f, fmt.Sprintf("Simultaneous timeouts: max lag %.0f ms at %d → %.0f ms at %d, i.e. ~%.1f ms per overdue task. The reaper runs one script call per overdue member, sequentially; lag grows linearly with the number of tasks that expire together. Missing webhooks: %d.",
 			a.MaxMs, a.Tasks, b.MaxMs, b.Tasks, perTask, b.Missing))
 	}
 	if p.Contention.Same.Count > 0 && p.Contention.Spread.Count > 0 {
-		f = append(f, fmt.Sprintf("Contention: %d concurrent reports on one instance p50 %.1f ms vs on separate instances %.1f ms (%+.0f%%). Redis serializes writes to one key; the phase 6 Lua-per-transition design will make this the per-instance ceiling.",
+		f = append(f, fmt.Sprintf("Contention: %d concurrent reports on one instance p50 %.1f ms vs on separate instances %.1f ms (%+.0f%%). Redis runs one transition script at a time, so reports on one instance queue behind each other; this is the per-instance ceiling.",
 			20, p.Contention.Same.P50ms, p.Contention.Spread.P50ms, (p.Contention.Same.P50ms-p.Contention.Spread.P50ms)/p.Contention.Spread.P50ms*100))
 	}
 	if cum, ok := p.Pprof["cpu-cumulative"]; ok {
