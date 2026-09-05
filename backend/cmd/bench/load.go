@@ -186,8 +186,17 @@ func (l *loader) runRate(ctx context.Context, spec flowSpec, rate float64, durat
 
 // measureReaperLag publishes n tasks with a 2s timeout and never consumes
 // them, then measures deadline -> webhook arrival.
+//
+// The instances are created first and only then published, concurrently, so
+// that all n deadlines really do fall due together -- which is the thing
+// this measurement is named after. Publishing them one at a time in a single
+// loop spread the deadlines across the whole publish phase: at n=500 the
+// first task's deadline expired while the loop was still publishing the
+// last, so the reaper fired those before the client-side stamp was reached
+// and the reported lag went negative (observed: min -859 ms). The number was
+// then a measure of the harness's own publish rate, not of the reaper.
 func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n int, wait time.Duration) LagResult {
-	deadlines := map[string]time.Time{}
+	ids := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		body, _, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+timeoutName, "")
 		if !ok {
@@ -199,14 +208,43 @@ func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n
 		if json.Unmarshal([]byte(body), &resp) != nil || resp.ID == "" {
 			continue
 		}
-		payload := fmt.Sprintf(`{"bench_id":%q}`, resp.ID)
-		_, _, ok = l.call(http.MethodPost, "/update_instance?workflow_instance_id="+resp.ID+
-			"&action_type=publish&event_name=bench_tt&is_retry=false", payload)
-		// The server stamps the deadline from its clock during the request;
-		// the response time is within one request latency of it.
-		if ok {
-			deadlines[resp.ID] = time.Now().Add(lagTimeout * time.Millisecond)
-		}
+		ids = append(ids, resp.ID)
+	}
+
+	// Publish concurrently, then stamp every deadline from one clock reading
+	// taken after the last publish returns. The spread between the first and
+	// last publish is now the concurrent burst's duration, not n sequential
+	// round-trips, and the stamp can never precede a task's real deadline.
+	var (
+		mu   sync.Mutex
+		wg   sync.WaitGroup
+		done []string
+		sem  = make(chan struct{}, lagPublishParallel)
+	)
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			payload := fmt.Sprintf(`{"bench_id":%q}`, id)
+			if _, _, ok := l.call(http.MethodPost, "/update_instance?workflow_instance_id="+id+
+				"&action_type=publish&event_name=bench_tt&is_retry=false", payload); ok {
+				mu.Lock()
+				done = append(done, id)
+				mu.Unlock()
+			}
+		}(id)
+	}
+	wg.Wait()
+
+	// The server stamps each deadline from its own clock during the request,
+	// so the true deadlines lie within the burst. Taking the reading here
+	// makes the reported lag a conservative (never negative) upper bound.
+	deadline := time.Now().Add(lagTimeout * time.Millisecond)
+	deadlines := make(map[string]time.Time, len(done))
+	for _, id := range done {
+		deadlines[id] = deadline
 	}
 
 	res := LagResult{Tasks: len(deadlines)}

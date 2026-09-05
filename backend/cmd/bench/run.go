@@ -41,6 +41,9 @@ const (
 	flowName    = "bench_flow"    // two tasks, long timeout: the load workload
 	timeoutName = "bench_timeout" // one task, 2s timeout: the reaper-lag workload
 	lagTimeout  = 2000            // ms
+	// lagPublishParallel bounds the concurrent publish burst that arms the
+	// deadlines, so they all fall due together rather than across the loop.
+	lagPublishParallel = 64
 )
 
 func setDefault(name, def string) {
