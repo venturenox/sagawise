@@ -198,7 +198,12 @@ func (e *Engine) LoadScripts(ctx context.Context) error {
 	return nil
 }
 
+// instanceKeyPrefix is the key namespace of workflow instance documents.
+// reap_batch rebuilds an instance key from a deadline member, so the prefix
+// is passed to the script rather than duplicated in Lua.
+const instanceKeyPrefix = "workflow_instance:"
+
 // instanceKey is the RedisJSON key of a workflow instance document.
 func instanceKey(id string) string {
-	return "workflow_instance:" + id
+	return instanceKeyPrefix + id
 }

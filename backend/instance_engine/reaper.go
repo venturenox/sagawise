@@ -2,11 +2,10 @@ package instance_engine
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strconv"
 	"time"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // deadlinesKey is a Redis sorted set. Score = unix-millisecond deadline,
@@ -43,60 +42,71 @@ func (e *Engine) StartDeadlineReaper(ctx context.Context, interval time.Duration
 	}()
 }
 
-// reapExpiredDeadlines performs one reaper tick against e.Clock.Now(). Every
-// overdue member is handed to the transition script as a `reap`: marking the
-// task FAILED and removing its deadline happen in that one atomic step, so
-// the deadline is never spent before the failure is recorded. A Redis error
-// leaves the member in place for the next tick. (#4, TO5, TO6)
+// reapBatchResult is the counter tuple reap_batch returns.
+type reapBatchResult struct {
+	Reaped, Webhooks, Archives, Dropped int64
+}
+
+// reapExpiredDeadlines performs one reaper tick against e.Clock.Now(). The
+// whole tick is a single script call: reap_batch reads the overdue members
+// of task_deadlines and reaps each one inside Redis, so a tick costs one
+// round-trip rather than one per expired task and the reaper's lag stops
+// growing linearly with the number of tasks that expire together. (phase 7)
 //
-// The reaper never calls a webhook itself; the script enqueues it and the
-// webhook worker delivers it, so one slow endpoint cannot stall the tick. (#5)
+// Each member still goes through the same `run` path as an HTTP report, so
+// marking the task FAILED and removing its deadline remain one atomic step
+// and the deadline is never spent before the failure is recorded. A member
+// whose instance is gone or unreadable is dropped inside the script; a
+// Redis error aborts the tick and leaves every member for the next one.
+// (#4, TO5, TO6)
+//
+// The reaper never calls a webhook itself; the script enqueues them and the
+// webhook worker delivers them, so one slow endpoint cannot stall the tick. (#5)
 func (e *Engine) reapExpiredDeadlines(ctx context.Context) {
-	now := strconv.FormatInt(e.Clock.Now().UnixMilli(), 10)
-	members, err := e.RDB.ZRangeArgs(ctx, redis.ZRangeArgs{
-		Key: deadlinesKey, Start: "-inf", Stop: now, ByScore: true, Offset: 0, Count: reaperBatch,
-	}).Result()
+	res, err := e.reapBatch(ctx)
 	if err != nil {
-		log.Printf("Reaper: error reading deadlines: %v", err)
+		// Nothing was decided; the deadlines are still there next tick.
+		log.Printf("Reaper: %v (will retry)", err)
 		return
 	}
-
-	for _, member := range members {
-		id, index, ok := splitMember(member)
-		if !ok {
-			log.Printf("Reaper: malformed deadline member %q; dropping it", member)
-			e.dropDeadline(ctx, member)
-			continue
-		}
-		res, err := e.transition(ctx, id, "reap", false, []int{index}, "")
-		if err != nil {
-			// Nothing was decided; the deadline is still there next tick.
-			log.Printf("Reaper: %s: %v (will retry)", member, err)
-			continue
-		}
-		switch res.Code {
-		case "OK":
-			log.Printf("Reaper: timeout for %s task %d", id, index)
-			e.Webhooks.Nudge()
-			if res.TerminalNow {
-				e.Archiver.Nudge()
-			}
-		case "STALE":
-			// The task moved on or the instance is terminal; the script
-			// dropped the member.
-		case "NOT_FOUND", "BAD_SCHEMA", "TASK_NOT_FOUND":
-			// The document is gone or unreadable; the deadline can never
-			// resolve, so it is dropped rather than retried forever.
-			log.Printf("Reaper: %s: instance %s (%s); dropping deadline", member, res.Code, id)
-			e.dropDeadline(ctx, member)
-		default:
-			log.Printf("Reaper: %s: unexpected result %s", member, res.Code)
-		}
+	if res.Dropped > 0 {
+		log.Printf("Reaper: dropped %d unresolvable deadline(s)", res.Dropped)
+	}
+	if res.Reaped == 0 {
+		return
+	}
+	log.Printf("Reaper: timed out %d task(s)", res.Reaped)
+	if res.Webhooks > 0 {
+		e.Webhooks.Nudge()
+	}
+	if res.Archives > 0 {
+		e.Archiver.Nudge()
 	}
 }
 
-func (e *Engine) dropDeadline(ctx context.Context, member string) {
-	if err := e.RDB.ZRem(ctx, deadlinesKey, member).Err(); err != nil {
-		log.Printf("Reaper: drop %s: %v", member, err)
+// reapBatch runs one reap_batch call and decodes its counters.
+func (e *Engine) reapBatch(ctx context.Context) (reapBatchResult, error) {
+	now := e.Clock.Now()
+	// KEYS[1] is unused by reap_batch but keeps the script's key list (and
+	// therefore its Cluster key routing) identical for every action.
+	keys := []string{instanceKeyPrefix, deadlinesKey, archiveQueueKey, webhookQueueKey}
+	raw, err := e.script.Run(ctx, e.RDB, keys,
+		"reap_batch", 0, reaperBatch, now.Unix(), now.UnixMilli(), "", "", instanceKeyPrefix).Result()
+	if err != nil {
+		return reapBatchResult{}, fmt.Errorf("reap batch: %w", err)
 	}
+	parts, ok := raw.([]interface{})
+	if !ok || len(parts) != 4 {
+		return reapBatchResult{}, fmt.Errorf("reap batch: unexpected reply %#v", raw)
+	}
+	var res reapBatchResult
+	out := []*int64{&res.Reaped, &res.Webhooks, &res.Archives, &res.Dropped}
+	for i, p := range parts {
+		n, ok := p.(int64)
+		if !ok {
+			return reapBatchResult{}, fmt.Errorf("reap batch: counter %d is %#v", i, p)
+		}
+		*out[i] = n
+	}
+	return res, nil
 }

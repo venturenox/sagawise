@@ -145,7 +145,7 @@ func run() error {
 	}
 
 	eng := instance_engine.New(rdb, db)
-	eng.Services = instance_engine.FileRegistry{Path: envOr("SAGAWISE_SERVICES_FILE", "services.json")}
+	eng.Services = &instance_engine.FileRegistry{Path: envOr("SAGAWISE_SERVICES_FILE", "services.json")}
 	if err := instance_engine.ValidateServices(eng.Services, workflows); err != nil {
 		return err
 	}
@@ -188,10 +188,14 @@ func run() error {
 	addr := envOr("SAGAWISE_ADDR", ":5000")
 	s := &server{eng: eng}
 	s.srv = &http.Server{
-		Addr:              addr,
-		BaseContext:       func(_ net.Listener) context.Context { return srvCtx },
-		ReadHeaderTimeout: time.Second,
-		ReadTimeout:       time.Second,
+		Addr:        addr,
+		BaseContext: func(_ net.Listener) context.Context { return srvCtx },
+		// ReadHeaderTimeout stays tight (a slowloris sends headers slowly),
+		// but ReadTimeout covers the whole body: a 1 s budget cut off large
+		// publish payloads on a slow link, which surfaced as a client-side
+		// EOF rather than an error the caller could act on. (phase 7)
+		ReadHeaderTimeout: 2 * time.Second,
+		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		Handler:           s.handler(),
 	}

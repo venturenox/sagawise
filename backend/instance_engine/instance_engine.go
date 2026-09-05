@@ -409,7 +409,7 @@ func (e *Engine) transition(ctx context.Context, id, action string, retry bool, 
 	}
 	keys := []string{instanceKey(id), deadlinesKey, archiveQueueKey, webhookQueueKey}
 	raw, err := e.script.Run(ctx, e.RDB, keys,
-		action, retryArg, strings.Join(idx, ","), now.Unix(), now.UnixMilli(), payload, id).Result()
+		action, retryArg, strings.Join(idx, ","), now.Unix(), now.UnixMilli(), payload, id, instanceKeyPrefix).Result()
 	if err != nil {
 		return transitionResult{}, fmt.Errorf("transition %s %s: %w", action, id, err)
 	}
@@ -536,21 +536,29 @@ func (e *Engine) webhookJob(ctx context.Context, member string) error {
 // ---- read endpoints ----
 
 // ListWorkflows returns the names of all registered workflow templates.
+//
+// The limit is explicit: FT.SEARCH defaults to the first 10 documents, so
+// without one this endpoint silently truncated the list at the eleventh
+// workflow. Templates are operator-authored and few, so one page of
+// listMaxLimit covers every realistic deployment; a deployment past that
+// gets a logged warning rather than a quietly short answer. (phase 7)
 func (e *Engine) ListWorkflows(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	result, err := e.RDB.Do(ctx, "FT.SEARCH", "workflow_templates_index", "*", "RETURN", "1", "workflow_name").Result()
+	res, err := e.RDB.FTSearchWithArgs(ctx, "workflow_templates_index", "*", &redis.FTSearchOptions{
+		Return:      []redis.FTSearchReturn{{FieldName: "workflow_name"}},
+		LimitOffset: 0, Limit: listMaxLimit,
+	}).Result()
 	if err != nil {
 		internalError(w, "search workflow templates", err)
 		return
 	}
+	if res.Total > listMaxLimit {
+		log.Printf("ListWorkflows: %d templates registered, returning the first %d", res.Total, listMaxLimit)
+	}
 
-	resultMap, _ := result.(map[interface{}]interface{})
-	results, _ := resultMap["results"].([]interface{})
-	names := []string{}
-	for _, item := range results {
-		itemMap, _ := item.(map[interface{}]interface{})
-		attrs, _ := itemMap["extra_attributes"].(map[interface{}]interface{})
-		if name, ok := attrs["workflow_name"].(string); ok {
+	names := make([]string, 0, len(res.Docs))
+	for _, doc := range res.Docs {
+		if name, ok := doc.Fields["workflow_name"]; ok {
 			names = append(names, name)
 		}
 	}
