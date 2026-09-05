@@ -193,8 +193,15 @@ func (l *loader) runRate(ctx context.Context, spec flowSpec, rate float64, durat
 // loop spread the deadlines across the whole publish phase: at n=500 the
 // first task's deadline expired while the loop was still publishing the
 // last, so the reaper fired those before the client-side stamp was reached
-// and the reported lag went negative (observed: min -859 ms). The number was
-// then a measure of the harness's own publish rate, not of the reaper.
+// and the reported lag went negative. The number was then a measure of the
+// harness's own publish rate, not of the reaper.
+//
+// Each task is also stamped individually, from the return of its own publish
+// call, rather than from one reading shared by the whole burst: at n=2000
+// even a concurrent burst outlasts the 2 s timeout, so a shared stamp taken
+// after the last publish overshoots the earliest deadlines and the lag goes
+// negative again. A per-task stamp is at most one request latency later than
+// the deadline the server actually armed, in either direction.
 func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n int, wait time.Duration) LagResult {
 	ids := make([]string, 0, n)
 	for i := 0; i < n; i++ {
@@ -211,15 +218,11 @@ func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n
 		ids = append(ids, resp.ID)
 	}
 
-	// Publish concurrently, then stamp every deadline from one clock reading
-	// taken after the last publish returns. The spread between the first and
-	// last publish is now the concurrent burst's duration, not n sequential
-	// round-trips, and the stamp can never precede a task's real deadline.
 	var (
-		mu   sync.Mutex
-		wg   sync.WaitGroup
-		done []string
-		sem  = make(chan struct{}, lagPublishParallel)
+		mu        sync.Mutex
+		wg        sync.WaitGroup
+		deadlines = make(map[string]time.Time, len(ids))
+		sem       = make(chan struct{}, lagPublishParallel)
 	)
 	for _, id := range ids {
 		wg.Add(1)
@@ -228,24 +231,20 @@ func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			payload := fmt.Sprintf(`{"bench_id":%q}`, id)
-			if _, _, ok := l.call(http.MethodPost, "/update_instance?workflow_instance_id="+id+
-				"&action_type=publish&event_name=bench_tt&is_retry=false", payload); ok {
+			_, _, ok := l.call(http.MethodPost, "/update_instance?workflow_instance_id="+id+
+				"&action_type=publish&event_name=bench_tt&is_retry=false", payload)
+			// The server armed this task's deadline from its own clock during
+			// the call, so reading the clock right after it returns is within
+			// one request latency of the real deadline.
+			if ok {
+				at := time.Now().Add(lagTimeout * time.Millisecond)
 				mu.Lock()
-				done = append(done, id)
+				deadlines[id] = at
 				mu.Unlock()
 			}
 		}(id)
 	}
 	wg.Wait()
-
-	// The server stamps each deadline from its own clock during the request,
-	// so the true deadlines lie within the burst. Taking the reading here
-	// makes the reported lag a conservative (never negative) upper bound.
-	deadline := time.Now().Add(lagTimeout * time.Millisecond)
-	deadlines := make(map[string]time.Time, len(done))
-	for _, id := range done {
-		deadlines[id] = deadline
-	}
 
 	res := LagResult{Tasks: len(deadlines)}
 	until := time.Now().Add(lagTimeout*time.Millisecond + wait)
