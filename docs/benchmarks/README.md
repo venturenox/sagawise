@@ -15,6 +15,7 @@ docs/benchmarks/
     go-bench.txt                  raw `go test -bench` output (input to benchstat)
     env.txt                       machine, versions, commit, config
   comparisons/<date>_<A>_vs_<B>.md   side-by-side reports
+  plots/                          PNG charts across all phases + plot.py to redraw them
 ```
 
 ## Running
@@ -96,6 +97,14 @@ answers "where does the time go and what does it scale with". It writes
 The report opens with a generated **Findings** list that reads the curves
 and names the bottleneck each one implies. `make bench-compare` accepts two
 profile runs and diffs the knee, ramp, round-trips, and every scaling curve.
+
+## Plots
+
+`plots/README.md` shows every metric above as a chart across the phases
+(latency, commands per saga, saturation ramp, round-trips, Go benchmarks,
+scaling curves, reaper lag, contention). Redraw with
+`python3 docs/benchmarks/plots/plot.py` after adding a run and pinning it in
+the script's `LOAD_RUNS` / `PROFILE_RUNS` tables.
 
 ## Reading a comparison
 
