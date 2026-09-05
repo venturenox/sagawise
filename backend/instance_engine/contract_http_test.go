@@ -64,9 +64,9 @@ func TestContract_StatusCodesAndErrorBodies(t *testing.T) {
 	})
 }
 
-// Contract §4: is_retry must parse strictly. (#2)
+// Contract §4: is_retry must parse strictly.
 func TestContract_IsRetryStrictParsing(t *testing.T) {
-	testx.XFail(t, "#2", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		for _, bad := range []string{"maybe", "1", "0", "t", "f", "yes"} {
@@ -110,7 +110,7 @@ func TestContract_InfraErrorIs500(t *testing.T) {
 
 // Contract D7: the get endpoint takes an instance id, not a Redis key.
 func TestContract_GetByInstanceID(t *testing.T) {
-	testx.XFail(t, "D7", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 

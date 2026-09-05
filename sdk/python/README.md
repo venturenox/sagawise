@@ -64,8 +64,11 @@ Once the package is installed, you can import the library using `import` approac
 ```python
 from sagawise import Sagawise
 
-sagawise_instance = Sagawise()
+sagawise_instance = Sagawise()            # per-request timeout: 1 second
+sagawise_instance = Sagawise(timeout=5)   # seconds
 ```
+
+The client reads `SAGAWISE_URL` (base URL of the Sagawise server) from the environment. `timeout` is in **seconds**, the unit `requests` uses.
 
 ---
 
@@ -82,11 +85,15 @@ The `start_workflow` function **requires** the following keys:
 
 ### Return
 
-The `start_workflow` function may return any of these:
+The `start_workflow` function returns the workflow instance ID (STRING).
 
-- Workflow instance ID (STRING) - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+It **raises** instead of returning a value when:
+
+- a required argument is empty (`ValueError`)
+- Sagawise is unreachable or times out (`requests.exceptions.ConnectionError` / `Timeout`)
+- Sagawise answers with a non-2xx status (`requests.exceptions.HTTPError`; `error.response` carries the answer)
+
+All request failures are subclasses of `requests.exceptions.RequestException`. Exceptions are never caught and returned as values.
 
 ### Example
 
@@ -107,7 +114,7 @@ The `publish_message` function **requires** the following keys:
 - workflow_instance_id (STRING)
 - workflow_version (STRING)
 - event_name (STRING)
-- data (Object)
+- payload (dict, non-empty)
 
 Optional Key:
 
@@ -115,11 +122,7 @@ Optional Key:
 
 ### Return
 
-The `publish_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `publish_message` function returns `None` on success. It **raises** when a required argument is empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 
@@ -153,11 +156,7 @@ Optional Key:
 
 ### Return
 
-The `consume_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `consume_message` function returns `None` on success. It **raises** when a required argument is empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 
@@ -191,11 +190,7 @@ Optional Key:
 
 ### Return
 
-The `fail_message` function may return any of these:
-
-- Nothing - in case of success
-- Error - in case if required object or keys are empty
-- Error - in case of any problem with sagawise server
+The `fail_message` function returns `None` on success. It **raises** when a required argument is empty, or when Sagawise is unreachable or answers with a non-2xx status (see [Start Workflow](#return)).
 
 ### Example
 

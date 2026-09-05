@@ -3,12 +3,15 @@ package instance_engine
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"wtfsaga/utils"
 )
 
 // fakeClock is a Clock tests can set and advance explicitly.
@@ -41,15 +44,99 @@ func TestFakeClockAdvances(t *testing.T) {
 }
 
 func TestNewEngineDefaults(t *testing.T) {
-	e := New(nil, nil, nil)
+	e := New(nil, nil)
 	if _, ok := e.Clock.(RealClock); !ok {
 		t.Errorf("Clock = %T, want RealClock", e.Clock)
 	}
 	if reg, ok := e.Services.(FileRegistry); !ok || reg.Path != "services.json" {
 		t.Errorf("Services = %#v, want FileRegistry{services.json}", e.Services)
 	}
-	if e.HTTPClient != http.DefaultClient {
-		t.Errorf("HTTPClient = %v, want http.DefaultClient", e.HTTPClient)
+	if e.HTTPClient == nil || e.HTTPClient.Timeout != WebhookTimeout {
+		t.Errorf("HTTPClient = %+v, want a client with Timeout %v (#5)", e.HTTPClient, WebhookTimeout)
+	}
+}
+
+func TestValidateServices(t *testing.T) {
+	wfs := []utils.Workflow{{Name: "f", Tasks: []utils.Task{{Topic: "t", From: "a", To: "b", Timeout: 1}, {Topic: "u", From: "b", To: "c", Timeout: 1}}}}
+	if err := ValidateServices(MapRegistry{"a": "http://a/fail", "b": "http://b/fail"}, wfs); err != nil {
+		t.Errorf("all publishers registered: %v", err)
+	}
+	err := ValidateServices(MapRegistry{"a": "http://a/fail"}, wfs)
+	if err == nil || !strings.Contains(err.Error(), `"b"`) {
+		t.Errorf("unregistered publisher b: err = %v", err)
+	}
+	if err := ValidateServices(FileRegistry{Path: filepath.Join(t.TempDir(), "nope.json")}, wfs); err == nil {
+		t.Error("missing services file: want error")
+	}
+}
+
+func TestParseRetry(t *testing.T) {
+	for _, v := range []string{"true", "TRUE", "True"} {
+		if got, ok := parseRetry(v); !ok || !got {
+			t.Errorf("parseRetry(%q) = %v, %v", v, got, ok)
+		}
+	}
+	for _, v := range []string{"false", "FALSE", "False"} {
+		if got, ok := parseRetry(v); !ok || got {
+			t.Errorf("parseRetry(%q) = %v, %v", v, got, ok)
+		}
+	}
+	for _, v := range []string{"", "1", "0", "t", "f", "yes", "maybe"} {
+		if _, ok := parseRetry(v); ok {
+			t.Errorf("parseRetry(%q) accepted", v)
+		}
+	}
+}
+
+func TestEscapeTag(t *testing.T) {
+	cases := map[string]string{
+		"order_flow":     "order_flow",
+		"order-flow":     `order\-flow`,
+		"a b.c":          `a\ b\.c`,
+		"x{y}|z":         `x\{y\}\|z`,
+		"üñí":            "üñí",
+		"COMPLETED":      "COMPLETED",
+		"it_test_flow-1": `it_test_flow\-1`,
+	}
+	for in, want := range cases {
+		if got := escapeTag(in); got != want {
+			t.Errorf("escapeTag(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPageParam(t *testing.T) {
+	if n, err := pageParam("", 50, 1000); err != nil || n != 50 {
+		t.Errorf("default: %d, %v", n, err)
+	}
+	if n, err := pageParam("7", 50, 1000); err != nil || n != 7 {
+		t.Errorf("explicit: %d, %v", n, err)
+	}
+	for _, bad := range []string{"-1", "x", "1001", "1.5"} {
+		if _, err := pageParam(bad, 50, 1000); err == nil {
+			t.Errorf("pageParam(%q) accepted", bad)
+		}
+	}
+	if n, err := pageParam("5000", 0, 0); err != nil || n != 5000 {
+		t.Errorf("unbounded: %d, %v", n, err)
+	}
+}
+
+func TestGetWorkflowInstanceRejectsKeys(t *testing.T) {
+	e := New(nil, nil)
+	for _, bad := range []string{"workflow_template:x", "a:b", "../x", "", "x y"} {
+		r := httptest.NewRequest(http.MethodGet, "/workflow_instances/get?workflow_instance_id="+url.QueryEscape(bad), nil)
+		w := httptest.NewRecorder()
+		e.GetWorkflowInstance(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("id %q: status %d, want 400 before any Redis access", bad, w.Code)
+		}
+	}
+	r := httptest.NewRequest(http.MethodGet, "/workflow_instances/get?doc_key=workflow_instance:abc", nil)
+	w := httptest.NewRecorder()
+	e.GetWorkflowInstance(w, r)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("doc_key: status %d, want 400 (D7: doc_key is gone)", w.Code)
 	}
 }
 

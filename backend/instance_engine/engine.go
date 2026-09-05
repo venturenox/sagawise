@@ -11,8 +11,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"github.com/redis/rueidis"
 )
+
+// WebhookTimeout bounds one failure-webhook delivery (contract W3). A
+// failure_url that accepts the connection and never answers must not hold
+// the reaper for longer than this. (#5)
+const WebhookTimeout = 5 * time.Second
 
 // Clock is the engine's source of time. Production uses RealClock; tests
 // inject a fixed or advanceable clock so deadlines and timestamps are
@@ -63,15 +67,30 @@ func (m MapRegistry) FailureURL(service string) (string, error) {
 	return m[service], nil
 }
 
+// ValidateServices checks that every publishing (`from`) service in the
+// workflows has a failure_url in the registry (contract W5). A missing
+// webhook is a startup error, not a runtime surprise. (#8)
+func ValidateServices(reg ServiceRegistry, workflows []utils.Workflow) error {
+	for _, wf := range workflows {
+		for i, task := range wf.Tasks {
+			url, err := reg.FailureURL(task.From)
+			if err != nil {
+				return fmt.Errorf("service registry: %w", err)
+			}
+			if url == "" {
+				return fmt.Errorf("workflow %q task %d (%s): publishing service %q has no failure_url in the service registry", wf.Name, i, task.Topic, task.From)
+			}
+		}
+	}
+	return nil
+}
+
 // Engine owns every dependency the saga bookkeeper needs. Construct it with
 // New and override fields before serving; nothing in this package reads
 // package-level state.
 type Engine struct {
 	// RDB is the go-redis client used for RedisJSON and FT.SEARCH commands.
 	RDB *redis.Client
-	// Search is the rueidis client used by ListWorkflowInstances. May be nil
-	// if that endpoint is not served.
-	Search rueidis.Client
 	// DB is the Postgres pool holding the instance_history archive.
 	DB *pgxpool.Pool
 
@@ -81,15 +100,14 @@ type Engine struct {
 }
 
 // New returns an Engine with production defaults: wall clock, services.json
-// in the working directory, and http.DefaultClient for failure webhooks.
-func New(rdb *redis.Client, search rueidis.Client, db *pgxpool.Pool) *Engine {
+// in the working directory, and a webhook client bounded by WebhookTimeout.
+func New(rdb *redis.Client, db *pgxpool.Pool) *Engine {
 	return &Engine{
 		RDB:        rdb,
-		Search:     search,
 		DB:         db,
 		Clock:      RealClock{},
 		Services:   FileRegistry{Path: "services.json"},
-		HTTPClient: http.DefaultClient,
+		HTTPClient: &http.Client{Timeout: WebhookTimeout},
 	}
 }
 

@@ -92,11 +92,8 @@ docker compose logs -f orders payments shipping
 ### Inspect the workflow state
 
 ```bash
-curl -s "http://localhost:5000/workflow_instances/get?doc_key=workflow_instance:$ID" | python3 -m json.tool
+curl -s "http://localhost:5000/workflow_instances/get?workflow_instance_id=$ID" | python3 -m json.tool
 ```
-
-Note the `doc_key` needs the `workflow_instance:` prefix, even though
-`start_instance` returns the bare id.
 
 Workflow completion is evaluated **asynchronously**, so immediately after the
 last consume you will see both tasks `COMPLETED` while the workflow itself is

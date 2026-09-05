@@ -92,12 +92,13 @@ func TestContract_PayloadShadowing_StringIndex(t *testing.T) {
 	})
 }
 
-// A non-string index in such a payload decodes to "" and today produces the
+// A non-string index in such a payload used to decode to "" and produce the
 // path `$..state`, flipping every task and the workflow once the retry flag
-// bypasses the state gate. Under the contract a retry on a nonexistent task
-// is still a 404 with no side effects.
+// bypassed the state gate. Since phase 5 a decode error is an error, not an
+// empty string, so this is a 404 with no side effects. The string-index
+// variant above still needs task resolution in Go (#12, phase 6).
 func TestContract_PayloadShadowing_NonStringIndex(t *testing.T) {
-	testx.XFail(t, "#12", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.report(id, "publish", "it_order_created", "", "false",

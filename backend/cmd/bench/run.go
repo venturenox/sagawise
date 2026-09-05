@@ -45,7 +45,7 @@ const (
 
 func setDefault(name, def string) {
 	if os.Getenv(name) == "" {
-		os.Setenv(name, def)
+		_ = os.Setenv(name, def)
 	}
 }
 
@@ -57,19 +57,19 @@ func runBenchmark(cfg runConfig) (string, error) {
 	setDefault("POSTGRES_USERNAME", "postgres")
 	setDefault("POSTGRES_PASSWORD", "venturenox")
 	setDefault("POSTGRES_DATABASE", "sagawise")
-	os.Setenv("REDIS_CONNECTION_STRING", "")
+	_ = os.Setenv("REDIS_CONNECTION_STRING", "")
 
 	ctx := context.Background()
-	rdb := db_connect.DBConnect(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
 		return "", fmt.Errorf("redis: %w", err)
 	}
-	db := db_connect.ConnectPostgres(ctx)
-	if err := db.Ping(ctx); err != nil {
+	db, err := db_connect.ConnectPostgres(ctx)
+	if err != nil {
 		return "", fmt.Errorf("postgres: %w", err)
 	}
 	defer db.Close()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	res := &Results{Label: cfg.label, Date: time.Now().Format(time.RFC3339), Env: map[string]string{}, Config: map[string]string{
 		"rates": cfg.rates, "duration": cfg.duration.String(), "lag_tasks": strconv.Itoa(cfg.lagTasks),
@@ -88,7 +88,7 @@ func runBenchmark(cfg runConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(work)
+	defer func() { _ = os.RemoveAll(work) }()
 	bin := filepath.Join(work, "sagawise")
 	fmt.Fprintln(os.Stderr, "building server...")
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil { // #nosec G204 -- fixed argv; bin is a temp path we created
@@ -280,7 +280,7 @@ func launchServer(bin, dslDir, servicesFile string) (*server, error) {
 		return nil, err
 	}
 	addr := l.Addr().String()
-	l.Close()
+	_ = l.Close()
 
 	s := &server{addr: addr, done: make(chan struct{})}
 	s.cmd = exec.Command(bin) // #nosec G204 -- binary we just built
@@ -296,7 +296,7 @@ func launchServer(bin, dslDir, servicesFile string) (*server, error) {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get("http://" + addr + "/live") // #nosec G107 -- local address chosen above
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == 200 {
 				return s, nil
 			}

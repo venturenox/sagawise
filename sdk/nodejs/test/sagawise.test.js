@@ -1,9 +1,6 @@
 // Contract for the Node SDK (docs/contract.md, audit #15): every call sends
 // the HTTP request it describes, and a failed request is surfaced to the
 // caller as a rejection, never swallowed. Run with `npm test`.
-//
-// Tests today's code cannot pass are marked `todo` with the finding, so the
-// run stays green while the gap is visible. Remove the todo when fixed.
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
@@ -48,7 +45,7 @@ test('start_workflow sends the request and returns the instance id', async () =>
 	assert.equal(last().url.searchParams.get('workflow_name'), 'order_flow');
 });
 
-test('publish_message with default is_retry sends the request', { todo: '#15: is_retry == "" is true for false, so no request is sent' }, async () => {
+test('publish_message with default is_retry sends the request', async () => {
 	const n = requests.length;
 	await sagawise.publish_message({
 		workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'order_created', payload: { order_id: 1 },
@@ -61,7 +58,7 @@ test('publish_message with default is_retry sends the request', { todo: '#15: is
 	assert.deepEqual(JSON.parse(r.body), { order_id: 1 });
 });
 
-test('consume_message with default is_retry sends the request', { todo: '#15' }, async () => {
+test('consume_message with default is_retry sends the request', async () => {
 	const n = requests.length;
 	await sagawise.consume_message({
 		workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'order_created', service_name: 'payments',
@@ -71,7 +68,7 @@ test('consume_message with default is_retry sends the request', { todo: '#15' },
 	assert.equal(last().url.searchParams.get('service_name'), 'payments');
 });
 
-test('fail_message with default is_retry sends the request', { todo: '#15' }, async () => {
+test('fail_message with default is_retry sends the request', async () => {
 	const n = requests.length;
 	await sagawise.fail_message({
 		workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'order_created', service_name: 'payments',
@@ -89,7 +86,7 @@ test('explicit is_retry=true is sent through', async () => {
 	assert.equal(last().url.searchParams.get('is_retry'), 'true');
 });
 
-test('a 5xx from Sagawise rejects instead of being returned', { todo: '#15: errors are caught and returned as values' }, async () => {
+test('a 5xx from Sagawise rejects instead of being returned', async () => {
 	await assert.rejects(
 		sagawise.consume_message({
 			workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'boom', service_name: 'payments', is_retry: true,
@@ -97,7 +94,7 @@ test('a 5xx from Sagawise rejects instead of being returned', { todo: '#15: erro
 	);
 });
 
-test('an unreachable Sagawise rejects start_workflow', { todo: '#15' }, async () => {
+test('an unreachable Sagawise rejects start_workflow', async () => {
 	const saved = process.env.SAGAWISE_URL;
 	// The instance is bound at require time, so simulate by closing the server briefly.
 	await new Promise((r) => server.close(r));
@@ -106,4 +103,22 @@ test('an unreachable Sagawise rejects start_workflow', { todo: '#15' }, async ()
 	} finally {
 		await new Promise((r) => server.listen(new URL(saved).port, '127.0.0.1', r));
 	}
+});
+
+test('missing required keys reject without sending a request', async () => {
+	const n = requests.length;
+	await assert.rejects(sagawise.publish_message({ workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'x' }), /payload/);
+	await assert.rejects(sagawise.consume_message({ workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'x' }), /service_name/);
+	await assert.rejects(sagawise.start_workflow({}), /workflow_name/);
+	await assert.rejects(sagawise.consume_message({
+		workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'x', service_name: 's', is_retry: 'yes',
+	}), /is_retry must be a boolean/);
+	assert.equal(requests.length, n, 'a request was sent despite missing keys');
+});
+
+test('a 5xx rejection carries the response status', async () => {
+	await assert.rejects(
+		sagawise.fail_message({ workflow_instance_id: 'abc123', workflow_version: '1.0', event_name: 'boom', service_name: 'payments' }),
+		(err) => err.response && err.response.status === 500,
+	);
 });

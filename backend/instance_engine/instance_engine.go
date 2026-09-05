@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +28,16 @@ func httpError(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	fmt.Fprint(w, msg) // #nosec G705 -- Content-Type is pinned to text/plain with nosniff above; never rendered as HTML
+	writeText(w, msg)
+}
+
+// writeText writes a plain-text body. A failed write means the client went
+// away; there is nothing left to tell it, so it is only logged.
+func writeText(w http.ResponseWriter, msg string) {
+	// #nosec G705 -- callers pin Content-Type to text/plain with nosniff, or write a fixed string; never rendered as HTML
+	if _, err := fmt.Fprint(w, msg); err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
 }
 
 // requireParams writes a 400 listing every missing query parameter and returns
@@ -54,8 +64,33 @@ func jsonMatches[T any](ctx context.Context, rdb *redis.Client, key, path string
 		return nil
 	}
 	var out []T
-	json.Unmarshal([]byte(res), &out)
+	if err := json.Unmarshal([]byte(res), &out); err != nil {
+		log.Printf("Error decoding %s %s: %v", key, path, err)
+		return nil
+	}
 	return out
+}
+
+// writeJSON writes v as the JSON response body. A failed write means the
+// client went away; there is nothing left to tell it, so it is only logged.
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("Error writing response: %v", err)
+	}
+}
+
+// parseRetry parses is_retry strictly: "true" or "false", case-insensitive
+// (the Python SDK sends True/False). Anything else is a client error, never
+// silently false. (contract §4)
+func parseRetry(v string) (bool, bool) {
+	switch strings.ToLower(v) {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	}
+	return false, false
 }
 
 // jsonFirstMatch returns the first match of a RedisJSON path query, if any.
@@ -71,8 +106,12 @@ func jsonFirstMatch[T any](ctx context.Context, rdb *redis.Client, key, path str
 // markTask sets a task's state and stamps the matching timestamp field.
 func (e *Engine) markTask(ctx context.Context, key, index, state, stampField string) {
 	s, _ := json.Marshal(state)
-	e.RDB.JSONSet(ctx, key, "$."+index+".state", s)
-	e.RDB.JSONSet(ctx, key, "$."+index+"."+stampField, e.Clock.Now().Unix())
+	if err := e.RDB.JSONSet(ctx, key, "$."+index+".state", s).Err(); err != nil {
+		log.Printf("Error setting state on %s task %s: %v", key, index, err)
+	}
+	if err := e.RDB.JSONSet(ctx, key, "$."+index+"."+stampField, e.Clock.Now().Unix()).Err(); err != nil {
+		log.Printf("Error setting %s on %s task %s: %v", stampField, key, index, err)
+	}
 }
 
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890")
@@ -131,8 +170,7 @@ func (e *Engine) StartInstance(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, "Error: "+err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"workflow_instance_id": id})
+	writeJSON(w, map[string]string{"workflow_instance_id": id})
 }
 
 // UpdateInstance dispatches a publish/consume/fail report onto the instance.
@@ -145,7 +183,11 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	action := q.Get("action_type")
 	id := q.Get("workflow_instance_id")
 	topic := q.Get("event_name")
-	isRetry, _ := strconv.ParseBool(q.Get("is_retry"))
+	isRetry, ok := parseRetry(q.Get("is_retry"))
+	if !ok {
+		httpError(w, 400, "Invalid is_retry value; must be true or false. ")
+		return
+	}
 
 	if action != "consume" && action != "publish" && action != "fail" {
 		httpError(w, 400, "Invalid action_type value. ")
@@ -178,7 +220,7 @@ func (e *Engine) handlePublish(ctx context.Context, w http.ResponseWriter, id, t
 	}
 
 	bodyBytes, err := io.ReadAll(body)
-	body.Close()
+	_ = body.Close()
 	var payload map[string]interface{}
 	if err == nil {
 		err = json.Unmarshal(bodyBytes, &payload)
@@ -220,7 +262,7 @@ func (e *Engine) handlePublish(ctx context.Context, w http.ResponseWriter, id, t
 	}
 
 	if allOk {
-		fmt.Fprint(w, "Instance State Updated")
+		writeText(w, "Instance State Updated")
 	} else {
 		httpError(w, http.StatusForbidden, "Task Already COMPLETED or FAILED")
 	}
@@ -252,7 +294,7 @@ func (e *Engine) handleConsumeOrFail(ctx context.Context, w http.ResponseWriter,
 
 	if action == "fail" {
 		e.reportFailure(ctx, key, id, index)
-		fmt.Fprint(w, "Instance State Updated")
+		writeText(w, "Instance State Updated")
 		return
 	}
 
@@ -265,7 +307,7 @@ func (e *Engine) handleConsumeOrFail(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 	e.markTask(ctx, key, index, "COMPLETED", "consumedAt")
-	fmt.Fprint(w, "Instance State Updated")
+	writeText(w, "Instance State Updated")
 	e.checkWorkflowState(ctx, key)
 }
 
@@ -274,7 +316,9 @@ func (e *Engine) handleConsumeOrFail(ctx context.Context, w http.ResponseWriter,
 // so it can compensate.
 func (e *Engine) reportFailure(ctx context.Context, key, id, index string) {
 	// Whether this came from the reaper or an explicit fail report, the deadline is spent.
-	e.RDB.ZRem(ctx, deadlinesKey, deadlineMember(id, index))
+	if err := e.RDB.ZRem(ctx, deadlinesKey, deadlineMember(id, index)).Err(); err != nil {
+		log.Printf("Error removing deadline for %s task %s: %v", id, index, err)
+	}
 	e.markTask(ctx, key, index, "FAILED", "failedAt")
 	e.checkWorkflowState(ctx, key)
 
@@ -316,7 +360,7 @@ func (e *Engine) reportFailure(ctx context.Context, key, id, index string) {
 		log.Printf("Failed to send request: %v", err)
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	log.Println("Response status: ", resp.Status)
 }
 
@@ -438,16 +482,69 @@ func (e *Engine) ListWorkflows(w http.ResponseWriter, r *http.Request) {
 			names = append(names, name)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(names)
+	writeJSON(w, names)
 }
 
-// ListWorkflowInstances returns instance IDs matching the query-string
-// filters, ANDed together; with no filters it returns everything.
+const (
+	listDefaultLimit = 50
+	listMaxLimit     = 1000
+)
+
+// escapeTag makes a query value a literal inside a RediSearch TAG filter:
+// every ASCII byte that is not a letter, digit or underscore is
+// backslash-escaped, so `order-flow` matches "order-flow" and nothing else. (#10)
+func escapeTag(v string) string {
+	var b strings.Builder
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		alnum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+		if c < 0x80 && !alnum {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// pageParam parses a non-negative integer query parameter with a default for
+// the empty string and an upper bound (0 = unbounded).
+func pageParam(v string, def, max int) (int, error) {
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("must be a non-negative integer")
+	}
+	if max > 0 && n > max {
+		return 0, fmt.Errorf("must be at most %d", max)
+	}
+	return n, nil
+}
+
+// ListWorkflowInstances returns a page of instance IDs matching the
+// query-string filters, ANDed together; with no filters it lists everything.
+// `limit` (default 50, max 1000) and `offset` page through the result;
+// `total` is the full match count. No match is an empty page, not an error;
+// an index error is a 500. (#10)
 func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	q := r.URL.Query()
 	now := e.Clock.Now()
+
+	limit, err := pageParam(q.Get("limit"), listDefaultLimit, listMaxLimit)
+	if err != nil {
+		httpError(w, 400, "Invalid limit: "+err.Error()+". ")
+		return
+	}
+	if limit == 0 {
+		limit = listDefaultLimit
+	}
+	offset, err := pageParam(q.Get("offset"), 0, 0)
+	if err != nil {
+		httpError(w, 400, "Invalid offset: "+err.Error()+". ")
+		return
+	}
 
 	// timeCond turns "5m"/"15m" into a RediSearch numeric range on a field.
 	timeCond := func(field, val string) string {
@@ -466,7 +563,7 @@ func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 		if val == "" {
 			return ""
 		}
-		return "@" + field + ":" + val
+		return "@" + field + ":{" + escapeTag(val) + "}"
 	}
 
 	var clauses []string
@@ -486,42 +583,47 @@ func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 	}
 	query := "*"
 	if len(clauses) > 0 {
-		query = strings.Join(clauses, " && ")
+		query = strings.Join(clauses, " ")
 	}
 
-	cmd := e.Search.B().FtSearch().Index("workflows_index").Query(query).Build()
-	n, resp, _ := e.Search.Do(ctx, cmd).AsFtSearch()
-	if n == 0 {
-		httpError(w, 404, "No Instances Found")
+	res, err := e.RDB.FTSearchWithArgs(ctx, "workflows_index", query, &redis.FTSearchOptions{
+		NoContent: true, LimitOffset: offset, Limit: limit,
+	}).Result()
+	if err != nil {
+		log.Printf("Error searching workflow instances (%s): %v", query, err)
+		httpError(w, 500, "Error searching workflow instances")
 		return
 	}
 
-	var ids []string
-	for _, doc := range resp {
-		ids = append(ids, doc.Key)
+	ids := make([]string, 0, len(res.Docs))
+	for _, doc := range res.Docs {
+		ids = append(ids, strings.TrimPrefix(doc.ID, "workflow_instance:"))
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ids)
+	writeJSON(w, map[string]interface{}{"ids": ids, "total": res.Total, "limit": limit, "offset": offset})
 }
 
-// GetWorkflowInstance returns the full JSON document for one instance.
+// instanceIDPattern is the shape of a workflow_instance_id. Anything else is
+// rejected before touching Redis, so the endpoint can only ever read
+// workflow_instance:* keys. (contract D7)
+var instanceIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
+
+// GetWorkflowInstance returns the full JSON document for one instance,
+// addressed by workflow_instance_id.
 func (e *Engine) GetWorkflowInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	docKey := r.URL.Query().Get("doc_key")
-	if docKey == "" {
-		httpError(w, 400, "doc_key required. ")
+	if !requireParams(r, w, "workflow_instance_id") {
 		return
 	}
-	if !strings.Contains(docKey, ":") {
-		httpError(w, 400, "doc_key format Invalid. ")
+	id := r.URL.Query().Get("workflow_instance_id")
+	if !instanceIDPattern.MatchString(id) {
+		httpError(w, 400, "workflow_instance_id format Invalid. ")
 		return
 	}
 
-	instance, ok := jsonFirstMatch[map[string]interface{}](ctx, e.RDB, docKey, "$")
+	instance, ok := jsonFirstMatch[map[string]interface{}](ctx, e.RDB, instanceKey(id), "$")
 	if !ok {
 		httpError(w, 404, "Instance Not Found")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(instance)
+	writeJSON(w, instance)
 }

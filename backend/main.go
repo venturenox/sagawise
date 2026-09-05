@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 	"wtfsaga/db_connect"
 	"wtfsaga/instance_engine"
@@ -58,70 +59,27 @@ func httpTracing(next http.HandlerFunc) http.HandlerFunc {
 // The `ping` function in Go responds with a message indicating that the Golang Server is up and
 // running.
 func ping(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "Golang Server is up and running...!")
-}
-
-// The `shutdown` function responds kubernetes graceful shutdown endpoint.
-func (s *server) shutdown(w http.ResponseWriter, r *http.Request) {
-	log.Println("Gracefully Shutting Down...!")
-
-	// Disconnect Redis (rdb)
-	db_connect.RDBDisconnect(s.eng.RDB)
-
-	// Shutdown Redis (rueidis)
-	db_connect.DisconnectRueidis(s.eng.Search)
-
-	// Shutdown Postgres
-	db_connect.DisconnectPostgres(s.eng.DB)
-
-	// Shutdown HTTP Server
-	err := s.srv.Shutdown(context.Background())
-	if err != nil {
-		log.Println("HTTP Server shutdown error: ", err)
-		return
+	if _, err := fmt.Fprintln(w, "Golang Server is up and running...!"); err != nil {
+		log.Printf("ping: write error: %v", err)
 	}
-
-	log.Println("Graceful shutdown Successfull")
-	w.WriteHeader(200)
 }
 
-// The `live` function responds kubernetes live endpoint.
+// live serves the Kubernetes liveness and readiness probes: 200 when both
+// stores answer a ping, 503 otherwise.
 func (s *server) live(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Check RDB (go-redis)
-	res := s.eng.RDB.Ping(ctx).String()
-	if res == "ping: PONG" {
-		log.Println("Redis (go-redis) ping Successfully")
-	} else {
-		log.Println("Redis (go-redis) ping Error: ", res)
+	if err := s.eng.RDB.Ping(ctx).Err(); err != nil {
+		log.Println("Redis ping Error: ", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-
-	// Check Rueidis
-	cmd := s.eng.Search.B().Ping().Build()
-	result := s.eng.Search.Do(ctx, cmd)
-	pong, err := result.ToString()
-	if err != nil {
-		log.Println("Ping Redis (Rueidis) Error: ", err)
-		w.WriteHeader(http.StatusServiceUnavailable)
-		return
-	} else if pong == "PONG" {
-		log.Println("Redis (rueidis) ping Successfully")
-	}
-
-	// Check Postgres
-	err = s.eng.DB.Ping(ctx)
-	if err != nil {
+	if err := s.eng.DB.Ping(ctx); err != nil {
 		log.Println("Ping Postgres Error: ", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	log.Println("Postgres ping Successfully")
-
-	log.Println("Server is ready")
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 }
 
 // handler builds the HTTP mux with tracing for every endpoint.
@@ -141,7 +99,8 @@ func (s *server) handler() http.Handler {
 	handleFunc("/workflow_instances/list", httpTracing(s.eng.ListWorkflowInstances))
 	handleFunc("/workflow_instances/get", httpTracing(s.eng.GetWorkflowInstance))
 
-	handleFunc("/shutdown", httpTracing(s.shutdown))
+	// Shutdown is driven by SIGTERM/SIGINT only (Kubernetes sends SIGTERM);
+	// there is no HTTP endpoint for it. (#14)
 	handleFunc("/live", httpTracing(s.live))
 	handleFunc("/ready", httpTracing(s.live))
 	handleFunc("/health", httpTracing(s.live))
@@ -149,21 +108,48 @@ func (s *server) handler() http.Handler {
 	return otelhttp.NewHandler(mux, "/")
 }
 
-// The main function connects the stores, loads the DSL, starts the reaper,
-// and serves HTTP on SAGAWISE_ADDR (default :5000) until interrupted.
+// main connects the stores, loads the DSL, starts the reaper, and serves
+// HTTP on SAGAWISE_ADDR (default :5000) until interrupted. Any startup
+// failure exits non-zero so the orchestrator restarts the process instead
+// of letting it serve half-initialized. (#8)
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	if err := run(); err != nil {
+		log.Printf("fatal: %v", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	// ctx is the process lifetime: canceled by SIGINT/SIGTERM. The reaper and
+	// the archive goroutines derive from it.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	rdb := db_connect.DBConnect(ctx)
-	search := db_connect.ConnectRueidis()
-	db := db_connect.ConnectPostgres(ctx)
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			log.Println("Redis connection close error: ", err)
+		}
+	}()
+	db, err := db_connect.ConnectPostgres(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 
-	templating.ParseDSL(ctx, rdb, db, envOr("SAGAWISE_DSL_DIR", "/sagawise"))
+	workflows, err := templating.ParseDSL(ctx, rdb, db, envOr("SAGAWISE_DSL_DIR", "/sagawise"))
+	if err != nil {
+		return fmt.Errorf("load DSL: %w", err)
+	}
 
-	eng := instance_engine.New(rdb, search, db)
+	eng := instance_engine.New(rdb, db)
 	eng.Services = instance_engine.FileRegistry{Path: envOr("SAGAWISE_SERVICES_FILE", "services.json")}
-	eng.StartDeadlineReaper(ctx, time.Second)
+	if err := instance_engine.ValidateServices(eng.Services, workflows); err != nil {
+		return err
+	}
 
 	otelShutdown, err := otel.SetupOTelSDK(ctx)
 	if err != nil {
@@ -191,34 +177,52 @@ func main() {
 		}()
 	}
 
+	// Request contexts derive from srvCtx, not the signal context, so a
+	// SIGTERM lets in-flight handlers finish during Shutdown instead of
+	// cancelling them mid-write.
+	srvCtx, srvCancel := context.WithCancel(context.Background())
+	defer srvCancel()
+
 	addr := envOr("SAGAWISE_ADDR", ":5000")
 	s := &server{eng: eng}
 	s.srv = &http.Server{
 		Addr:              addr,
-		BaseContext:       func(_ net.Listener) context.Context { return ctx },
+		BaseContext:       func(_ net.Listener) context.Context { return srvCtx },
 		ReadHeaderTimeout: time.Second,
 		ReadTimeout:       time.Second,
 		WriteTimeout:      10 * time.Second,
 		Handler:           s.handler(),
 	}
+
+	// Everything is valid and reachable: start the reaper and serve.
+	reaperCtx, stopReaper := context.WithCancel(ctx)
+	defer stopReaper()
+	eng.StartDeadlineReaper(reaperCtx, time.Second)
+
 	srvErr := make(chan error, 1)
 	go func() {
 		srvErr <- s.srv.ListenAndServe()
 	}()
-
 	log.Println("Server started listening on " + addr)
 
 	select {
 	case err := <-srvErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Println("HTTP server error: ", err)
+			return fmt.Errorf("HTTP server: %w", err)
 		}
-		return
+		return nil
 	case <-ctx.Done():
-		stop()
 	}
 
-	if err := s.srv.Shutdown(context.Background()); err != nil {
+	// One ordered teardown path: drain the server, stop the reaper, then the
+	// deferred closes release the clients. (#14)
+	log.Println("Shutting down...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.srv.Shutdown(shutdownCtx); err != nil {
 		log.Println("HTTP server shutdown error: ", err)
 	}
+	stopReaper()
+	log.Println("Shutdown complete")
+	return nil
 }

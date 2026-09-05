@@ -160,19 +160,19 @@ func runProfile(cfg profileConfig) (string, error) {
 	setDefault("POSTGRES_USERNAME", "postgres")
 	setDefault("POSTGRES_PASSWORD", "venturenox")
 	setDefault("POSTGRES_DATABASE", "sagawise")
-	os.Setenv("REDIS_CONNECTION_STRING", "")
+	_ = os.Setenv("REDIS_CONNECTION_STRING", "")
 
 	ctx := context.Background()
-	rdb := db_connect.DBConnect(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
 		return "", fmt.Errorf("redis: %w", err)
 	}
-	db := db_connect.ConnectPostgres(ctx)
-	if err := db.Ping(ctx); err != nil {
+	db, err := db_connect.ConnectPostgres(ctx)
+	if err != nil {
 		return "", fmt.Errorf("postgres: %w", err)
 	}
 	defer db.Close()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	base := &Results{Env: map[string]string{}}
 	captureEnv(ctx, base, rdb, db)
@@ -192,7 +192,7 @@ func runProfile(cfg profileConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(work)
+	defer func() { _ = os.RemoveAll(work) }()
 	bin := filepath.Join(work, "sagawise")
 	fmt.Fprintln(os.Stderr, "building server...")
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil { // #nosec G204 -- fixed argv; bin is a temp path we created
@@ -224,7 +224,7 @@ func runProfile(cfg profileConfig) (string, error) {
 	}
 
 	pprofAddr := freeAddr()
-	os.Setenv("SAGAWISE_PPROF_ADDR", pprofAddr)
+	_ = os.Setenv("SAGAWISE_PPROF_ADDR", pprofAddr)
 	srv, err := launchServer(bin, dslDir, servicesFile)
 	if err != nil {
 		return "", err
@@ -285,7 +285,7 @@ func runProfile(cfg profileConfig) (string, error) {
 		rr := l.runRate(ctx, defaultFlow(), 100, 8*time.Second, nil, nil)
 		row.Endpoints = rr.Endpoints
 		row.Extra["list_p50_ms"], row.Extra["list_p99_ms"] = l.endpointLatency("/workflow_instances/list?workflow_name="+flowName, 20)
-		row.Extra["get_p50_ms"], _ = l.endpointLatency("/workflow_instances/get?doc_key=workflow_instance:bp0", 20)
+		row.Extra["get_p50_ms"], _ = l.endpointLatency("/workflow_instances/get?workflow_instance_id=bp0", 20)
 		if n > 0 {
 			row.Extra["redis_bytes_per_instance"] = float64(redisUsedMemory(ctx, rdb)-memBefore) / float64(n)
 		}
@@ -358,7 +358,7 @@ func freeAddr() string {
 	if err != nil {
 		panic(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().String()
 }
 
@@ -416,7 +416,7 @@ func (p *Profile) capturePprof(ctx context.Context, l *loader, pprofAddr, bin, r
 			return
 		}
 		data, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		file := filepath.Join(runDir, "pprof", name+".pprof")
 		if err := os.WriteFile(file, data, 0o600); err != nil {
 			p.Pprof[name] = "write failed: " + err.Error()

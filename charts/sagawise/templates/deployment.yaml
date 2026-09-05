@@ -62,11 +62,6 @@ spec:
             value: {{ include "snippet.postgresql.database" . }}
           - name: SERVER_ENV
             value: development
-          lifecycle:
-            preStop:
-              httpGet:
-                path: shutdown
-                port: {{ include "sagawise.application.port" . }}
           livenessProbe:
             httpGet:
               path: /live

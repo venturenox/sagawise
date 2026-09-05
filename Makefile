@@ -5,9 +5,9 @@ STATICCHECK_VERSION   = v0.8.1
 GOLANGCI_LINT_VERSION = v2.13.2
 GOSEC_VERSION         = v2.29.0
 GOVULNCHECK_VERSION   = v1.7.0
-# G104 (unhandled errors) and G706 (log injection): see docs/correctness-audit-2026-08-29.md #7
-# and docs/TODO.md phases 5, 6, 9. Remove from this list when those land.
-GOSEC_EXCLUDE         = G104,G706
+# G706 (log injection: raw query params in logs) is tracked in docs/TODO.md phase 9
+# (structured logging). Remove it from this list when that lands.
+GOSEC_EXCLUDE         = G706
 GOBIN                ?= $(shell go env GOPATH)/bin
 
 start:

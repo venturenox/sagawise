@@ -824,7 +824,7 @@
 								}
 							]
 						},
-						"description": "Gets a list of available workflow **instances**.\n\nOptional filters:\n\n1. workflow_name: the name of workflow as defined in DSL file(s).\n2. workflow_state: the state of workflow. Available values are:\n    1. PENDING, PUBLISHED, COMPLETED, FAILED\n3. started_at: Duration short-code in which workflow was started. Available values are:\n    1. 5m: Last 5 minutes\n    2. 15m: 15 minutes\n4. completed_at: Duration short-code in which workflow was completed. Available values same as above (5m, 15m)\n5. topic: Topic that is involved in a workflow\n6. to: Name of consumer service, as defined in services & DSL file(s)\n7. from: Name of producer service, as defined in services & DSL file(s)\n    \n\n**Responses:**\n\n- 404 - \"No Instances Found\" error message\n- 200 - It responds with a JSON array of document keys for available instances of that workflow"
+						"description": "Gets a page of workflow **instance ids**.\n\nOptional filters (matched literally; a hyphen is a hyphen):\n\n1. workflow_name: the name of workflow as defined in DSL file(s).\n2. workflow_state: the state of workflow. Available values are:\n    1. PENDING, COMPLETED, FAILED\n3. started_at: Duration short-code in which workflow was started. Available values are:\n    1. 5m: Last 5 minutes\n    2. 15m: 15 minutes\n4. completed_at: Duration short-code in which workflow was completed. Available values same as above (5m, 15m)\n5. topic: Topic that is involved in a workflow\n6. to: Name of consumer service, as defined in services & DSL file(s)\n7. from: Name of producer service, as defined in services & DSL file(s)\n\nPaging:\n\n- limit: page size, default 50, max 1000\n- offset: first result to return, default 0\n    \n\n**Responses:**\n\n- 400 - Invalid limit/offset message\n- 500 - Index error\n- 200 - `{\"ids\": [...], \"total\": N, \"limit\": L, \"offset\": O}`; no match is an empty page with total 0"
 					},
 					"response": [
 						{
@@ -868,7 +868,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "[\n    \"workflow_instance:7sd76d67\",\n    \"workflow_instance:7sd76d68\"\n]"
+							"body": "{\n    \"ids\": [\n        \"7sd76d67\",\n        \"7sd76d68\"\n    ],\n    \"total\": 2,\n    \"limit\": 50,\n    \"offset\": 0\n}"
 						},
 						{
 							"name": "List Workflow Instances",
@@ -918,25 +918,21 @@
 									]
 								}
 							},
-							"status": "Not Found",
-							"code": 404,
-							"_postman_previewlanguage": "plain",
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
 									"key": "Date",
 									"value": "Tue, 08 Oct 2024 12:50:56 GMT"
 								},
 								{
-									"key": "Content-Length",
-									"value": "18"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "No Instances Found"
+							"body": "{\n    \"ids\": [],\n    \"total\": 0,\n    \"limit\": 50,\n    \"offset\": 0\n}"
 						}
 					]
 				},
@@ -958,7 +954,7 @@
 						"method": "GET",
 						"header": [],
 						"url": {
-							"raw": "{{base_url}}/workflow_instances/get?doc_key=workflow_instance:{{workflow_instance_id}}",
+							"raw": "{{base_url}}/workflow_instances/get?workflow_instance_id={{workflow_instance_id}}",
 							"host": [
 								"{{base_url}}"
 							],
@@ -968,12 +964,12 @@
 							],
 							"query": [
 								{
-									"key": "doc_key",
-									"value": "workflow_instance:{{workflow_instance_id}}"
+									"key": "workflow_instance_id",
+									"value": "{{workflow_instance_id}}"
 								}
 							]
 						},
-						"description": "Gets the complete workflow instance document by the document key.  \n**Required query parameter:**\n\n1. **doc_key:** The workflow instance document key as received in previous (List instances) API\n    \n\n**Responses:**\n\n- 400 - Missing field message\n- 400 - Invalid document key message\n    \n- 404 - \"Instance Not Found\" error message\n    \n- 200 - Workflow instance document (in JSON)"
+						"description": "Gets the complete workflow instance document by its id.  \n**Required query parameter:**\n\n1. **workflow_instance_id:** The id returned by start_instance (also listed by the List instances API)\n    \n\n**Responses:**\n\n- 400 - Missing field message\n- 400 - Invalid workflow_instance_id message\n    \n- 404 - \"Instance Not Found\" error message\n    \n- 200 - Workflow instance document (in JSON)"
 					},
 					"response": [
 						{
@@ -982,7 +978,7 @@
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "localhost:5000/workflow_instances/get?doc_key=workflow_instance:7sd76d67",
+									"raw": "localhost:5000/workflow_instances/get?workflow_instance_id=7sd76d67",
 									"host": [
 										"localhost"
 									],
@@ -993,8 +989,8 @@
 									],
 									"query": [
 										{
-											"key": "doc_key",
-											"value": "workflow_instance:7sd76d67"
+											"key": "workflow_instance_id",
+											"value": "7sd76d67"
 										}
 									]
 								}
@@ -1035,8 +1031,8 @@
 									],
 									"query": [
 										{
-											"key": "doc_key",
-											"value": "workflow_instance:{{workflow_instance_id}}",
+											"key": "workflow_instance_id",
+											"value": "{{workflow_instance_id}}",
 											"disabled": true
 										}
 									]
@@ -1060,15 +1056,15 @@
 								}
 							],
 							"cookie": [],
-							"body": "doc_key required. doc_key format Invalid. "
+							"body": "workflow_instance_id required. "
 						},
 						{
-							"name": "Invalid doc_key",
+							"name": "Invalid workflow_instance_id",
 							"originalRequest": {
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/workflow_instances/get?doc_key=workflow_instance{{workflow_instance_id}}",
+									"raw": "{{base_url}}/workflow_instances/get?workflow_instance_id=not:an:id",
 									"host": [
 										"{{base_url}}"
 									],
@@ -1078,13 +1074,13 @@
 									],
 									"query": [
 										{
-											"key": "doc_key",
-											"value": "workflow_instance:{{workflow_instance_id}}",
+											"key": "workflow_instance_id",
+											"value": "{{workflow_instance_id}}",
 											"disabled": true
 										},
 										{
-											"key": "doc_key",
-											"value": "workflow_instance{{workflow_instance_id}}"
+											"key": "workflow_instance_id",
+											"value": "not:an:id"
 										}
 									]
 								}
@@ -1107,7 +1103,7 @@
 								}
 							],
 							"cookie": [],
-							"body": "doc_key format Invalid. "
+							"body": "workflow_instance_id format Invalid. "
 						},
 						{
 							"name": "Instance Not Found",
@@ -1115,7 +1111,7 @@
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/workflow_instances/get?doc_key=workflow_instance:{{workflow_instance_id}}",
+									"raw": "{{base_url}}/workflow_instances/get?workflow_instance_id={{workflow_instance_id}}",
 									"host": [
 										"{{base_url}}"
 									],
@@ -1125,8 +1121,8 @@
 									],
 									"query": [
 										{
-											"key": "doc_key",
-											"value": "workflow_instance:{{workflow_instance_id}}"
+											"key": "workflow_instance_id",
+											"value": "{{workflow_instance_id}}"
 										}
 									]
 								}

@@ -80,17 +80,19 @@ Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/b
 
 ## Phase 5 — Quick wins PR
 
-- [ ] Webhook client with a timeout. (#5)
-- [ ] Reject non-positive or missing DSL timeouts at load. (#6)
-- [ ] Fix Node SDK `is_retry` loose-equality bug. Rethrow errors. (#15)
-- [ ] Fix Python SDK: raise instead of return. Fix seconds-vs-ms timeout.
-- [ ] Startup returns errors. `main` fails fast. (#8)
-- [ ] Re-enable `errcheck` in `.golangci.yml` and drop `G104` from `GOSEC_EXCLUDE` (Makefile + ci.yml). (#7)
-- [ ] Remove `/shutdown` or make it only cancel the signal context. (#14)
-- [ ] Delete rueidis. One Redis client. (#11)
-- [ ] List endpoint: explicit LIMIT, pagination params, escaped filter values, 5xx on errors. (#10)
-- [ ] Parse `is_retry` strictly. Reject garbage.
-- [ ] `GetWorkflowInstance`: only allow `workflow_instance:` keys.
+Done on branch `quick-wins` (2026-09-05), stacked on `bench`. Contract tests that flipped from XFAIL to passing: startup (#8, #6), DSL validation (#6), list paging/escaping (#10), strict `is_retry`, get-by-id (D7), and the non-string-index payload-shadowing case (a decode error is now an error, not `""`; the string-index case still waits for phase 6). Node `todo`s and Python `xfail`s are gone.
+
+- [x] Webhook client with a timeout. (#5) → `instance_engine.WebhookTimeout` (5 s), the `New` default. The reaper still calls it inline; the worker is phase 6.
+- [x] Reject non-positive or missing DSL timeouts at load. (#6) → `templating.Validate`: contract §7 in full (name, ≥1 task, topic/from/to, timeout > 0, unique `(topic, to)`, unique names across files). Nothing is stored until every file validates.
+- [x] Fix Node SDK `is_retry` loose-equality bug. Rethrow errors. (#15) → explicit presence checks, `is_retry` must be a boolean, every failure rejects.
+- [x] Fix Python SDK: raise instead of return. Fix seconds-vs-ms timeout. → default 1.0 s; `is_retry` sent as `true`/`false`.
+- [x] Startup returns errors. `main` fails fast. (#8) → `DBConnect`/`ConnectPostgres`/`ParseDSL` return errors; `main` also checks every DSL `from` has a `failure_url` (W5) and handles SIGTERM as well as SIGINT.
+- [x] Re-enable `errcheck` in `.golangci.yml` and drop `G104` from `GOSEC_EXCLUDE` (Makefile + ci.yml). (#7) → both on; the "helpers return errors, callers map to 5xx" half of #7 stays in phase 6.
+- [x] Remove `/shutdown` or make it only cancel the signal context. (#14) → removed, with the Helm `preStop` hook that called it. One teardown path: drain server → stop reaper → close clients.
+- [x] Delete rueidis. One Redis client. (#11) → `ListWorkflowInstances` uses go-redis `FTSearchWithArgs`; `Engine.Search` is gone.
+- [x] List endpoint: explicit LIMIT, pagination params, escaped filter values, 5xx on errors. (#10) → `limit` (default 50, max 1000), `offset`, response `{ids, total, limit, offset}` with bare ids; empty page is 200. Filter fields became TAG in `workflows_index` so values match literally; `templating.ensureIndex` versions the schema under `index_schema:<name>` and recreates the index on change.
+- [x] Parse `is_retry` strictly. Reject garbage. → `true`/`false`, case-insensitive; anything else 400.
+- [x] `GetWorkflowInstance`: only allow `workflow_instance:` keys. → takes `workflow_instance_id` (alphanumeric); `doc_key` is gone (D7). Postman collection, example README and bench updated.
 
 ## Phase 6 — State machine rewrite PR
 

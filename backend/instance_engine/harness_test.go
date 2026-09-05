@@ -169,8 +169,8 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 	t.Cleanup(func() { log.SetOutput(prevOut) })
 
 	ctx := context.Background()
-	rdb := db_connect.DBConnect(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
 		t.Fatalf("redis not reachable: %v", err)
 	}
 	faults := &redisFaults{}
@@ -197,7 +197,7 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 	}
 
 	e.hook = httptest.NewServer(e.sink)
-	e.eng = New(rdb, db_connect.ConnectRueidis(), db)
+	e.eng = New(rdb, db)
 	e.eng.Clock = e.clock
 	e.eng.Services = MapRegistry{}
 	e.eng.HTTPClient = e.hook.Client()
@@ -231,7 +231,9 @@ func (e *env) loadDSL(workflows ...utils.Workflow) {
 			e.eng.Services.(MapRegistry)[task.From] = e.hook.URL + "/fail"
 		}
 	}
-	templating.ParseDSL(e.ctx, e.eng.RDB, e.eng.DB, dir)
+	if _, err := templating.ParseDSL(e.ctx, e.eng.RDB, e.eng.DB, dir); err != nil {
+		e.t.Fatalf("ParseDSL: %v", err)
+	}
 }
 
 func (e *env) cleanup() {
@@ -246,7 +248,7 @@ func (e *env) cleanup() {
 	}
 	// Belt and braces: anything indexed under our workflow names.
 	for _, name := range names {
-		res := e.eng.RDB.Do(e.ctx, "FT.SEARCH", "workflows_index", "@workflow_name:"+name, "NOCONTENT", "LIMIT", "0", "10000").Val()
+		res := e.eng.RDB.Do(e.ctx, "FT.SEARCH", "workflows_index", "@workflow_name:{"+escapeTag(name)+"}", "NOCONTENT", "LIMIT", "0", "10000").Val()
 		if m, ok := res.(map[interface{}]interface{}); ok {
 			if results, ok := m["results"].([]interface{}); ok {
 				for _, r := range results {
@@ -274,8 +276,7 @@ func (e *env) cleanup() {
 		_, _ = e.eng.DB.Exec(e.ctx, `DELETE FROM instance_history WHERE name = $1`, name)
 	}
 	e.eng.DB.Close()
-	e.eng.Search.Close()
-	e.eng.RDB.Close()
+	_ = e.eng.RDB.Close()
 }
 
 // ---- driving the engine ----

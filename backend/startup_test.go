@@ -23,8 +23,7 @@ import (
 )
 
 // Contract §7: the process serves only when its configuration is valid and
-// its stores are reachable; otherwise it exits non-zero. Today it logs and
-// serves half-initialized. (#6, #8)
+// its stores are reachable; otherwise it exits non-zero. (#6, #8)
 
 var (
 	buildOnce sync.Once
@@ -58,7 +57,7 @@ func freePort(t testx.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().String()
 }
 
@@ -147,7 +146,7 @@ func (p *proc) serving(timeout time.Duration) bool {
 		resp, err := http.DefaultClient.Do(req)
 		cancel()
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == 200 {
 				return true
 			}
@@ -230,21 +229,21 @@ func TestStartup_ValidConfigServes(t *testing.T) {
 }
 
 func TestStartup_MissingDSLDirExits(t *testing.T) {
-	testx.XFail(t, "#8", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		p := launch(t, filepath.Join(t.TempDir(), "does-not-exist"), writeServices(t, goodServices()), nil)
 		p.expectExit(t, 5*time.Second)
 	})
 }
 
 func TestStartup_EmptyDSLDirExits(t *testing.T) {
-	testx.XFail(t, "#8", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		p := launch(t, t.TempDir(), writeServices(t, goodServices()), nil)
 		p.expectExit(t, 5*time.Second)
 	})
 }
 
 func TestStartup_InvalidDSLExits(t *testing.T) {
-	testx.XFail(t, "#6", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		wf := goodWorkflow()
 		wf.Tasks[0].Timeout = 0
 		p := launch(t, writeDSL(t, wf), writeServices(t, goodServices()), nil)
@@ -253,7 +252,7 @@ func TestStartup_InvalidDSLExits(t *testing.T) {
 }
 
 func TestStartup_UnregisteredPublisherExits(t *testing.T) {
-	testx.XFail(t, "#8", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, nil), nil)
 		p.expectExit(t, 5*time.Second)
 	})
@@ -263,7 +262,7 @@ func TestStartup_PostgresUnreachableExits(t *testing.T) {
 	if testing.Short() {
 		t.Skip("waits out the 30s connect retry; skipped in -short")
 	}
-	testx.XFail(t, "#8", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()),
 			map[string]string{"POSTGRES_HOST": "127.0.0.1", "POSTGRES_PORT": "1"})
 		p.expectExit(t, 45*time.Second)
@@ -271,7 +270,7 @@ func TestStartup_PostgresUnreachableExits(t *testing.T) {
 }
 
 func TestStartup_RedisUnreachableExits(t *testing.T) {
-	testx.XFail(t, "#8", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()),
 			map[string]string{"REDIS_HOST": "127.0.0.1", "REDIS_PORT": "1"})
 		p.expectExit(t, 8*time.Second)

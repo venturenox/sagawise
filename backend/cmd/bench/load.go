@@ -47,7 +47,7 @@ func (l *loader) call(method, path, body string) (string, time.Duration, bool) {
 		return "", time.Since(start), false
 	}
 	data, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return string(data), time.Since(start), resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
@@ -257,7 +257,7 @@ func redisCommandCalls(ctx context.Context, rdb *redis.Client) int64 {
 		for _, kv := range strings.Split(strings.SplitN(line, ":", 2)[1], ",") {
 			if strings.HasPrefix(kv, "calls=") {
 				var n int64
-				fmt.Sscanf(kv, "calls=%d", &n)
+				_, _ = fmt.Sscanf(kv, "calls=%d", &n)
 				total += n
 			}
 		}

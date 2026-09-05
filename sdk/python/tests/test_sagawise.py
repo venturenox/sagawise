@@ -2,9 +2,7 @@
 every call sends the HTTP request it describes, a failed request is raised to
 the caller (never returned as a value), and timeouts are in a sane unit.
 
-Tests today's code cannot pass are marked xfail(strict=True) with the
-finding, so the run stays green while the gap is visible and flips to a
-failure the day the fix lands. Run with `python -m pytest -q` from sdk/python.
+Run with `python -m pytest -q` from sdk/python.
 """
 import json
 import os
@@ -83,13 +81,11 @@ def test_consume_and_fail_send_requests(sdk):
     assert last()["query"]["action_type"] == ["fail"]
 
 
-@pytest.mark.xfail(strict=True, reason="#15 (cut list): exceptions are returned as values, not raised")
 def test_5xx_raises(sdk):
     with pytest.raises(requests.exceptions.HTTPError):
         sdk.consume_message("abc123", "1.0", "boom", "payments")
 
 
-@pytest.mark.xfail(strict=True, reason="#15 (cut list): exceptions are returned as values, not raised")
 def test_unreachable_server_raises(server):
     os.environ["SAGAWISE_URL"] = "http://127.0.0.1:1"
     try:
@@ -99,7 +95,6 @@ def test_unreachable_server_raises(server):
         os.environ["SAGAWISE_URL"] = f"http://127.0.0.1:{server.server_port}"
 
 
-@pytest.mark.xfail(strict=True, reason="#15 (cut list): timeout=1000 is passed to requests, which reads seconds (~17 minutes)")
 def test_default_timeout_is_seconds_not_ms():
     assert Sagawise().timeout <= 60
 
@@ -107,3 +102,16 @@ def test_default_timeout_is_seconds_not_ms():
 def test_missing_required_args_raise():
     with pytest.raises(ValueError):
         Sagawise().start_workflow("", "1.0")
+
+
+def test_is_retry_is_sent_lowercase(sdk):
+    sdk.consume_message("abc123", "1.0", "order_created", "payments", is_retry=True)
+    assert last()["query"]["is_retry"] == ["true"]
+
+
+def test_missing_args_send_nothing(sdk):
+    with pytest.raises(ValueError):
+        sdk.publish_message("abc123", "1.0", "order_created", payload=None)
+    with pytest.raises(ValueError):
+        sdk.consume_message("abc123", "1.0", "", "payments")
+    assert _Handler.requests == []
