@@ -103,5 +103,5 @@ compare them.
 
 | run | label | commit | purpose |
 |---|---|---|---|
-| `runs/2026-09-05_0133_5321234_baseline` | baseline | 5321234 | Main after phases 0–3, before any audit fix, quiet machine. 0 errors and 0 lost archives up to 200 sagas/s; ~3 ms per report; 36 Redis commands per saga; reaper lag p50 ≈ 1 s for 200 simultaneous timeouts. |
-| `runs/2026-09-05_0147_5321234_profile-baseline` | profile-baseline | 5321234 | Bottleneck profile before any fix. Knee 1518 sagas/s (~7.6k req/s) with Redis at 92 % of one core: Redis is the ceiling, driven by JSON.SET at 66 µs (RediSearch re-index per write) × 4–7 writes per request. 2→50 tasks per workflow costs +69 % latency (recursive-descent JSONPath). 100k existing instances: no effect. Reaper lag grows ~0.2 ms per simultaneous timeout. |
+| `runs/2026-09-05_0517_8f8e27c_baseline` | baseline | 8f8e27c | Main after phases 0–4 tooling, before any audit fix, quiet machine. 0 errors and 0 lost archives up to 200 sagas/s; ~3 ms per report; 36 Redis commands per saga; reaper lag p50 ≈ 1 s for 200 simultaneous timeouts. |
+| `runs/2026-09-05_0521_8f8e27c_profile-baseline` | profile-baseline | 8f8e27c | Bottleneck profile before any fix. Knee 1518 sagas/s (~7.6k req/s) with Redis at 97 % of one core: Redis is the ceiling, driven by JSON.SET at 73 µs (RediSearch re-index per write) × 4–7 writes per request. 2→50 tasks per workflow costs +63 % latency (recursive-descent JSONPath). 100k existing instances: +2 %. Reaper lag grows ~0.4 ms per simultaneous timeout. |

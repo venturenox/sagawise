@@ -1,7 +1,7 @@
 {
   "label": "baseline",
-  "date": "2026-09-05T01:33:29+05:00",
-  "commit": "5321234",
+  "date": "2026-09-05T05:17:17+05:00",
+  "commit": "8f8e27c",
   "dirty": true,
   "env": {
     "cpu": "AMD Ryzen 9 9900X 12-Core Processor",
@@ -27,34 +27,34 @@
       "duration": "20s",
       "sagas_started": 1000,
       "sagas_completed": 1000,
-      "achieved_sagas_per_sec": 49.96758522049096,
+      "achieved_sagas_per_sec": 49.97158027530188,
       "requests": 5000,
       "errors": 0,
       "error_rate": 0,
       "endpoints": {
         "consume": {
           "count": 2000,
-          "p50_ms": 2.848249,
-          "p95_ms": 3.326896,
-          "p99_ms": 3.562101,
-          "max_ms": 4.227811
+          "p50_ms": 2.731835,
+          "p95_ms": 3.263921,
+          "p99_ms": 3.560839,
+          "max_ms": 4.090994
         },
         "publish": {
           "count": 2000,
-          "p50_ms": 2.493383,
-          "p95_ms": 2.761855,
-          "p99_ms": 2.952543,
-          "max_ms": 4.015802
+          "p50_ms": 2.398409,
+          "p95_ms": 2.735313,
+          "p99_ms": 3.063171,
+          "max_ms": 5.895386
         },
         "start": {
           "count": 1000,
-          "p50_ms": 1.008854,
-          "p95_ms": 1.267204,
-          "p99_ms": 1.398848,
-          "max_ms": 2.06284
+          "p50_ms": 0.924686,
+          "p95_ms": 1.183417,
+          "p99_ms": 1.329645,
+          "max_ms": 3.42701
         }
       },
-      "redis_cmds_per_saga": 36.041,
+      "redis_cmds_per_saga": 36.044,
       "archive_expected": 1000,
       "archive_rows": 1000,
       "archive_missing": 0
@@ -64,31 +64,31 @@
       "duration": "20s",
       "sagas_started": 2000,
       "sagas_completed": 2000,
-      "achieved_sagas_per_sec": 99.94063466336615,
+      "achieved_sagas_per_sec": 99.94496472549311,
       "requests": 10000,
       "errors": 0,
       "error_rate": 0,
       "endpoints": {
         "consume": {
           "count": 4000,
-          "p50_ms": 2.853992,
-          "p95_ms": 3.46832,
-          "p99_ms": 3.73041,
-          "max_ms": 7.882839
+          "p50_ms": 2.681836,
+          "p95_ms": 3.347337,
+          "p99_ms": 3.796737,
+          "max_ms": 7.259031
         },
         "publish": {
           "count": 4000,
-          "p50_ms": 2.557277,
-          "p95_ms": 2.876805,
-          "p99_ms": 3.109287,
-          "max_ms": 7.290181
+          "p50_ms": 2.409821,
+          "p95_ms": 2.761891,
+          "p99_ms": 3.173594,
+          "max_ms": 7.386429
         },
         "start": {
           "count": 2000,
-          "p50_ms": 0.932271,
-          "p95_ms": 1.144906,
-          "p99_ms": 1.329827,
-          "max_ms": 5.175054
+          "p50_ms": 0.871734,
+          "p95_ms": 1.113648,
+          "p99_ms": 1.475914,
+          "max_ms": 4.650949
         }
       },
       "redis_cmds_per_saga": 36.0205,
@@ -101,31 +101,31 @@
       "duration": "20s",
       "sagas_started": 4000,
       "sagas_completed": 4000,
-      "achieved_sagas_per_sec": 199.8795967883301,
+      "achieved_sagas_per_sec": 199.8716784649406,
       "requests": 20000,
       "errors": 0,
       "error_rate": 0,
       "endpoints": {
         "consume": {
           "count": 8000,
-          "p50_ms": 3.117726,
-          "p95_ms": 4.012802,
-          "p99_ms": 4.422432,
-          "max_ms": 8.607212
+          "p50_ms": 2.858069,
+          "p95_ms": 3.821046,
+          "p99_ms": 4.199903,
+          "max_ms": 9.838656
         },
         "publish": {
           "count": 8000,
-          "p50_ms": 2.870833,
-          "p95_ms": 3.345793,
-          "p99_ms": 3.712245,
-          "max_ms": 7.824824
+          "p50_ms": 2.682163,
+          "p95_ms": 3.202415,
+          "p99_ms": 3.541422,
+          "max_ms": 7.339229
         },
         "start": {
           "count": 4000,
-          "p50_ms": 0.997535,
-          "p95_ms": 1.256092,
-          "p99_ms": 1.551521,
-          "max_ms": 5.964012
+          "p50_ms": 0.957408,
+          "p95_ms": 1.242709,
+          "p99_ms": 1.521562,
+          "max_ms": 6.219271
         }
       },
       "redis_cmds_per_saga": 36.01175,
@@ -138,9 +138,9 @@
     "tasks": 200,
     "received": 200,
     "missing": 0,
-    "p50_ms": 1015.047979,
-    "p99_ms": 1039.657214,
-    "max_ms": 1040.567105,
-    "min_ms": 192.015891
+    "p50_ms": 995.135319,
+    "p99_ms": 999.706859,
+    "max_ms": 1001.374409,
+    "min_ms": 163.905494
   }
 }
