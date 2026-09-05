@@ -46,7 +46,12 @@ and its own webhook receiver, then drives it over HTTP.
   completed sagas are counted. Any shortfall is a lost archive (audit #9).
 - **Reaper lag.** Tasks are published with a 2 s timeout and never
   consumed; lag is deadline → failure-webhook arrival. The reaper ticks
-  once a second, so 0 to ~1000 ms is the design floor.
+  once a second, so 0 to ~1000 ms is the design floor. The tasks are
+  created first, then published concurrently, and each is stamped from the
+  return of its own publish. Before `b974cf0` they were published in one
+  sequential loop against a client-side stamp, so at n ≥ 500 the publish
+  phase outlasted the timeout and the reported lag went negative: **any
+  reaper-lag figure in a run before `b974cf0` is unreliable.**
 - **Go micro-benchmarks.** `instance_engine/bench_test.go`: start,
   publish, consume, full saga, and a reaper tick over 10 and 50 overdue
   tasks, called in-process. Compared with `benchstat`
@@ -82,9 +87,10 @@ answers "where does the time go and what does it scale with". It writes
 5. **Tasks per workflow.** 2, 10 and 50 tasks at a constant ~1000 req/s.
    Document size grows with task count; every JSONPath query scans it.
 6. **Payload size.** 100 B, 10 KB, 500 KB publish bodies.
-7. **Simultaneous timeouts.** 100, 500, 2000 tasks expiring together; the
-   reaper is sequential, so max lag grows linearly. Any `missing` is a
-   correctness failure.
+7. **Simultaneous timeouts.** 100, 500, 2000 tasks expiring together. Any
+   `missing` is a correctness failure. Before phase 7 the reaper was
+   sequential and max lag grew linearly; since `reap_batch` a tick is one
+   script call, so the curve is flatter.
 8. **Contention.** 20 concurrent reports on one instance vs on 20 instances.
 
 The report opens with a generated **Findings** list that reads the curves
@@ -109,3 +115,6 @@ compare them.
 | `runs/2026-09-05_0546_2637bcc_profile-after-phase-5` | profile-after-phase-5 | 2637bcc | Profile after phase 5. Same knee (1518 sagas/s), same Redis ceiling (97 % of one core, JSON.SET 61 µs), same round-trips per request. Confirms the TAG schema change did not move the bottleneck. Comparison: `comparisons/2026-09-05_profile-baseline_vs_profile-after-phase-5.md`. |
 | `runs/2026-09-05_0738_84161db_after-phase-6` | after-phase-6 | 84161db | After phase 6 (state-machine rewrite: schema 2 docs, one Lua script per transition, durable archive/webhook queues). publish and consume p50 2.4–2.9 ms → 0.9 ms (-61 to -69 %), p99 -52 to -68 %; 0 errors, 0 lost archives; reaper lag p50 1010 → 189 ms (the webhook worker is nudged, no longer waits for a tick), p99 unchanged, one 3.1 s outlier (one delivery retried after the 2 s backoff). Redis commands per saga 36 → 37 (now counted inside the script). Go micro-benchmarks: publish -40 %, consume -35 %, allocations -34 %; reaper tick +9–10 % (each overdue member is one script call instead of ZREM+GET). Comparison: `comparisons/2026-09-05_after-phase-5_vs_after-phase-6.md`. |
 | `runs/2026-09-05_0741_84161db_profile-after-phase-6` | profile-after-phase-6 | 84161db | Profile after phase 6. Knee unchanged at 1518 sagas/s, but at every rate consume p99 is -60 to -72 % and Redis CPU 5–15 points lower (89 % vs 97 % at 2277 sagas/s, where the breach is now the load generator, not p99). Client round-trips per report are 2; the "round-trips per request" table counts commands executed inside the Lua script too (`INFO commandstats` includes them), which is why it reads higher, not lower. 50 tasks per workflow +39 % (was +63 %), 500 KB payload +65 % (payload bytes travel with the publish and the script's JSON.SET), 100k instances -7 %. 2000 simultaneous timeouts: max lag 1001 ms (was 1357). Comparison: `comparisons/2026-09-05_profile-after-phase-5_vs_profile-after-phase-6.md`. |
+| `runs/2026-09-05_0811_b974cf0_after-phase-7` | after-phase-7 | b974cf0 | After phase 7 (cached service registry, one document write per task instead of one per field, batched reaper tick). Redis commands per saga 37 → 32 (-14 %) at every rate; publish/consume p50 and p99 a few percent lower; 0 errors, 0 lost archives. First run with the corrected reaper-lag measurement. Comparison: `comparisons/2026-09-05_after-phase-6_vs_after-phase-7.md` — note its Reaper lag rows compare across the harness fix and are not meaningful. |
+| `runs/2026-09-05_0818_a89cf09_profile-after-phase-7` | profile-after-phase-7 | a89cf09 | Profile after phase 7. Document writes per request: publish 3 → 2, consume 2 → 1, terminal consume 4 → 2, so Redis commands per request fall 14–17 % and Redis CPU is 2–6 points lower across the ramp. Simultaneous timeouts, max lag: 100 tasks -21 %, 500 -25 %, 2000 -46 % (2295 → 1248 ms). Knee is unchanged at 2277 sagas/s; past it the ramp is generator-bound. |
+| `runs/2026-09-05_0821_a89cf09_profile-p6server-newharness` | profile-p6server-newharness | a89cf09 (phase 6 server) | The phase 6 *server* re-run under the phase 7 harness in the same session, as the honest A-side for phase 7. Needed because the original `profile-after-phase-6` run's `INFO commandstats` delta was polluted by concurrent queue-worker traffic, which inflates its per-request command counts (start reads 6.5 there vs 2.0 here for the same code) and so overstates phase 7's win. Use `comparisons/2026-09-05_profile-p6server-newharness_vs_profile-after-phase-7.md`, not the `profile-after-phase-6` one. |

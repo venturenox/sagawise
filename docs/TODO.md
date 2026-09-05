@@ -76,7 +76,7 @@ Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/b
 - [x] Save results in `docs/benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
 - [x] Baseline run recorded before phase 5: `docs/benchmarks/runs/2026-09-05_0517_8f8e27c_baseline`.
 - [x] Bottleneck profile (`make bench-profile`): saturation ramp with pprof at the knee, Redis command breakdown, scaling curves (instances, tasks per workflow, payload size, simultaneous timeouts), contention. Baseline: `runs/2026-09-05_0521_8f8e27c_profile-baseline`. Verdict: Redis CPU is the ceiling (JSON.SET re-index per state write); recursive-descent JSONPath scales with document size; reaper lag is linear in simultaneous timeouts.
-- [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 pending.
+- [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 done: `runs/2026-09-05_0811_b974cf0_after-phase-7`, `runs/2026-09-05_0818_a89cf09_profile-after-phase-7`: Redis commands per saga -14 %, document writes per report roughly halved, reaper max lag -46 % at 2000 simultaneous timeouts, 0 errors, 0 lost archives. See the phase 7 section for the two measurement caveats (the reaper-lag harness fix, and which comparison to trust).
 
 ## Phase 5 — Quick wins PR
 
@@ -118,14 +118,73 @@ Done on branch `state-machine` (2026-09-05), stacked on `quick-wins`. Design: `d
 
 ## Phase 7 — Efficiency PR
 
-Measure against the Phase 4 baseline.
+Done on branch `state-machine` (2026-09-05), stacked on phase 6. Measured
+against the phase 6 runs; the phase 6 profile's verdict (Redis CPU is the
+ceiling, and `JSON.SET` pays for it because every write re-indexes the whole
+document) is what these changes target.
 
-- [ ] Cache `services.json` in memory.
-- [ ] One doc read plus one pipeline per `/update_instance`.
-- [ ] Reaper tick as a single Lua batch.
-- [ ] Fix list/get N+1.
-- [ ] Raise server `ReadTimeout` above 1s.
-- [ ] Re-run benchmarks. Record before/after.
+- [x] Cache `services.json` in memory. — `FileRegistry` reads and parses once
+  on the first lookup, then serves from a map. The file is baked into the
+  image at build time, so a re-read never saw a change anyway; read/parse
+  errors are not cached, so a transient failure is retried. `FileRegistry` is
+  now used by pointer (it carries the cache).
+- [x] One doc read plus one pipeline per `/update_instance`. — a report was
+  already 2 client round-trips since phase 6 (one `JSON.GET` to resolve the
+  task, one `EVALSHA`); what was left was the *write* count inside the
+  script. `transition.lua` now writes once per task instead of once per
+  field, carrying the state changes in a single `JSON.MERGE`. Measured
+  document writes per request: publish 3 → 2, consume 2 → 1, terminal
+  consume 4 → 2, fail/reap 2 → 1. The payload keeps its own `JSON.SET`
+  because it must be *replaced*, not RFC 7386 deep-merged — verified: a
+  republish with fewer keys does not leave the old ones behind.
+- [x] Reaper tick as a single Lua batch. — the `reap_batch` action reads the
+  overdue members of `task_deadlines` and reaps each inside Redis, so a tick
+  is one round-trip instead of one per expired task. Each member still goes
+  through the same `run()` path as an HTTP report, so the state machine lives
+  in one place and mark-failed/remove-deadline stays atomic (#4, TO5, TO6).
+- [x] Fix list/get N+1. — there was none left: phase 5 already made
+  `/workflow_instances/list` a single `FT.SEARCH` returning bare ids and
+  `/workflow_instances/get` a single `JSON.GET`. `ListWorkflows` had a
+  related defect and was fixed instead: with no `LIMIT`, `FT.SEARCH` returns
+  its default 10 documents, so the endpoint silently truncated the workflow
+  list at the eleventh workflow.
+- [x] Raise server `ReadTimeout` above 1s. — 1 s → 15 s. It covers the whole
+  body, so 1 s cut off large publish payloads on a slow link as a bare EOF
+  rather than an actionable error. `ReadHeaderTimeout` stays tight (2 s).
+- [x] Re-run benchmarks. Record before/after. — see below.
+
+Benchmarks. Authoritative runs (`b974cf0`/`a89cf09`, after the harness fix
+below): `runs/2026-09-05_0811_b974cf0_after-phase-7` and
+`runs/2026-09-05_0818_a89cf09_profile-after-phase-7`.
+
+- Redis commands per saga −14 % at every rate; 0 errors, 0 lost archives.
+- Document writes per request: publish 3 → 2, consume 2 → 1, terminal
+  consume 4 → 2 (measured, `INFO commandstats`).
+- Redis commands per request: publish −14 %, consume −17 %, terminal consume
+  −15 %; Redis CPU lower at every rate on the ramp.
+- Simultaneous timeouts (max reaper lag): 100 tasks −21 %, 500 −25 %,
+  2000 −46 % (2295 → 1248 ms). This is the batched tick.
+
+Two caveats recorded so the numbers are not over-read:
+
+- The reaper-lag measurement was wrong before this phase. It published its
+  tasks in one sequential loop and stamped each deadline from the client
+  clock, so at n≥500 the publish phase outlasted the 2 s timeout and the
+  reported lag went negative (min −876 ms). Fixed in `b974cf0`/`a89cf09`:
+  publish concurrently, stamp each task from the return of its own publish.
+  Any reaper-lag figure in a run before `b974cf0` is unreliable.
+- The `_vs_` comparison against the *original* phase 6 profile
+  (`comparisons/2026-09-05_profile-after-phase-6_vs_profile-after-phase-7.md`)
+  overstates the win (it shows knee +50 %, start round-trips −69 %). That run's
+  `INFO commandstats` delta was polluted by concurrent queue-worker traffic.
+  The trustworthy pair re-ran the phase 6 *server* under today's harness in
+  the same session:
+  `comparisons/2026-09-05_profile-p6server-newharness_vs_profile-after-phase-7.md`
+  (`runs/2026-09-05_0821_a89cf09_profile-p6server-newharness`). It shows the
+  knee unchanged at 2277 sagas/s — the ramp is generator-bound at that point
+  — with the command-count and reaper-lag wins above. Superseded phase 7 runs
+  (`d13f921`, `0814_b974cf0`) are kept because runs are immutable, but are not
+  the reference.
 
 ## Phase 8 — Security
 
