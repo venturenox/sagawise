@@ -1,6 +1,6 @@
 # Phase 6 design: the state-machine rewrite
 
-**Status:** draft for agreement, 2026-09-05. Roadmap phase 6 (`docs/TODO.md`).
+**Status:** agreed and implemented on branch `state-machine`, 2026-09-05. Roadmap phase 6 (`docs/TODO.md`). Decisions P1–P7 below were all taken as recommended.
 **Goal:** make `instance_engine` satisfy `docs/contract.md` in full, so every remaining `testx.XFail` flips to `testx.Run`: #1, #2, #3, #4, #5, #7, #9, #12, #13, D4, D6.
 **Scope:** one PR on branch `state-machine`, stacked on `quick-wins`. No efficiency work beyond what the design gives for free; phase 7 measures and tunes.
 

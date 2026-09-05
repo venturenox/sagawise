@@ -390,7 +390,9 @@ func cleanupBenchData(ctx context.Context, rdb *redis.Client, db *pgxpool.Pool) 
 	}
 	for _, name := range benchWorkflowNames() {
 		for {
-			res := rdb.Do(ctx, "FT.SEARCH", "workflows_index", "@workflow_name:"+name, "NOCONTENT", "LIMIT", "0", "10000").Val()
+			// workflow_name is a TAG field since phase 5; bench names are
+			// [a-z_] so no escaping is needed inside the braces.
+			res := rdb.Do(ctx, "FT.SEARCH", "workflows_index", "@workflow_name:{"+name+"}", "NOCONTENT", "LIMIT", "0", "10000").Val()
 			m, _ := res.(map[interface{}]interface{})
 			results, _ := m["results"].([]interface{})
 			if len(results) == 0 {
@@ -408,14 +410,19 @@ func cleanupBenchData(ctx context.Context, rdb *redis.Client, db *pgxpool.Pool) 
 		}
 		_, _ = db.Exec(ctx, `DELETE FROM instance_history WHERE name = $1`, name)
 	}
-	// Deadlines of deleted instances: drop members whose instance is gone.
-	members, _ := rdb.ZRange(ctx, "task_deadlines", 0, -1).Result()
-	if len(members) > 0 {
+	// Deadlines and queued jobs of deleted instances: drop members whose
+	// instance is gone (the workers would drop them one by one otherwise).
+	for _, key := range []string{"task_deadlines", "webhook_pending", "archive_pending"} {
+		members, _ := rdb.ZRange(ctx, key, 0, -1).Result()
+		if len(members) == 0 {
+			continue
+		}
 		pipe := rdb.Pipeline()
 		for _, m := range members {
 			id, _, _ := strings.Cut(m, ":")
 			if n, _ := rdb.Exists(ctx, "workflow_instance:"+id).Result(); n == 0 {
-				pipe.ZRem(ctx, "task_deadlines", m)
+				pipe.ZRem(ctx, key, m)
+				pipe.HDel(ctx, strings.TrimSuffix(key, "_pending")+"_attempts", m)
 			}
 		}
 		_, _ = pipe.Exec(ctx)

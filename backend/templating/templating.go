@@ -125,16 +125,19 @@ func ParseDSL(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, dir st
 		return nil, err
 	}
 	// Filterable fields are TAG so a value is matched literally: a hyphen in a
-	// workflow name is a hyphen, not RediSearch negation. (#10)
+	// workflow name is a hyphen, not RediSearch negation. (#10) Every path is
+	// explicit (no `$..`): task fields are read from $.tasks[*] only, so a
+	// payload key named "topic" is never indexed and a type-mismatched payload
+	// field cannot knock the document out of the index. (design note §1)
 	if err := ensureIndex(ctx, rdb, "workflows_index", "workflow_instance:",
 		"$.name", "AS", "workflow_name", "TAG",
 		"$.state", "AS", "workflow_state", "TAG",
-		"$..topic", "AS", "topic", "TAG",
-		"$..from", "AS", "from", "TAG",
-		"$..to", "AS", "to", "TAG",
+		"$.tasks[*].topic", "AS", "topic", "TAG",
+		"$.tasks[*].from", "AS", "from", "TAG",
+		"$.tasks[*].to", "AS", "to", "TAG",
 		"$.startedAt", "AS", "started_at", "NUMERIC",
 		"$.completedAt", "AS", "completed_at", "NUMERIC",
-		"$..failedAt", "AS", "failed_at", "NUMERIC",
+		"$.failedAt", "AS", "failed_at", "NUMERIC",
 	); err != nil {
 		return nil, err
 	}

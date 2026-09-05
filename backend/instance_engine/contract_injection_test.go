@@ -14,7 +14,7 @@ import (
 
 // A consume whose event_name carries JSONPath syntax must not match any task.
 func TestContract_JSONPathInjection_EventName(t *testing.T) {
-	testx.XFail(t, "#13", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish")
@@ -31,7 +31,7 @@ func TestContract_JSONPathInjection_EventName(t *testing.T) {
 }
 
 func TestContract_JSONPathInjection_ServiceName(t *testing.T) {
-	testx.XFail(t, "#13", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish")
@@ -73,7 +73,7 @@ func TestContract_ApostropheInEventNameIsNotFound(t *testing.T) {
 // matches the recursive-descent query, and a consume for a task that does
 // not exist completes task 0.
 func TestContract_PayloadShadowing_StringIndex(t *testing.T) {
-	testx.XFail(t, "#12", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.report(id, "publish", "it_order_created", "", "false",

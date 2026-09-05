@@ -365,7 +365,7 @@
         <line class="m-int" x1="655" y1="254" x2="868" y2="254" marker-end="url(#h-int)"/>
         <text class="lbl lbl-int" x="760" y="244" text-anchor="middle">task 0 → PUBLISHED · ⏱ 5 s armed</text>
         <line class="m-ret" x1="645" y1="282" x2="97" y2="282" marker-end="url(#h-ctrl)"/>
-        <text class="lbl lbl-ctrl" x="368" y="274" text-anchor="middle">200 Instance State Updated</text>
+        <text class="lbl lbl-ctrl" x="368" y="274" text-anchor="middle">200 {"task_state": …}</text>
 
         <!-- kafka hop 1 -->
         <line class="m-data" x1="95" y1="318" x2="253" y2="318" marker-end="url(#h-data)"/>
@@ -377,7 +377,7 @@
         <line class="m-int" x1="655" y1="376" x2="868" y2="376" marker-end="url(#h-int)"/>
         <text class="lbl lbl-int" x="760" y="366" text-anchor="middle">⏱ disarmed · task 0 → COMPLETED</text>
         <line class="m-ret" x1="645" y1="404" x2="267" y2="404" marker-end="url(#h-ctrl)"/>
-        <text class="lbl lbl-ctrl" x="454" y="396" text-anchor="middle">200 Instance State Updated</text>
+        <text class="lbl lbl-ctrl" x="454" y="396" text-anchor="middle">200 {"task_state": …}</text>
 
         <!-- note: payments works -->
         <rect class="note" x="272" y="426" width="112" height="24" rx="5"/>
@@ -389,7 +389,7 @@
         <line class="m-int" x1="655" y1="508" x2="868" y2="508" marker-end="url(#h-int)"/>
         <text class="lbl lbl-int" x="760" y="498" text-anchor="middle">task 1 → PUBLISHED · ⏱ 5 s armed</text>
         <line class="m-ret" x1="645" y1="536" x2="267" y2="536" marker-end="url(#h-ctrl)"/>
-        <text class="lbl lbl-ctrl" x="454" y="528" text-anchor="middle">200 Instance State Updated</text>
+        <text class="lbl lbl-ctrl" x="454" y="528" text-anchor="middle">200 {"task_state": …}</text>
 
         <!-- kafka hop 2 -->
         <line class="m-data" x1="265" y1="572" x2="423" y2="572" marker-end="url(#h-data)"/>
@@ -403,7 +403,7 @@
         <line class="m-int" x1="655" y1="658" x2="868" y2="658" marker-end="url(#h-int)"/>
         <text class="lbl lbl-int" x="760" y="648" text-anchor="middle">all tasks done → instance COMPLETED</text>
         <line class="m-ret" x1="645" y1="686" x2="437" y2="686" marker-end="url(#h-ctrl)"/>
-        <text class="lbl lbl-ctrl" x="539" y="678" text-anchor="middle">200 Instance State Updated</text>
+        <text class="lbl lbl-ctrl" x="539" y="678" text-anchor="middle">200 {"task_state": …}</text>
 
         <!-- archive note -->
         <rect class="note" x="562" y="716" width="330" height="24" rx="5"/>
@@ -417,7 +417,7 @@
   <!-- ===================== 3 · TIMEOUT ===================== -->
   <section>
     <div class="stage"><span class="n">STAGE 3</span><h2>Timeout — when silence speaks</h2></div>
-    <p>Same start, but payments crashes before consuming. Nobody reports anything — and that <em>nothing</em> is exactly what Sagawise detects. The reaper claims the expired deadline atomically (<code>ZREM</code> returns 1 to exactly one caller, so a last-second consume and the reaper can never both win), fails the task, and calls the publisher back so it can compensate.</p>
+    <p>Same start, but payments crashes before consuming. Nobody reports anything — and that <em>nothing</em> is exactly what Sagawise detects. The reaper hands the expired deadline to the same transition script every report goes through: the script checks the task is still PUBLISHED, marks it FAILED, removes the deadline and queues the callback, all in one atomic step, so a last-second consume and the reaper can never both win. A background worker then calls the publisher back so it can compensate, retrying with backoff if the call fails.</p>
 
     <figure>
       <div class="scroll">
@@ -466,7 +466,7 @@
         <line class="m-int" x1="535" y1="122" x2="868" y2="122" marker-end="url(#t-int)"/>
         <text class="lbl lbl-int" x="700" y="112" text-anchor="middle">PUBLISHED · ZADD abc:0 @ now+5 s</text>
         <line class="m-ret" x1="525" y1="150" x2="97" y2="150" marker-end="url(#t-ctrl)"/>
-        <text class="lbl lbl-ctrl" x="308" y="142" text-anchor="middle">200 Instance State Updated</text>
+        <text class="lbl lbl-ctrl" x="308" y="142" text-anchor="middle">200 {"task_state": …}</text>
 
         <line class="m-data" x1="95" y1="186" x2="263" y2="186" marker-end="url(#t-data)"/>
         <text class="lbl" x="178" y="176" text-anchor="middle">Kafka: order_created</text>
@@ -502,28 +502,31 @@
   <!-- ===================== 4 · WHAT LIVES IN REDIS ===================== -->
   <section>
     <div class="stage"><span class="n">STAGE 4</span><h2>What lives in Redis</h2></div>
-    <p>Per instance there are exactly two structures: one JSON document mutated in place, and members in one global sorted set. No tables, no per-instance keys beyond the doc.</p>
+    <p>Per instance there is one JSON document mutated in place, plus members in three global sorted sets: the deadlines, and the two work queues (<code>archive_pending</code>, <code>webhook_pending</code>) that the transition script fills and background workers drain. No tables, no per-instance keys beyond the doc.</p>
 
     <div class="anatomy">
       <div class="panel">
         <h3>workflow_instance:abc</h3>
         <p class="kind">RedisJSON document — one per saga run, mutated in place</p>
         <pre>{
+  "schema": 2,
   "name": "order_flow",
   "version": "1.0",
   "state": <span class="hl-ctrl">"PENDING → COMPLETED | FAILED"</span>,
-  "startedAt": 1756400000,
-  "0": {
-    "topic": "order_created",
-    "from": "orders", "to": "payments",
-    "state": <span class="hl-ctrl">"PENDING → PUBLISHED → …"</span>,
-    "timeout": 5000,
-    "payload": <span class="hl-mut">{ …stored on publish… }</span>,
-    "publishedAt": <span class="hl-mut">…</span>, "consumedAt": <span class="hl-mut">…</span>
-  },
-  "1": { "topic": "payment_done", <span class="hl-mut">…</span> }
+  "startedAt": 1756400000, "completedAt": 0, "failedAt": 0,
+  "tasks": [
+    {
+      "topic": "order_created",
+      "from": "orders", "to": "payments",
+      "state": <span class="hl-ctrl">"PENDING → PUBLISHED → …"</span>,
+      "timeout": 5000,
+      "payload": <span class="hl-mut">{ …stored on publish… }</span>,
+      "publishedAt": <span class="hl-mut">…</span>, "consumedAt": <span class="hl-mut">…</span>, "failedAt": 0
+    },
+    { "topic": "payment_done", <span class="hl-mut">…</span> }
+  ]
 }</pre>
-        <p>Tasks are keyed by their array index. Reports find them by matching <code>topic</code> (+ consuming service for consume/fail) with a JSONPath query.</p>
+        <p>Tasks live in the <code>tasks</code> array; the index is the identity. Reports find them in Go by comparing <code>topic</code> (+ consuming service for consume/fail) as plain strings; every state change then runs as one Lua script (<code>transition.lua</code>).</p>
       </div>
       <div class="panel">
         <h3>task_deadlines</h3>
@@ -534,9 +537,9 @@ abc:0           1756400005000  <span class="hl-mut">← now + timeout (ms)</span
 abc:1           <span class="hl-mut">…armed on publish</span>
 xyz:0           <span class="hl-mut">…other instances too</span>
 
-<span class="hl-ctrl">consume  → ZREM (disarm, task COMPLETED)</span>
-<span class="hl-fail">expired  → reaper ZREMs (claim, task FAILED)</span></pre>
-        <p>Whoever ZREMs the member first owns the outcome — that single atomic op is the whole race guard between a late consumer and the reaper.</p>
+<span class="hl-ctrl">consume  → script: task COMPLETED + ZREM</span>
+<span class="hl-fail">expired  → script: task FAILED + ZREM + queue webhook</span></pre>
+        <p>Both paths run the same script, and Redis runs one script at a time — that is the whole race guard between a late consumer and the reaper. A Redis error leaves the member for the next tick.</p>
       </div>
     </div>
   </section>

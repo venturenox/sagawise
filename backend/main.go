@@ -120,8 +120,7 @@ func main() {
 }
 
 func run() error {
-	// ctx is the process lifetime: canceled by SIGINT/SIGTERM. The reaper and
-	// the archive goroutines derive from it.
+	// ctx is the process lifetime: canceled by SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -148,6 +147,9 @@ func run() error {
 	eng := instance_engine.New(rdb, db)
 	eng.Services = instance_engine.FileRegistry{Path: envOr("SAGAWISE_SERVICES_FILE", "services.json")}
 	if err := instance_engine.ValidateServices(eng.Services, workflows); err != nil {
+		return err
+	}
+	if err := eng.LoadScripts(ctx); err != nil {
 		return err
 	}
 
@@ -194,10 +196,16 @@ func run() error {
 		Handler:           s.handler(),
 	}
 
-	// Everything is valid and reachable: start the reaper and serve.
-	reaperCtx, stopReaper := context.WithCancel(ctx)
+	// Everything is valid and reachable: start the reaper and the queue
+	// workers (which drain anything a previous process left behind), then
+	// serve. Both loops are stopped explicitly below; the contexts are
+	// independent of the signal context so the order of teardown is ours.
+	reaperCtx, stopReaper := context.WithCancel(context.Background())
 	defer stopReaper()
 	eng.StartDeadlineReaper(reaperCtx, time.Second)
+	workerCtx, stopWorkers := context.WithCancel(context.Background())
+	defer stopWorkers()
+	eng.StartWorkers(workerCtx)
 
 	srvErr := make(chan error, 1)
 	go func() {
@@ -214,8 +222,10 @@ func run() error {
 	case <-ctx.Done():
 	}
 
-	// One ordered teardown path: drain the server, stop the reaper, then the
-	// deferred closes release the clients. (#14)
+	// One ordered teardown path: drain the server, stop the reaper, stop the
+	// workers (in-flight jobs finish, bounded by their timeouts; anything
+	// still queued is leased in Redis and resumes on the next start), then
+	// the deferred closes release the clients. (#14, design note §7)
 	log.Println("Shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -223,6 +233,8 @@ func run() error {
 		log.Println("HTTP server shutdown error: ", err)
 	}
 	stopReaper()
+	stopWorkers()
+	eng.StopWorkers()
 	log.Println("Shutdown complete")
 	return nil
 }

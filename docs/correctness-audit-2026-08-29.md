@@ -28,21 +28,21 @@ Grouped into four themes. Each has a checkbox — tick it when fixed, and note t
 
 Every task/instance state transition is a *read state → check in Go → write state* sequence against RedisJSON with **no concurrency control** (no Lua, no WATCH/MULTI). All the guards in the handlers are therefore racy at the root. **The deep fix for this whole theme is one Lua script (or transaction) per transition** that checks state, writes state, and adds/removes the deadline atomically.
 
-- [ ] **1. Non-atomic transitions / terminal-gate race** — `checkWorkflowState`, `instance_engine.go:376` (root cause at `:277`).
+- [x] **1. Non-atomic transitions / terminal-gate race** (phase 6, branch `state-machine`: one Lua script per transition, `instance_engine/transition.lua`) — `checkWorkflowState`, `instance_engine.go:376` (root cause at `:277`).
   The terminal-state guard is check-then-act. Reaper failing task A can race a consume completing task B: both pass the guard, write conflicting terminal states, and spawn duplicate archive goroutines — `instance_history` can permanently record COMPLETED for an instance whose live state is FAILED (whose compensation webhook fired). Concurrent consume+fail on one task completes it, then flips it FAILED and fires compensation for a task that succeeded.
 
-- [ ] **2. `is_retry=true` bypasses every gate** — `handleConsumeOrFail` `instance_engine.go:259`, `handlePublish` `:214`.
+- [x] **2. `is_retry=true` bypasses every gate** (phase 6, branch `state-machine`: contract §4 duplicate table in the script) — `handleConsumeOrFail` `instance_engine.go:259`, `handlePublish` `:214`.
   A retry consume resurrects a FAILED task to COMPLETED *after* its compensation webhook fired; a retry consume on a never-published PENDING task marks it COMPLETED; a retry fail flips a COMPLETED task to FAILED (with webhook); a retry publish regresses a terminal task to PUBLISHED inside an already-archived instance and re-arms its deadline. Redis then permanently disagrees with the archive row (`ON CONFLICT DO NOTHING` never updates it). Retry semantics need to be defined properly: a retry should be *idempotent re-delivery of the same report*, not a gate bypass.
 
-- [ ] **3. Terminal instances keep accepting events** — `handlePublish`, `instance_engine.go:187`; no instance-level check anywhere, and sibling deadlines are not cancelled on terminal transition (`checkWorkflowState:336`).
+- [x] **3. Terminal instances keep accepting events** (phase 6, branch `state-machine`: I4 gate and sibling-deadline removal in the script) — `handlePublish`, `instance_engine.go:187`; no instance-level check anywhere, and sibling deadlines are not cancelled on terminal transition (`checkWorkflowState:336`).
   After a two-task instance goes FAILED and is archived, publishing the still-PENDING second task works (no retry flag needed), schedules a deadline inside the dead instance, and later fires a second compensation webhook. An already-PUBLISHED sibling's orphaned deadline does the same on its own.
 
 ### Theme 2 — Timeout enforcement (the product's core guarantee) has silent single points of failure
 
-- [ ] **4. Reaper spends the deadline before recording the failure** — `reapExpiredDeadlines`, `reaper.go:54`.
+- [x] **4. Reaper spends the deadline before recording the failure** (phase 6, branch `state-machine`: the `reap` transition removes the member in the same step as marking FAILED; a Redis error leaves it) — `reapExpiredDeadlines`, `reaper.go:54`.
   ZREM-as-claim destroys the deadline first; if the process crashes, or the follow-up state read hits a transient Redis error (which `jsonFirstMatch` swallows into `""`), the member is gone and the task stays PUBLISHED **forever** — no webhook, no terminal state, no archive. Fix direction: claim durably (move to a "processing" set, or fail-then-remove atomically in Lua) and treat Redis errors as retriable, not as "not PUBLISHED".
 
-- [x] **5. Failure webhook has no timeout and blocks the reaper** (timeout: phase 5, branch `quick-wins`; webhook worker: phase 6) — `reportFailure`, `instance_engine.go:323`.
+- [x] **5. Failure webhook has no timeout and blocks the reaper** (timeout: phase 5, branch `quick-wins`; webhook worker with durable queue and retries: phase 6, branch `state-machine`) — `reportFailure`, `instance_engine.go:323`.
   `http.DefaultClient` (no timeout), called synchronously inside the reaper's sequential loop. One `failure_url` that accepts the connection and never responds stalls the single reaper goroutine forever → **all timeout enforcement system-wide stops until restart**. Fix: `http.Client{Timeout: ~5s}` at minimum; better, dispatch webhooks to a worker so a slow endpoint can't stall the tick.
 
 - [x] **6. DSL timeouts are not validated** (phase 5, branch `quick-wins`) — `ParseDSL`, `templating.go:55`.
@@ -50,13 +50,13 @@ Every task/instance state transition is a *read state → check in Go → write 
 
 ### Theme 3 — Errors are systematically swallowed (outages masquerade as business outcomes)
 
-- [ ] **7. `jsonMatches`/`jsonFirstMatch`/`markTask` swallow all errors** (`errcheck` and gosec G104 are on since phase 5; helpers returning errors is phase 6) — `instance_engine.go:52–77`. **Root cause of much of this theme.**
+- [x] **7. `jsonMatches`/`jsonFirstMatch`/`markTask` swallow all errors** (`errcheck` and gosec G104 on since phase 5; helpers deleted and every path returns errors in phase 6, branch `state-machine`; infra errors are 500 `INTERNAL`) — `instance_engine.go:52–77`. **Root cause of much of this theme.**
   Redis outage → `UpdateInstance` returns 400 "workflow_instance Not Found" for a live instance; publish returns 403 "Task Already COMPLETED or FAILED" for a PENDING task; consume 404s — clients abandon healthy sagas. Conversely `markTask`'s failed JSONSet still lets the handler answer 200 "Instance State Updated" while the write was lost. Fix: make the helpers return errors; callers map infra errors to 5xx.
 
 - [x] **8. Startup is log-and-continue; server serves half-initialized** (phase 5, branch `quick-wins`) — `ParseDSL`, `templating.go:114` (and the whole `else` block at `:39`).
   `CREATE TABLE`/`FT.CREATE`/DSL errors are logged or discarded; an empty or mis-mounted `/sagawise` dir (the `fs.Glob` error is also discarded) skips index **and** table creation entirely; a nil pgx pool from bad config panics here. The server then starts, reports healthy, and every archive INSERT fails with "relation does not exist" *forever* — history silently evaporates. Fix: init functions return errors; `main` fails fast and lets the orchestrator restart.
 
-- [ ] **9. Archive is one-shot fire-and-forget** — `checkWorkflowState`, `instance_engine.go:391`.
+- [x] **9. Archive is one-shot fire-and-forget** (phase 6, branch `state-machine`: `archive_pending` queue written by the transition script, drained by a retrying worker) — `checkWorkflowState`, `instance_engine.go:391`.
   Instance is stamped terminal in Redis *first*, then a detached goroutine re-reads and INSERTs. If the goroutine dies (process exit — `srv.Shutdown` doesn't wait for it — Postgres briefly down, insert error is log-only), the terminal guard blocks any retry: the row is lost permanently. Fix: archive synchronously from the in-memory doc, or mark-and-enqueue into a pending-archive set drained by a retrying worker (the deadlines-zset + reaper pattern already in the repo).
 
 - [x] **10. List endpoint: capped at 10, errors become 404, values unescaped** (phase 5, branch `quick-wins`) — `ListWorkflowInstances`, `instance_engine.go:493`.
@@ -67,10 +67,10 @@ Every task/instance state transition is a *read state → check in Go → write 
 
 ### Theme 4 — Trust-boundary gaps
 
-- [ ] **12. JSONPath payload-shadowing hijacks task resolution** — `handleConsumeOrFail`, `instance_engine.go:249` (also `handlePublish:189`). **Live-verified, the single worst finding.**
+- [x] **12. JSONPath payload-shadowing hijacks task resolution** (phase 6, branch `state-machine`: tasks under `$.tasks`, resolution by string equality in Go) — `handleConsumeOrFail`, `instance_engine.go:249` (also `handlePublish:189`). **Live-verified, the single worst finding.**
   Task lookup uses recursive descent (`$..[?(@.topic=='T' && @.to=='S')].index`) over the *whole* document — which includes stored message payloads. A publish body containing `{"topic":"T","to":"S","index":"0"}` gets matched by a later consume and resolves to the wrong task. If the payload's `index` is non-string, decode yields `""` and `markTask` writes path `$..state` — flipping **every** task and the workflow to COMPLETED and archiving a bogus instance. Fix: never resolve tasks by recursive descent — iterate the known task indexes (or move tasks under `$.tasks[...]` and query only there), and don't store payloads where the query can see them.
 
-- [ ] **13. JSONPath injection via query params** — `instance_engine.go:189/249`. **Live-verified.**
+- [x] **13. JSONPath injection via query params** (phase 6, branch `state-machine`: no JSONPath is ever built from request values) — `instance_engine.go:189/249`. **Live-verified.**
   `event_name`/`service_name` are spliced unescaped into the filter: `event_name=x' || @.topic!='zzz` matched every task; an innocent apostrophe breaks the query into a swallowed error → spurious 404 → deadline never cleared → reaper later fails a task that was consumed. Fix follows from #12: resolve tasks in Go, not via string-built JSONPath.
 
 - [x] **14. `/shutdown`: unauthenticated, destructive, and deadlocks** (phase 5, branch `quick-wins`: endpoint removed) — `main.go:81`.
@@ -85,10 +85,10 @@ Every task/instance state transition is a *read state → check in Go → write 
 
 - **Python SDK** (`sdk/python/sagawise/sagawise.py`) — fixed in phase 5 (branch `quick-wins`): (a) caught exceptions are **returned** as truthy values — callers get a `RequestException` where a `workflow_instance_id` is expected, then report events against `str(exception)` forever while the saga runs untracked; (b) `timeout=1000` is passed to `requests`, which reads **seconds** — ~16.7 minutes per hung call (the Node SDK's identical `1000` is axios *milliseconds*, confirming ms was intended).
 - **`GetWorkflowInstance` reads arbitrary keys** — fixed in phase 5 (takes `workflow_instance_id`; contract D7) — only validated "contains a colon", so `?doc_key=workflow_template:x` (or any other app's RedisJSON key on the shared instance) is readable through the unauthenticated endpoint.
-- **`workflows_index` recursive-descent schema** (`$..topic`, `$..from`, `$..to`) indexes payload fields too: payloads pollute list filters, and a type-mismatched payload field can knock the whole document out of the index.
+- **`workflows_index` recursive-descent schema** — fixed in phase 6 (explicit `$.tasks[*]` paths) — (`$..topic`, `$..from`, `$..to`) indexed payload fields too: payloads pollute list filters, and a type-mismatched payload field can knock the whole document out of the index.
 - **`is_retry` parsed with `strconv.ParseBool` ignoring the error** — fixed in phase 5: `true`/`false` only, else 400.
 - **Efficiency:** `services.json` re-read + re-parsed from disk on *every* failure webhook; ~8 Redis round-trips per `/update_instance` (one full-doc read + pipeline would do); reaper does 2N+1 commands per tick; list/get is a cross-endpoint N+1; server `ReadTimeout` of 1s can drop slow POST bodies.
-- **Cleanup:** `"workflow_instance:"+id` key-building scattered across ~8 sites; `$.<index>.<field>` path concatenation across two files; two Redis clients where one suffices (see #11); per-package `context.Background()` vars detach handler I/O from request contexts (breaks OTel spans and cancellation); `ping: PONG` string-compare health checks; task identity as top-level numeric keys forcing the `strconv.Atoi` "is this a task?" heuristic — tasks under a `$.tasks` array would kill several findings at once.
+- **Cleanup:** `"workflow_instance:"+id` key-building scattered across ~8 sites; `$.<index>.<field>` path concatenation across two files; two Redis clients where one suffices (see #11); per-package `context.Background()` vars detach handler I/O from request contexts (breaks OTel spans and cancellation); `ping: PONG` string-compare health checks; task identity as top-level numeric keys forcing the `strconv.Atoi` "is this a task?" heuristic — tasks under a `$.tasks` array would kill several findings at once (done in phase 6).
 
 ## Suggested order of attack
 

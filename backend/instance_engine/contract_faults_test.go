@@ -12,17 +12,18 @@ import (
 )
 
 // Contract TO5/TO6: the reaper never loses a deadline. A Redis error while
-// reading the task's state leaves the deadline in place for the next tick.
-// Today the deadline is ZREM'd first and the error reads as "not
-// PUBLISHED", so the task hangs PUBLISHED forever. (#4)
+// deciding leaves the deadline in place for the next tick. The reaper reads
+// the state and fails the task inside one transition script, so the
+// injected fault is on that script call: nothing before it spends the
+// deadline. (#4)
 func TestContract_ReaperSurvivesRedisError(t *testing.T) {
-	testx.XFail(t, "#4", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish")
 		e.clock.Advance(21 * time.Second)
 
-		e.faults.FailNext("json.get", 1)
+		e.faults.FailNext("evalsha", 1)
 		e.tick()
 		if e.faults.Hits() != 1 {
 			t.Fatalf("fault was not exercised (hits=%d)", e.faults.Hits())
@@ -47,7 +48,7 @@ func TestContract_ReaperSurvivesRedisError(t *testing.T) {
 // Contract A2: a Postgres outage between the terminal transition and the
 // insert must not lose the archive row. (#9)
 func TestContract_ArchiveSurvivesPostgresOutage(t *testing.T) {
-	testx.XFail(t, "#9", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish 0")
@@ -59,8 +60,14 @@ func TestContract_ArchiveSurvivesPostgresOutage(t *testing.T) {
 		if got := e.instanceState(id); got != "COMPLETED" {
 			t.Fatalf("instance state = %q, want COMPLETED regardless of Postgres", got)
 		}
-		time.Sleep(300 * time.Millisecond) // let the archive attempt fail
+		if got := e.archived(id); got != "" {
+			t.Fatalf("archived %q during the outage; the insert should have failed", got)
+		}
+		if n, _ := e.eng.Archiver.Pending(e.ctx); n < 1 {
+			t.Errorf("archive_pending is empty after a failed insert; the row would be lost")
+		}
 		e.postgresUp()
+		e.clock.Advance(2 * time.Second) // past the first retry backoff
 
 		if got := e.waitArchived(id, 10*time.Second); got != "COMPLETED" {
 			t.Errorf("archived state after outage = %q, want COMPLETED (row was lost)", got)
@@ -71,7 +78,7 @@ func TestContract_ArchiveSurvivesPostgresOutage(t *testing.T) {
 // Contract TO7/W3: one hanging failure_url must not stall the reaping of
 // other tasks. (#5)
 func TestContract_SlowWebhookDoesNotStallReaper(t *testing.T) {
-	testx.XFail(t, "#5", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		hang := utils.Workflow{
 			Name: "it_hang_flow", Version: "1.0", Schema_version: "1.0",
 			Tasks: []utils.Task{{Topic: "it_hang_topic", From: "it_hang", To: "it_hang_consumer", Timeout: 20000}},

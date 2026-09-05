@@ -72,7 +72,8 @@ test-sdk:
 # Every line here is a bug the roadmap still owes; the list shrinks as phases 5 and 6 land.
 test-status:
 	@cd backend && go test -count=1 -short -tags integration -v ./... 2>/dev/null \
-		| grep -oE 'XFAIL [^ ]+ \(known failing' | grep -v self-test | sed 's/ (known failing//' | sort | uniq -c | sort -rn
+		| grep -oE 'XFAIL [^ ]+ \(known failing' | grep -v self-test | sed 's/ (known failing//' | sort | uniq -c | sort -rn \
+		| { grep . || echo "none: every contract test passes"; }
 
 # --- Benchmarks (docs/benchmarks/README.md) ---
 BENCH_LABEL ?= baseline

@@ -98,20 +98,23 @@ Done on branch `quick-wins` (2026-09-05), stacked on `bench`. Contract tests tha
 
 One design. One PR. Test suite from Phase 3 is the gate.
 
+Done on branch `state-machine` (2026-09-05), stacked on `quick-wins`. Design: `docs/design-phase-6.md`. Every contract test now runs unwrapped (`make test-status` prints none); 6 new contract tests cover the queues.
+
 - [x] Write a short design note first. Get it agreed. — `docs/design-phase-6.md`, agreed 2026-09-05.
-- [ ] Move tasks under a `$.tasks` array in the Redis doc.
-- [ ] Resolve tasks in Go. No string-built JSONPath. (#12, #13)
-- [ ] Store payloads outside the searchable part of the doc.
-- [ ] Fix the `workflows_index` schema so payload fields are not indexed.
-- [ ] Helpers return errors. Callers map infra errors to 5xx. (#7)
-- [ ] One Lua script per transition: check state, write state, update deadline. Atomic. (#1, #2, #3)
-- [ ] Cancel sibling deadlines when an instance goes terminal. (#3)
-- [ ] Reaper claims durably. Mark failed, then remove deadline. Never the reverse. (#4)
-- [ ] Reaper treats Redis errors as retriable, not as "not PUBLISHED". (#4)
-- [ ] Webhooks go to a worker. A slow endpoint cannot stall the tick. (#5)
-- [ ] Archive via a pending-archive set drained by a retrying worker. (#9)
-- [ ] Graceful shutdown: drain server → stop reaper → drain workers → close clients.
-- [ ] Decide: fold the build-time registry refactor (DSL + `services.json`) into this PR or not.
+- [x] Move tasks under a `$.tasks` array in the Redis doc. — schema 2 document (`instanceDoc`); no migration of schema 1 docs, `make clean` to upgrade a dev stack (P4).
+- [x] Resolve tasks in Go. No string-built JSONPath. (#12, #13) — `readTaskIdentity` reads `$.tasks[*].topic`/`$.tasks[*].to`, plain string equality in `UpdateInstance`.
+- [x] Store payloads outside the searchable part of the doc. — payloads stay at `$.tasks[i].payload`; only explicit `$.tasks[*].{topic,from,to}` paths are indexed (P1).
+- [x] Fix the `workflows_index` schema so payload fields are not indexed. — no `$..` paths; `ensureIndex` recreates the index on first start.
+- [x] Helpers return errors. Callers map infra errors to 5xx. (#7) — `jsonMatches`/`jsonFirstMatch`/`markTask` deleted; `jsonGet` and `transition` return errors; handlers answer 500 `INTERNAL`. D4/D5/D6 done: all responses JSON with stable codes.
+- [x] One Lua script per transition: check state, write state, update deadline. Atomic. (#1, #2, #3) — `instance_engine/transition.lua` (one script, action argument, P2), run via `Engine.transition`.
+- [x] Cancel sibling deadlines when an instance goes terminal. (#3) — in the script, same step as `$.state=FAILED`.
+- [x] Reaper claims durably. Mark failed, then remove deadline. Never the reverse. (#4) — the `reap` action of the script; no pre-ZREM.
+- [x] Reaper treats Redis errors as retriable, not as "not PUBLISHED". (#4) — a script error leaves the member; only NOT_FOUND/BAD_SCHEMA drop it.
+- [x] Webhooks go to a worker. A slow endpoint cannot stall the tick. (#5) — `webhook_pending` zset + `Worker` (`queue.go`): 30 s lease, 2 s×3 backoff capped 5 min, 8 attempts, 16 parallel deliveries (P3).
+- [x] Archive via a pending-archive set drained by a retrying worker. (#9) — `archive_pending` zset enqueued by the script; 1 s×2 backoff capped 30 s, never gives up.
+- [x] Graceful shutdown: drain server → stop reaper → drain workers → close clients. — `main.go`; in-flight jobs finish (bounded by their timeouts), the rest stays leased in Redis.
+- [x] Decide: fold the build-time registry refactor (DSL + `services.json`) into this PR or not. — Not folded in (P5).
+- [x] Benchmarks: runs `after-phase-6` and comparisons against the phase 5 runs — see the "After each of phases" line under Phase 4.
 
 ## Phase 7 — Efficiency PR
 

@@ -13,7 +13,7 @@ import (
 // loses its deadline in the same step, so the reaper never touches it and no
 // second webhook fires. (#3)
 func TestContract_SiblingFreezeOnInstanceFailure(t *testing.T) {
-	testx.XFail(t, "#3", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish 0")
@@ -74,7 +74,7 @@ func TestContract_ArchiveMatchesRedis(t *testing.T) {
 // Contract I3/I4: after the instance is COMPLETED, the terminal state is
 // final. A late fail report on a completed task is refused and fires nothing.
 func TestContract_CompletedInstanceRefusesLateFail(t *testing.T) {
-	testx.XFail(t, "#2", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish")

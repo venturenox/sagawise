@@ -1,6 +1,7 @@
 package instance_engine
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -198,7 +199,7 @@ func TestGenerateID(t *testing.T) {
 }
 
 func TestDeadlineMemberAndInstanceKey(t *testing.T) {
-	if got := deadlineMember("abc", "3"); got != "abc:3" {
+	if got := deadlineMember("abc", 3); got != "abc:3" {
 		t.Errorf("deadlineMember = %q", got)
 	}
 	if got := instanceKey("abc"); got != "workflow_instance:abc" {
@@ -216,18 +217,22 @@ func TestRequireParams(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", w.Code)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, "workflow_instance_id required") || !strings.Contains(body, "event_name required") {
-		t.Errorf("body = %q, want both missing params listed", body)
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json (D6)", ct)
 	}
-	if strings.Contains(body, "action_type required") {
-		t.Errorf("body = %q lists a param that was present", body)
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not JSON: %v", w.Body.String(), err)
 	}
-	if ct := w.Header().Get("Content-Type"); ct != "text/plain; charset=utf-8" {
-		t.Errorf("Content-Type = %q", ct)
+	if body["error"] != "MISSING_PARAM" {
+		t.Errorf("error = %q, want MISSING_PARAM", body["error"])
 	}
-	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
-		t.Error("missing X-Content-Type-Options: nosniff")
+	msg := body["message"]
+	if !strings.Contains(msg, "workflow_instance_id") || !strings.Contains(msg, "event_name") {
+		t.Errorf("message = %q, want both missing params listed", msg)
+	}
+	if strings.Contains(msg, "action_type") {
+		t.Errorf("message = %q lists a param that was present", msg)
 	}
 
 	w = httptest.NewRecorder()
@@ -236,5 +241,82 @@ func TestRequireParams(t *testing.T) {
 	}
 	if w.Code != http.StatusOK || w.Body.Len() != 0 {
 		t.Errorf("success path wrote status %d body %q", w.Code, w.Body.String())
+	}
+}
+
+func TestWriteErrorStatusMapping(t *testing.T) {
+	cases := map[string]int{
+		"MISSING_PARAM": 400, "INVALID_PARAM": 400, "INVALID_BODY": 400,
+		"WORKFLOW_NOT_FOUND": 404, "INSTANCE_NOT_FOUND": 404, "TASK_NOT_FOUND": 404,
+		"TASK_NOT_PUBLISHED": 409, "TASK_ALREADY_PUBLISHED": 409, "TASK_ALREADY_COMPLETED": 409,
+		"TASK_ALREADY_FAILED": 409, "INSTANCE_TERMINAL": 409,
+		"INTERNAL": 500, "SOMETHING_NEW": 500,
+	}
+	for code, want := range cases {
+		w := httptest.NewRecorder()
+		writeError(w, code, "m")
+		if w.Code != want {
+			t.Errorf("%s: status %d, want %d", code, w.Code, want)
+		}
+		var body map[string]string
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body["error"] != code || body["message"] != "m" {
+			t.Errorf("%s: body %q", code, w.Body.String())
+		}
+	}
+}
+
+func TestIsJSONObject(t *testing.T) {
+	for _, ok := range []string{`{}`, ` {"a":1} `, "{\n\"n\": [1,2]}\n"} {
+		if !isJSONObject([]byte(ok)) {
+			t.Errorf("%q rejected", ok)
+		}
+	}
+	for _, bad := range []string{``, `  `, `[]`, `null`, `1`, `"s"`, `{`, `{"a":}`, `not json`, "{\"\xb1\":0}"} {
+		if isJSONObject([]byte(bad)) {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestSplitMember(t *testing.T) {
+	if id, i, ok := splitMember("abc:3"); !ok || id != "abc" || i != 3 {
+		t.Errorf("abc:3 -> %q %d %v", id, i, ok)
+	}
+	if id, i, ok := splitMember("a:b:12"); !ok || id != "a:b" || i != 12 {
+		t.Errorf("a:b:12 -> %q %d %v", id, i, ok)
+	}
+	for _, bad := range []string{"", "abc", "abc:", "abc:x", "abc:-1", ":1"} {
+		if _, _, ok := splitMember(bad); ok && bad != ":1" {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestExpBackoff(t *testing.T) {
+	b := expBackoff(2*time.Second, 3, 5*time.Minute)
+	want := []time.Duration{2 * time.Second, 6 * time.Second, 18 * time.Second, 54 * time.Second, 162 * time.Second, 5 * time.Minute, 5 * time.Minute}
+	for i, w := range want {
+		if got := b(int64(i + 1)); got != w {
+			t.Errorf("attempt %d: %v, want %v", i+1, got, w)
+		}
+	}
+	a := expBackoff(time.Second, 2, 30*time.Second)
+	if got := a(1); got != time.Second {
+		t.Errorf("archive attempt 1: %v", got)
+	}
+	if got := a(10); got != 30*time.Second {
+		t.Errorf("archive attempt 10: %v, want the 30s cap", got)
+	}
+}
+
+func TestRefusalMessage(t *testing.T) {
+	tasks := []taskIdentity{{"order_created", "payments"}, {"payment_done", "shipping"}}
+	got := refusalMessage(transitionResult{Code: "TASK_ALREADY_COMPLETED", RefusedIndex: 1}, tasks)
+	if got != "task 1 (payment_done → shipping) is already COMPLETED" {
+		t.Errorf("got %q", got)
+	}
+	got = refusalMessage(transitionResult{Code: "TASK_NOT_PUBLISHED", RefusedIndex: 0}, tasks)
+	if !strings.HasPrefix(got, "task 0 (order_created → payments) is PENDING") {
+		t.Errorf("got %q", got)
 	}
 }

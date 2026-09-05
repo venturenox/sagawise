@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,11 +11,15 @@ import (
 
 // deadlinesKey is a Redis sorted set. Score = unix-millisecond deadline,
 // member = "<workflow_instance_id>:<task_index>". A task appears here from
-// the moment it is PUBLISHED until it is COMPLETED or FAILED.
+// the moment it is PUBLISHED until it is COMPLETED or FAILED, or until its
+// instance goes terminal (contract T5, I5).
 const deadlinesKey = "task_deadlines"
 
-func deadlineMember(workflowInstanceID, taskIndex string) string {
-	return workflowInstanceID + ":" + taskIndex
+// reaperBatch bounds one tick; a larger backlog drains over several ticks.
+const reaperBatch = 1000
+
+func deadlineMember(workflowInstanceID string, taskIndex int) string {
+	return workflowInstanceID + ":" + strconv.Itoa(taskIndex)
 }
 
 // StartDeadlineReaper runs a background loop that fails any PUBLISHED task
@@ -40,37 +43,60 @@ func (e *Engine) StartDeadlineReaper(ctx context.Context, interval time.Duration
 	}()
 }
 
-// reapExpiredDeadlines performs one reaper tick against e.Clock.Now(). It is
-// what StartDeadlineReaper calls on every tick; tests call it directly with a
-// fake clock instead of waiting for real time to pass.
+// reapExpiredDeadlines performs one reaper tick against e.Clock.Now(). Every
+// overdue member is handed to the transition script as a `reap`: marking the
+// task FAILED and removing its deadline happen in that one atomic step, so
+// the deadline is never spent before the failure is recorded. A Redis error
+// leaves the member in place for the next tick. (#4, TO5, TO6)
+//
+// The reaper never calls a webhook itself; the script enqueues it and the
+// webhook worker delivers it, so one slow endpoint cannot stall the tick. (#5)
 func (e *Engine) reapExpiredDeadlines(ctx context.Context) {
 	now := strconv.FormatInt(e.Clock.Now().UnixMilli(), 10)
-	members, err := e.RDB.ZRangeArgs(ctx, redis.ZRangeArgs{Key: deadlinesKey, Start: "-inf", Stop: now, ByScore: true}).Result()
+	members, err := e.RDB.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key: deadlinesKey, Start: "-inf", Stop: now, ByScore: true, Offset: 0, Count: reaperBatch,
+	}).Result()
 	if err != nil {
 		log.Printf("Reaper: error reading deadlines: %v", err)
 		return
 	}
 
 	for _, member := range members {
-		// Atomic claim: ZREM returns 1 for exactly one caller.
-		removed, err := e.RDB.ZRem(ctx, deadlinesKey, member).Result()
-		if err != nil || removed == 0 {
-			continue
-		}
-
-		id, index, ok := strings.Cut(member, ":")
+		id, index, ok := splitMember(member)
 		if !ok {
-			log.Printf("Reaper: malformed deadline member %q", member)
+			log.Printf("Reaper: malformed deadline member %q; dropping it", member)
+			e.dropDeadline(ctx, member)
 			continue
 		}
-		key := instanceKey(id)
-
-		// The deadline is a hint; the task state is the truth.
-		if state, _ := jsonFirstMatch[string](ctx, e.RDB, key, "$."+index+".state"); state != "PUBLISHED" {
+		res, err := e.transition(ctx, id, "reap", false, []int{index}, "")
+		if err != nil {
+			// Nothing was decided; the deadline is still there next tick.
+			log.Printf("Reaper: %s: %v (will retry)", member, err)
 			continue
 		}
+		switch res.Code {
+		case "OK":
+			log.Printf("Reaper: timeout for %s task %d", id, index)
+			e.Webhooks.Nudge()
+			if res.TerminalNow {
+				e.Archiver.Nudge()
+			}
+		case "STALE":
+			// The task moved on or the instance is terminal; the script
+			// dropped the member.
+		case "NOT_FOUND", "BAD_SCHEMA", "TASK_NOT_FOUND":
+			// The document is gone or unreadable; the deadline can never
+			// resolve, so it is dropped rather than retried forever.
+			log.Printf("Reaper: %s: instance %s (%s); dropping deadline", member, res.Code, id)
+			e.dropDeadline(ctx, member)
+		default:
+			log.Printf("Reaper: %s: unexpected result %s", member, res.Code)
+		}
+	}
+}
 
-		log.Printf("Reaper: timeout for %s task %s", id, index)
-		e.reportFailure(ctx, key, id, index)
+func (e *Engine) dropDeadline(ctx context.Context, member string) {
+	if err := e.RDB.ZRem(ctx, deadlinesKey, member).Err(); err != nil {
+		log.Printf("Reaper: drop %s: %v", member, err)
 	}
 }

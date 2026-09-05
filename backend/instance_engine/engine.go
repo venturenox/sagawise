@@ -1,6 +1,8 @@
 package instance_engine
 
 import (
+	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,14 +15,34 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// WebhookTimeout bounds one failure-webhook delivery (contract W3). A
-// failure_url that accepts the connection and never answers must not hold
-// the reaper for longer than this. (#5)
+// WebhookTimeout bounds one failure-webhook delivery attempt (contract W3).
 const WebhookTimeout = 5 * time.Second
 
+// Queue keys. Members are added by transition.lua in the same atomic step as
+// the state change they follow from; the workers drain them.
+const (
+	archiveQueueKey    = "archive_pending"
+	archiveAttemptsKey = "archive_attempts"
+	webhookQueueKey    = "webhook_pending"
+	webhookAttemptsKey = "webhook_attempts"
+)
+
+// Worker tuning (design note §5).
+const (
+	workerInterval = time.Second
+	workerLease    = 30 * time.Second
+	workerBatch    = 1000
+
+	archiveTimeout = 10 * time.Second
+
+	// Webhook delivery: 2 s tripling, capped at 5 min, 8 attempts (≈15 min).
+	webhookMaxAttempts = 8
+	webhookParallel    = 16
+)
+
 // Clock is the engine's source of time. Production uses RealClock; tests
-// inject a fixed or advanceable clock so deadlines and timestamps are
-// deterministic.
+// inject a fixed or advanceable clock so deadlines, stamps and queue
+// scheduling are deterministic.
 type Clock interface {
 	Now() time.Time
 }
@@ -85,11 +107,14 @@ func ValidateServices(reg ServiceRegistry, workflows []utils.Workflow) error {
 	return nil
 }
 
+//go:embed transition.lua
+var transitionSource string
+
 // Engine owns every dependency the saga bookkeeper needs. Construct it with
 // New and override fields before serving; nothing in this package reads
 // package-level state.
 type Engine struct {
-	// RDB is the go-redis client used for RedisJSON and FT.SEARCH commands.
+	// RDB is the go-redis client used for RedisJSON, FT.SEARCH and scripts.
 	RDB *redis.Client
 	// DB is the Postgres pool holding the instance_history archive.
 	DB *pgxpool.Pool
@@ -97,18 +122,80 @@ type Engine struct {
 	Clock      Clock
 	Services   ServiceRegistry
 	HTTPClient *http.Client
+
+	// Archiver drains archive_pending into Postgres; Webhooks drains
+	// webhook_pending to the publishers' failure_urls. Start them with
+	// StartWorkers; tests drive their ticks directly instead.
+	Archiver *Worker
+	Webhooks *Worker
+
+	script *redis.Script
 }
 
 // New returns an Engine with production defaults: wall clock, services.json
-// in the working directory, and a webhook client bounded by WebhookTimeout.
+// in the working directory, a webhook client bounded by WebhookTimeout, and
+// the two queue workers configured but not started.
 func New(rdb *redis.Client, db *pgxpool.Pool) *Engine {
-	return &Engine{
+	e := &Engine{
 		RDB:        rdb,
 		DB:         db,
 		Clock:      RealClock{},
 		Services:   FileRegistry{Path: "services.json"},
 		HTTPClient: &http.Client{Timeout: WebhookTimeout},
+		script:     redis.NewScript(transitionSource),
 	}
+	e.Archiver = &Worker{
+		Name: "archive", Interval: workerInterval, Lease: workerLease, Batch: workerBatch,
+		Parallel: 1, Timeout: archiveTimeout,
+		Backoff: expBackoff(time.Second, 2, 30*time.Second),
+		Work:    e.archiveJob,
+		queue:   &zqueue{rdb: rdb, key: archiveQueueKey, attempts: archiveAttemptsKey},
+		wake:    make(chan struct{}, 1),
+	}
+	e.Webhooks = &Worker{
+		Name: "webhook", Interval: workerInterval, Lease: workerLease, Batch: workerBatch,
+		Parallel: webhookParallel, Timeout: WebhookTimeout + time.Second,
+		Backoff:     expBackoff(2*time.Second, 3, 5*time.Minute),
+		MaxAttempts: webhookMaxAttempts,
+		Work:        e.webhookJob,
+		queue:       &zqueue{rdb: rdb, key: webhookQueueKey, attempts: webhookAttemptsKey},
+		wake:        make(chan struct{}, 1),
+	}
+	// The workers read the clock through the engine so a test that swaps
+	// e.Clock after New still drives them.
+	e.Archiver.clock = clockFunc(func() time.Time { return e.Clock.Now() })
+	e.Webhooks.clock = e.Archiver.clock
+	return e
+}
+
+type clockFunc func() time.Time
+
+func (f clockFunc) Now() time.Time { return f() }
+
+// StartWorkers starts the archive and webhook workers; they drain whatever
+// a previous process left queued. StopWorkers waits for them after ctx is
+// cancelled.
+func (e *Engine) StartWorkers(ctx context.Context) {
+	e.Archiver.Start(ctx)
+	e.Webhooks.Start(ctx)
+}
+
+func (e *Engine) StopWorkers() {
+	e.Archiver.Stop()
+	e.Webhooks.Stop()
+}
+
+// LoadScripts loads the transition script into Redis so the first report
+// does not pay for an EVAL fallback, and fails fast on a script that does
+// not compile.
+func (e *Engine) LoadScripts(ctx context.Context) error {
+	if err := e.script.Load(ctx, e.RDB).Err(); err != nil {
+		return fmt.Errorf("load transition script: %w", err)
+	}
+	if err := claimScript.Load(ctx, e.RDB).Err(); err != nil {
+		return fmt.Errorf("load claim script: %w", err)
+	}
+	return nil
 }
 
 // instanceKey is the RedisJSON key of a workflow instance document.

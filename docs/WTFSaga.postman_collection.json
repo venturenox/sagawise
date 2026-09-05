@@ -151,11 +151,11 @@
 								}
 							]
 						},
-						"description": "Starts a workflow instance, as specified in DSL file\n\n**Required query parameters:**\n\n1. workflow version: Must be value as defined in DSL file\n2. workflow_name: Must be value as defined in DSL file(s) and services file\n    \n\n**Responses:**\n\n- 400 - Missing fields error string\n- 400 - workflow_name does not exist\n- 400 - Invalid workflow_version\n- 500 - Other server side run-time errors\n- 200 - Workflow instance ID (in JSON)"
+						"description": "Starts a new instance of a workflow declared in the DSL.\n\n**Required query parameter:**\n\n1. workflow_name: as declared in the DSL file. (workflow_version is ignored; the template is the source of truth.)\n\n**Responses (all JSON):**\n\n- 200 - `{\"workflow_instance_id\": \"...\"}`\n- 400 - `{\"error\": \"MISSING_PARAM\", \"message\": \"...\"}`\n- 404 - `{\"error\": \"WORKFLOW_NOT_FOUND\", \"message\": \"...\"}`\n- 500 - `{\"error\": \"INTERNAL\", \"message\": \"...\"}`"
 					},
 					"response": [
 						{
-							"name": "Start",
+							"name": "Missing field",
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
@@ -192,31 +192,23 @@
 							},
 							"status": "Bad Request",
 							"code": 400,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 11:24:20 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "24"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "workflow_name required. "
+							"body": "{\n    \"error\": \"MISSING_PARAM\",\n    \"message\": \"missing query parameter(s): workflow_name\"\n}"
 						},
 						{
-							"name": "Start",
+							"name": "Unknown workflow",
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/start_instance?workflow_version={{workflow_version}}&workflow_name=user_creation",
+									"raw": "{{base_url}}/start_instance?workflow_version={{workflow_version}}",
 									"host": [
 										"{{base_url}}"
 									],
@@ -230,7 +222,8 @@
 										},
 										{
 											"key": "workflow_name",
-											"value": "user_creation"
+											"value": "user_creation",
+											"disabled": true
 										},
 										{
 											"key": "workflow_name",
@@ -245,93 +238,25 @@
 									]
 								}
 							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "plain",
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 11:25:03 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "28"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "workflow_name does not exist"
+							"body": "{\n    \"error\": \"WORKFLOW_NOT_FOUND\",\n    \"message\": \"workflow \\\"nope\\\" does not exist\"\n}"
 						},
 						{
-							"name": "Start",
+							"name": "Started",
 							"originalRequest": {
 								"method": "POST",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/start_instance?workflow_name=user_updation&workflow_version=2.0",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"start_instance"
-									],
-									"query": [
-										{
-											"key": "workflow_version",
-											"value": "{{workflow_version}}",
-											"disabled": true
-										},
-										{
-											"key": "workflow_name",
-											"value": "user_creation",
-											"disabled": true
-										},
-										{
-											"key": "workflow_name",
-											"value": "user_updation"
-										},
-										{
-											"key": "workflow_name",
-											"value": "user_deletion",
-											"disabled": true
-										},
-										{
-											"key": "workflow_version",
-											"value": "2.0"
-										}
-									]
-								}
-							},
-							"status": "Bad Request",
-							"code": 400,
-							"_postman_previewlanguage": "plain",
-							"header": [
-								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 11:25:57 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "28"
-								},
-								{
-									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
-								}
-							],
-							"cookie": [],
-							"body": "Invalid workflow_version 2.0"
-						},
-						{
-							"name": "Start",
-							"originalRequest": {
-								"method": "POST",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/start_instance?workflow_version={{workflow_version}}&workflow_name=user_updation",
+									"raw": "{{base_url}}/start_instance?workflow_version={{workflow_version}}",
 									"host": [
 										"{{base_url}}"
 									],
@@ -350,7 +275,8 @@
 										},
 										{
 											"key": "workflow_name",
-											"value": "user_updation"
+											"value": "user_updation",
+											"disabled": true
 										},
 										{
 											"key": "workflow_name",
@@ -362,23 +288,15 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 11:26:35 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "48"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "{\"workflow_instance_id\":\"Nla3WeMzVDgMnRHtVxUt\"}\n"
+							"body": "{\n    \"workflow_instance_id\": \"Nla3WeMzVDgMnRHtVxUt\"\n}"
 						}
 					]
 				}
@@ -445,7 +363,7 @@
 								}
 							]
 						},
-						"description": "Publishes a task within a specific workflow instance.  \n_**Note:**_ _Event name must be specified in DSL file(s)_\n\n**Required query parameters:**\n\n1. workflow version: Must be value as defined in DSL file\n2. workflow_instance_id: The unique ID of workflow instance whose task to be updated\n3. is_retry: specifies whether the app needs to force-fully update the event or not. By default value is _**false**_\n4. event_name: Name of event as specified in DSL file\n5. action_type: Used to specify the update type. Possible values are:\n    1. publish\n    2. consume\n    3. fail\n6. service_name: Required in cases of action_type \"consume\" and \"fail\". Not required in case of \"publish\". Must be the value of service consuming of failing to consume, as specified in DSL file(s)\n    \n\n**Body:** Event message payload (in JSON)\n\n**Responses:**\n\n- 400 - Missing fields error string\n- 400 - workflow_instance not found\n- 400 - Invalid workflow_version\n- 500 - Server side errors\n- 200 - success status message"
+						"description": "Reports a publish, consume or fail of a task within a workflow instance. The engine checks the report against the task state machine in docs/contract.md; every transition is atomic.\n\n**Required query parameters:**\n\n1. workflow_instance_id: the id returned by start_instance\n2. action_type: publish | consume | fail\n3. event_name: the task topic as declared in the DSL\n4. is_retry: true | false (case-insensitive; anything else is 400). true makes a duplicate report idempotent (200, no change) instead of a 409; it never unlocks a forbidden transition.\n5. service_name: the consuming service; required for consume and fail\n\n**Body (publish only):** the message payload, a JSON object. It is stored on the task and carried by the failure webhook.\n\n**Responses (all JSON):**\n\n- 200 - `{\"workflow_instance_id\", \"task_index\", \"task_state\", \"workflow_state\", \"idempotent\"}`; task_index/task_state are arrays when a publish resolved several tasks sharing a topic\n- 400 - MISSING_PARAM | INVALID_PARAM | INVALID_BODY\n- 404 - INSTANCE_NOT_FOUND | TASK_NOT_FOUND\n- 409 - TASK_NOT_PUBLISHED | TASK_ALREADY_PUBLISHED | TASK_ALREADY_COMPLETED | TASK_ALREADY_FAILED | INSTANCE_TERMINAL\n- 500 - INTERNAL (Redis error; retry)\n\nError bodies: `{\"error\": \"<code>\", \"message\": \"...\"}`."
 					},
 					"response": [
 						{
@@ -489,23 +407,15 @@
 							},
 							"status": "OK",
 							"code": 200,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 25 Jun 2024 11:50:02 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "22"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "Instance State Updated"
+							"body": "{\n    \"workflow_instance_id\": \"Nla3WeMzVDgMnRHtVxUt\",\n    \"task_index\": 0,\n    \"task_state\": \"PUBLISHED\",\n    \"workflow_state\": \"PENDING\",\n    \"idempotent\": false\n}"
 						},
 						{
 							"name": "Consume",
@@ -513,145 +423,27 @@
 								"method": "POST",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/update_instance?workflow_instance_id={{workflow_instance_id}}&task_name={{task_name}}&workflow_version={{workflow_version}}&action_type=consume&is_retry=false",
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
 									"host": [
-										"{{base_url}}"
+										"localhost"
 									],
+									"port": "5000",
 									"path": [
 										"update_instance"
 									],
 									"query": [
 										{
 											"key": "workflow_instance_id",
-											"value": "{{workflow_instance_id}}"
-										},
-										{
-											"key": "task_name",
-											"value": "{{task_name}}"
-										},
-										{
-											"key": "workflow_version",
-											"value": "{{workflow_version}}"
-										},
-										{
-											"key": "action_type",
-											"value": "consume"
-										},
-										{
-											"key": "is_retry",
-											"value": "false"
-										}
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "plain",
-							"header": [
-								{
-									"key": "Date",
-									"value": "Tue, 25 Jun 2024 11:50:09 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "22"
-								},
-								{
-									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
-								}
-							],
-							"cookie": [],
-							"body": "Instance State Updated"
-						},
-						{
-							"name": "Fail",
-							"originalRequest": {
-								"method": "POST",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/update_instance?workflow_instance_id={{workflow_instance_id}}&task_name={{task_name}}&workflow_version={{workflow_version}}&action_type=fail&is_retry=true",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"update_instance"
-									],
-									"query": [
-										{
-											"key": "workflow_instance_id",
-											"value": "{{workflow_instance_id}}"
-										},
-										{
-											"key": "task_name",
-											"value": "{{task_name}}"
-										},
-										{
-											"key": "workflow_version",
-											"value": "{{workflow_version}}"
-										},
-										{
-											"key": "action_type",
-											"value": "fail"
-										},
-										{
-											"key": "is_retry",
-											"value": "true"
-										}
-									]
-								}
-							},
-							"status": "OK",
-							"code": 200,
-							"_postman_previewlanguage": "plain",
-							"header": [
-								{
-									"key": "Date",
-									"value": "Tue, 25 Jun 2024 11:50:24 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "22"
-								},
-								{
-									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
-								}
-							],
-							"cookie": [],
-							"body": "Instance State Updated"
-						},
-						{
-							"name": "Missing Field",
-							"originalRequest": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n\t\"time_stamp\": 1719305819497,\n\t\"user_id\": 1,\n\t\"event\": \"user_created\",\n\t\"properties\": {\n\t\t\"user_id\": 1,\n\t\t\"tenant_id\": 1,\n\t\t\"first_name\": \"zubair\",\n\t\t\"last_name\": \"ahmed\",\n\t\t\"tenant_name\": \"venturenox\",\n\t\t\"role_id\": \"owner\"\n\t}\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/update_instance?workflow_version={{workflow_version}}&action_type=publish&is_retry=false&event_name=user_created",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"update_instance"
-									],
-									"query": [
-										{
-											"key": "workflow_instance_id",
-											"value": "{{workflow_instance_id}}",
+											"value": "7sd76d67",
 											"disabled": true
 										},
 										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
 											"key": "workflow_version",
-											"value": "{{workflow_version}}"
+											"value": "1.0"
 										},
 										{
 											"key": "action_type",
@@ -660,33 +452,429 @@
 										{
 											"key": "is_retry",
 											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"workflow_instance_id\": \"Nla3WeMzVDgMnRHtVxUt\",\n    \"task_index\": 0,\n    \"task_state\": \"COMPLETED\",\n    \"workflow_state\": \"PENDING\",\n    \"idempotent\": false\n}"
+						},
+						{
+							"name": "Consume (last task)",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
 										},
 										{
-											"key": "event_name",
-											"value": "user_created"
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"workflow_instance_id\": \"Nla3WeMzVDgMnRHtVxUt\",\n    \"task_index\": 1,\n    \"task_state\": \"COMPLETED\",\n    \"workflow_state\": \"COMPLETED\",\n    \"idempotent\": false\n}"
+						},
+						{
+							"name": "Fail",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"workflow_instance_id\": \"Nla3WeMzVDgMnRHtVxUt\",\n    \"task_index\": 0,\n    \"task_state\": \"FAILED\",\n    \"workflow_state\": \"FAILED\",\n    \"idempotent\": false\n}"
+						},
+						{
+							"name": "Duplicate with is_retry=true",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"workflow_instance_id\": \"Nla3WeMzVDgMnRHtVxUt\",\n    \"task_index\": 0,\n    \"task_state\": \"COMPLETED\",\n    \"workflow_state\": \"PENDING\",\n    \"idempotent\": true\n}"
+						},
+						{
+							"name": "Missing field",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
 										}
 									]
 								}
 							},
 							"status": "Bad Request",
 							"code": 400,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 11:36:44 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "31"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "workflow_instance_id required. "
+							"body": "{\n    \"error\": \"MISSING_PARAM\",\n    \"message\": \"missing query parameter(s): workflow_instance_id\"\n}"
+						},
+						{
+							"name": "Consume before publish",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "Conflict",
+							"code": 409,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"error\": \"TASK_NOT_PUBLISHED\",\n    \"message\": \"task 0 (user_created \\u2192 notification) is PENDING; nothing has been published for it\"\n}"
+						},
+						{
+							"name": "Duplicate publish",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "Conflict",
+							"code": 409,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"error\": \"TASK_ALREADY_PUBLISHED\",\n    \"message\": \"task 0 (user_created \\u2192 notification) is already PUBLISHED\"\n}"
+						},
+						{
+							"name": "Terminal instance",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "Conflict",
+							"code": 409,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"error\": \"INSTANCE_TERMINAL\",\n    \"message\": \"instance Nla3WeMzVDgMnRHtVxUt is FAILED; it accepts no further reports\"\n}"
+						},
+						{
+							"name": "Unknown instance",
+							"originalRequest": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/update_instance?task_name=user_created_saga_1&workflow_version=1.0&action_type=publish&is_retry=false",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"update_instance"
+									],
+									"query": [
+										{
+											"key": "workflow_instance_id",
+											"value": "7sd76d67",
+											"disabled": true
+										},
+										{
+											"key": "task_name",
+											"value": "user_created_saga_1"
+										},
+										{
+											"key": "workflow_version",
+											"value": "1.0"
+										},
+										{
+											"key": "action_type",
+											"value": "publish"
+										},
+										{
+											"key": "is_retry",
+											"value": "false"
+										}
+									]
+								}
+							},
+							"status": "Not Found",
+							"code": 404,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "{\n    \"error\": \"INSTANCE_NOT_FOUND\",\n    \"message\": \"workflow instance \\\"nope\\\" does not exist\"\n}"
 						}
 					]
 				}
@@ -723,7 +911,7 @@
 								"list"
 							]
 						},
-						"description": "**Request:**\n\nNo body, no parameters\n\n**Responses:**\n\n- 404 - \"No Workflows Found\" error message\n    \n- 200 - List of available workflow templates built according to DSL files (in JSON)\n    \n\n**Note:** _It does_ _**NOT**_ _give a list of workflow_ _**instances**_"
+						"description": "**Request:**\n\nNo body, no parameters\n\n**Responses:**\n\n- 200 with an empty array (no workflows) - \"No Workflows Found\" error message\n    \n- 200 - List of available workflow templates built according to DSL files (in JSON)\n    \n\n**Note:** _It does_ _**NOT**_ _give a list of workflow_ _**instances**_"
 					},
 					"response": [
 						{
@@ -762,6 +950,35 @@
 							],
 							"cookie": [],
 							"body": "[\n    \"user_deletion\",\n    \"user_updation\",\n    \"user_creation\"\n]"
+						},
+						{
+							"name": "No workflows",
+							"originalRequest": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "localhost:5000/workflows/list",
+									"host": [
+										"localhost"
+									],
+									"port": "5000",
+									"path": [
+										"workflows",
+										"list"
+									]
+								}
+							},
+							"status": "OK",
+							"code": 200,
+							"_postman_previewlanguage": "json",
+							"header": [
+								{
+									"key": "Content-Type",
+									"value": "application/json"
+								}
+							],
+							"cookie": [],
+							"body": "[]"
 						}
 					]
 				},
@@ -969,7 +1186,7 @@
 								}
 							]
 						},
-						"description": "Gets the complete workflow instance document by its id.  \n**Required query parameter:**\n\n1. **workflow_instance_id:** The id returned by start_instance (also listed by the List instances API)\n    \n\n**Responses:**\n\n- 400 - Missing field message\n- 400 - Invalid workflow_instance_id message\n    \n- 404 - \"Instance Not Found\" error message\n    \n- 200 - Workflow instance document (in JSON)"
+						"description": "Gets the complete workflow instance document by its id.  \n**Required query parameter:**\n\n1. **workflow_instance_id:** The id returned by start_instance (also listed by the List instances API)\n\n**Responses (all JSON):**\n\n- 200 - the instance document: `schema` 2, `name`, `version`, `state` (PENDING | COMPLETED | FAILED), `startedAt`/`completedAt`/`failedAt` (unix seconds, 0 when unset) and `tasks[]`, each with `topic`, `from`, `to`, `timeout` (ms), `state` (PENDING | PUBLISHED | COMPLETED | FAILED), `publishedAt`/`consumedAt`/`failedAt`, and `payload` once published\n- 400 - MISSING_PARAM | INVALID_PARAM\n- 404 - INSTANCE_NOT_FOUND"
 					},
 					"response": [
 						{
@@ -1002,18 +1219,10 @@
 								{
 									"key": "Content-Type",
 									"value": "application/json"
-								},
-								{
-									"key": "Date",
-									"value": "Thu, 22 Aug 2024 09:49:20 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "708"
 								}
 							],
 							"cookie": [],
-							"body": "{\n    \"name\": \"user_creation\",\n    \"schema_version\": \"1.0\",\n    \"state\": \"PENDING\",\n    \"task_user_created\": {\n        \"depends_on\": \"null\",\n        \"fail_reason\": \"null\",\n        \"from\": \"Service A\",\n        \"state\": \"PENDING\",\n        \"task_name\": \"task_user_created\",\n        \"timeout\": 3500,\n        \"to\": \"Service B\",\n        \"topic\": \"user_created\"\n    },\n    \"task_user_created_saga_1\": {\n        \"depends_on\": \"task_user_created\",\n        \"fail_reason\": \"null\",\n        \"from\": \"Service B\",\n        \"state\": \"PENDING\",\n        \"task_name\": \"task_user_created_saga_1\",\n        \"timeout\": 2500,\n        \"to\": \"Service C\",\n        \"topic\": \"user_created_saga\"\n    },\n    \"task_user_created_saga_2\": {\n        \"depends_on\": \"task_user_created\",\n        \"fail_reason\": \"null\",\n        \"from\": \"Service B\",\n        \"state\": \"PENDING\",\n        \"task_name\": \"task_user_created_saga_2\",\n        \"timeout\": 10000,\n        \"to\": \"Service D\",\n        \"topic\": \"user_created_saga\"\n    },\n    \"version\": \"1.0\"\n}"
+							"body": "{\n    \"schema\": 2,\n    \"name\": \"user_creation\",\n    \"version\": \"1.0\",\n    \"schema_version\": \"1.0\",\n    \"state\": \"PENDING\",\n    \"startedAt\": 1757030400,\n    \"completedAt\": 0,\n    \"failedAt\": 0,\n    \"tasks\": [\n        {\n            \"topic\": \"user_created\",\n            \"from\": \"auth\",\n            \"to\": \"notification\",\n            \"timeout\": 20000,\n            \"state\": \"PUBLISHED\",\n            \"publishedAt\": 1757030401,\n            \"consumedAt\": 0,\n            \"failedAt\": 0,\n            \"payload\": {\n                \"user_id\": 42\n            }\n        },\n        {\n            \"topic\": \"user_created_saga\",\n            \"from\": \"notification\",\n            \"to\": \"intermediate\",\n            \"timeout\": 20000,\n            \"state\": \"PENDING\",\n            \"publishedAt\": 0,\n            \"consumedAt\": 0,\n            \"failedAt\": 0\n        }\n    ]\n}"
 						},
 						{
 							"name": "Missing field",
@@ -1021,10 +1230,11 @@
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/workflow_instances/get",
+									"raw": "localhost:5000/workflow_instances/get?workflow_instance_id=7sd76d67",
 									"host": [
-										"{{base_url}}"
+										"localhost"
 									],
+									"port": "5000",
 									"path": [
 										"workflow_instances",
 										"get"
@@ -1032,31 +1242,22 @@
 									"query": [
 										{
 											"key": "workflow_instance_id",
-											"value": "{{workflow_instance_id}}",
-											"disabled": true
+											"value": "7sd76d67"
 										}
 									]
 								}
 							},
 							"status": "Bad Request",
 							"code": 400,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 12:59:03 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "42"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "workflow_instance_id required. "
+							"body": "{\n    \"error\": \"MISSING_PARAM\",\n    \"message\": \"missing query parameter(s): workflow_instance_id\"\n}"
 						},
 						{
 							"name": "Invalid workflow_instance_id",
@@ -1064,10 +1265,11 @@
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/workflow_instances/get?workflow_instance_id=not:an:id",
+									"raw": "localhost:5000/workflow_instances/get?workflow_instance_id=7sd76d67",
 									"host": [
-										"{{base_url}}"
+										"localhost"
 									],
+									"port": "5000",
 									"path": [
 										"workflow_instances",
 										"get"
@@ -1075,35 +1277,22 @@
 									"query": [
 										{
 											"key": "workflow_instance_id",
-											"value": "{{workflow_instance_id}}",
-											"disabled": true
-										},
-										{
-											"key": "workflow_instance_id",
-											"value": "not:an:id"
+											"value": "7sd76d67"
 										}
 									]
 								}
 							},
 							"status": "Bad Request",
 							"code": 400,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 12:59:43 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "24"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "workflow_instance_id format Invalid. "
+							"body": "{\n    \"error\": \"INVALID_PARAM\",\n    \"message\": \"workflow_instance_id must be 1 to 64 letters or digits\"\n}"
 						},
 						{
 							"name": "Instance Not Found",
@@ -1111,10 +1300,11 @@
 								"method": "GET",
 								"header": [],
 								"url": {
-									"raw": "{{base_url}}/workflow_instances/get?workflow_instance_id={{workflow_instance_id}}",
+									"raw": "localhost:5000/workflow_instances/get?workflow_instance_id=7sd76d67",
 									"host": [
-										"{{base_url}}"
+										"localhost"
 									],
+									"port": "5000",
 									"path": [
 										"workflow_instances",
 										"get"
@@ -1122,30 +1312,22 @@
 									"query": [
 										{
 											"key": "workflow_instance_id",
-											"value": "{{workflow_instance_id}}"
+											"value": "7sd76d67"
 										}
 									]
 								}
 							},
 							"status": "Not Found",
 							"code": 404,
-							"_postman_previewlanguage": "plain",
+							"_postman_previewlanguage": "json",
 							"header": [
 								{
-									"key": "Date",
-									"value": "Tue, 08 Oct 2024 13:00:06 GMT"
-								},
-								{
-									"key": "Content-Length",
-									"value": "18"
-								},
-								{
 									"key": "Content-Type",
-									"value": "text/plain; charset=utf-8"
+									"value": "application/json"
 								}
 							],
 							"cookie": [],
-							"body": "Instance Not Found"
+							"body": "{\n    \"error\": \"INSTANCE_NOT_FOUND\",\n    \"message\": \"workflow instance \\\"nope\\\" does not exist\"\n}"
 						}
 					]
 				}

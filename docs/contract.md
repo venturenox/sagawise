@@ -1,6 +1,6 @@
 # Sagawise Behavioral Contract
 
-**Status:** v1, accepted 2026-09-04 (decisions D1–D7 all accepted). Roadmap phase 2 (`docs/TODO.md`).
+**Status:** v1, accepted 2026-09-04 (decisions D1–D7 all accepted). Roadmap phase 2 (`docs/TODO.md`). Implemented in full by phase 5 (branch `quick-wins`) and phase 6 (branch `state-machine`, design in `docs/design-phase-6.md`), 2026-09-05; every rule below has a passing test.
 **Purpose:** the single source of truth for what the engine must do. Phase 3 turns every rule here into a test. Phases 5 and 6 make the code match. Where current code disagrees with this document, the document wins and the audit finding is noted as `#N` (`docs/correctness-audit-2026-08-29.md`).
 
 Decisions that change today's observable behavior are marked **[DECISION]** and listed at the end for sign-off.

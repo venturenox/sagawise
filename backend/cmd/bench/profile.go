@@ -526,7 +526,7 @@ func (l *loader) commandBreakdown(ctx context.Context, rdb *redis.Client) []Comm
 		for _, id := range ids {
 			l.call(http.MethodPost, "/update_instance?workflow_instance_id="+id+"&action_type=consume&event_name=bench_t1&service_name=bench_c&is_retry=false", "")
 		}
-		time.Sleep(500 * time.Millisecond) // archive goroutines re-read the doc
+		time.Sleep(500 * time.Millisecond) // the archive worker drains the queue
 	})
 	return rows
 }
@@ -537,10 +537,14 @@ func populateInstances(ctx context.Context, rdb *redis.Client, from, to int) {
 	now := time.Now().Unix()
 	pipe := rdb.Pipeline()
 	for i := from; i < to; i++ {
+		// Schema 2 layout (docs/design-phase-6.md §1): tasks under $.tasks.
 		doc := map[string]interface{}{
-			"name": flowName, "version": "1.0", "schema_version": "1.0", "state": "PENDING", "startedAt": now,
-			"0": map[string]interface{}{"topic": "bench_t0", "from": "bench_a", "to": "bench_b", "state": "PENDING", "timeout": 60000, "index": "0"},
-			"1": map[string]interface{}{"topic": "bench_t1", "from": "bench_b", "to": "bench_c", "state": "PENDING", "timeout": 60000, "index": "1"},
+			"schema": 2, "name": flowName, "version": "1.0", "schema_version": "1.0", "state": "PENDING",
+			"startedAt": now, "completedAt": 0, "failedAt": 0,
+			"tasks": []map[string]interface{}{
+				{"topic": "bench_t0", "from": "bench_a", "to": "bench_b", "timeout": 60000, "state": "PENDING", "publishedAt": 0, "consumedAt": 0, "failedAt": 0},
+				{"topic": "bench_t1", "from": "bench_b", "to": "bench_c", "timeout": 60000, "state": "PENDING", "publishedAt": 0, "consumedAt": 0, "failedAt": 0},
+			},
 		}
 		pipe.JSONSet(ctx, fmt.Sprintf("workflow_instance:bp%d", i), "$", doc)
 		if (i+1)%500 == 0 {
