@@ -76,7 +76,7 @@ Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/b
 - [x] Save results in `docs/benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
 - [x] Baseline run recorded before phase 5: `docs/benchmarks/runs/2026-09-05_0517_8f8e27c_baseline`.
 - [x] Bottleneck profile (`make bench-profile`): saturation ramp with pprof at the knee, Redis command breakdown, scaling curves (instances, tasks per workflow, payload size, simultaneous timeouts), contention. Baseline: `runs/2026-09-05_0521_8f8e27c_profile-baseline`. Verdict: Redis CPU is the ceiling (JSON.SET re-index per state write); recursive-descent JSONPath scales with document size; reaper lag is linear in simultaneous timeouts.
-- [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 done: `runs/2026-09-05_0811_b974cf0_after-phase-7`, `runs/2026-09-05_0818_a89cf09_profile-after-phase-7`: Redis commands per saga -14 %, document writes per report roughly halved, reaper max lag -46 % at 2000 simultaneous timeouts, 0 errors, 0 lost archives. See the phase 7 section for the two measurement caveats (the reaper-lag harness fix, and which comparison to trust).
+- [x] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 done: `runs/2026-09-05_0811_b974cf0_after-phase-7`, `runs/2026-09-05_0818_a89cf09_profile-after-phase-7`: Redis commands per saga -14 %, document writes per report roughly halved, reaper max lag -46 % at 2000 simultaneous timeouts, 0 errors, 0 lost archives. See the phase 7 section for the two measurement caveats (the reaper-lag harness fix, and which comparison to trust). All four phases are plotted side by side in `docs/benchmarks/plots/` (regenerate with `python3 docs/benchmarks/plots/plot.py`).
 
 ## Phase 5 — Quick wins PR
 
@@ -188,12 +188,15 @@ Two caveats recorded so the numbers are not over-read:
 
 ## Phase 8 — Security
 
-- [ ] Write a threat model. One page. Who can call what.
-- [ ] Add auth to the API. API key or mTLS.
-- [ ] Replace wildcard CORS with an allowlist.
-- [ ] Sign or authenticate outgoing failure webhooks.
-- [ ] Review Helm chart: secrets, network policy, non-root container.
-- [ ] Add dependency scanning (Dependabot or Renovate).
+Done 2026-09-05 on branch `state-machine`. Design and the threat-to-control table: `docs/threat-model.md`.
+
+- [x] Write a threat model. One page. Who can call what. `docs/threat-model.md`: four assets, one role, eight threats each mapped to a control and its test, and an explicit not-covered list (per-service authorization, TLS, rate limiting, audit log).
+- [x] Add auth to the API. API key or mTLS. Bearer API keys (`SAGAWISE_API_KEYS`, constant-time compare on SHA-256 digests) in `backend/httpsec`; probes exempt; 401 `UNAUTHORIZED`. Fail-closed: no key and no explicit `SAGAWISE_AUTH=off` means the process exits (`startup_test.go`). SDKs read `SAGAWISE_API_KEY`; bench, examples and tests send it. mTLS left to the ingress/mesh (threat model).
+- [x] Replace wildcard CORS with an allowlist. `SAGAWISE_CORS_ORIGINS`, exact origins, `Vary: Origin`, no credentials, `*` refused at startup; unlisted origins get no CORS headers and a 403 preflight.
+- [x] Sign or authenticate outgoing failure webhooks. `backend/webhooksig`: `X-Sagawise-Timestamp` + `X-Sagawise-Signature: v1=<HMAC-SHA256(secret, ts.body)>`, 5-minute replay window, rotation-friendly (several `v1=` values). Contract W6. `verify_signature` in both SDKs, one shared test vector across Go, Node and Python.
+- [x] Review Helm chart: secrets, network policy, non-root container. Image runs as uid 65532 (`Dockerfile`); chart defaults to the restricted PSS (non-root, no privilege escalation, drop ALL, read-only root fs, RuntimeDefault seccomp); API keys, webhook secret and external-store passwords in a chart Secret or `existingSecret`; Redis connection string no longer embeds the password; opt-in default-deny ingress `NetworkPolicy`. Chart 0.2.0.
+- [x] Add dependency scanning (Dependabot or Renovate). `.github/dependabot.yml`: weekly grouped PRs for gomod, npm, pip, docker and github-actions.
+- [x] Bonus: request body cap (`SAGAWISE_MAX_BODY_BYTES`, default 1 MiB, 413 `PAYLOAD_TOO_LARGE`), since a publish payload is stored and replayed.
 
 ## Phase 9 — Operations
 

@@ -123,6 +123,11 @@ type Engine struct {
 	Services   ServiceRegistry
 	HTTPClient *http.Client
 
+	// WebhookSecret, when set, makes every failure webhook carry an HMAC
+	// signature the receiver can verify (contract W6, package webhooksig).
+	// Empty means unsigned deliveries; main warns about that at startup.
+	WebhookSecret []byte
+
 	// Archiver drains archive_pending into Postgres; Webhooks drains
 	// webhook_pending to the publishers' failure_urls. Start them with
 	// StartWorkers; tests drive their ticks directly instead.

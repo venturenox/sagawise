@@ -68,6 +68,32 @@ helm delete sagawise
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
 
+### Security (chart 0.2.0)
+
+The API requires a bearer API key on every request except the probes, so
+an install needs at least one key:
+
+```console
+helm install my-sagawise sagawise/sagawise \
+  --set 'auth.apiKeys={<random key>}' \
+  --set webhook.secret=<random secret> \
+  --set 'cors.origins={https://ui.example.com}'
+```
+
+The keys, the webhook secret and any external Redis/Postgres password are
+rendered into the Secret `<release>-sagawise-credentials`; set
+`auth.existingSecret` to manage that Secret yourself (keys `api-keys`,
+`webhook-secret`, `redis-password`, `postgres-password`). Clients send
+`Authorization: Bearer <key>`; the SDKs read `SAGAWISE_API_KEY`. Services
+receiving failure webhooks verify `X-Sagawise-Signature` with the SDKs'
+`verify_signature` and the same `webhook.secret`.
+
+The pods run as uid 65532 under the restricted Pod Security Standard by
+default (`podSecurityContext`, `securityContext`). `networkPolicy.enabled`
+adds a default-deny ingress policy whose `ingress` list names who may reach
+the API port. `auth.mode=off` serves an unauthenticated API for development
+clusters only. Reasoning: `docs/threat-model.md` in the repository.
+
 ### Ingress
 
 This chart provides support for Ingress resources. If you have an ingress controller installed on your cluster, such as [nginx-ingress-controller](https://github.com/bitnami/charts/tree/main/bitnami/nginx-ingress-controller) you can utilize the ingress controller to serve your application.To enable Ingress integration, set `ingress.enabled` to `true` for the http ingress.

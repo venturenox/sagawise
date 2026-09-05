@@ -1,13 +1,68 @@
 const axios = require('axios');
+const crypto = require('node:crypto');
 
 // Requests to Sagawise time out after this many milliseconds.
 const DEFAULT_TIMEOUT_MS = 1000;
+
+// Every request carries the API key from SAGAWISE_API_KEY as a bearer
+// token; Sagawise refuses requests without one (401 UNAUTHORIZED) unless it
+// runs with SAGAWISE_AUTH=off.
+const headers = {};
+if (process.env.SAGAWISE_API_KEY) {
+	headers.Authorization = `Bearer ${process.env.SAGAWISE_API_KEY}`;
+}
 
 const axios_instance = axios.create({
 	baseURL: process.env.SAGAWISE_URL,
 	timeout: Number(process.env.SAGAWISE_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
 	withCredentials: false,
+	headers,
 });
+
+// How far a webhook's timestamp may be from this clock before it is
+// treated as a replay (seconds).
+const DEFAULT_TOLERANCE_SECONDS = 300;
+
+/**
+ * Verifies the signature of a failure webhook Sagawise delivered
+ * (`X-Sagawise-Timestamp` and `X-Sagawise-Signature` headers, HMAC-SHA256
+ * of `<timestamp>.<raw body>`). `rawBody` must be the body bytes as
+ * received (a Buffer or string), before any JSON parsing. Returns true only
+ * when the signature is valid and the timestamp is within `toleranceSeconds`
+ * of now. With Express use `express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })`
+ * to keep the raw bytes.
+ */
+function verify_signature({ secret, headers: h, rawBody, toleranceSeconds = DEFAULT_TOLERANCE_SECONDS, now = Date.now() / 1000 } = {}) {
+	if (!secret || !h || rawBody === undefined || rawBody === null) {
+		return false;
+	}
+	const get = (name) => {
+		const v = h[name] ?? h[name.toLowerCase()];
+		return Array.isArray(v) ? v[0] : v;
+	};
+	const tsHeader = get('X-Sagawise-Timestamp');
+	const sigHeader = get('X-Sagawise-Signature');
+	if (!tsHeader || !sigHeader || !/^\s*\d+\s*$/.test(tsHeader)) {
+		return false;
+	}
+	const ts = Number(tsHeader);
+	if (Math.abs(Math.floor(now) - ts) > toleranceSeconds) {
+		return false;
+	}
+	const expected = crypto.createHmac('sha256', secret).update(`${ts}.`).update(rawBody).digest();
+	// Several v1= values may be present during a secret rotation.
+	return sigHeader.split(',').some((part) => {
+		const p = part.trim();
+		if (!p.startsWith('v1=')) return false;
+		let got;
+		try {
+			got = Buffer.from(p.slice(3), 'hex');
+		} catch {
+			return false;
+		}
+		return got.length === expected.length && crypto.timingSafeEqual(got, expected);
+	});
+}
 
 // requireKeys throws if any named key is missing or empty. Presence is
 // checked explicitly (`undefined`, `null`, `''`), never with loose equality:
@@ -122,4 +177,6 @@ class Sagawise {
 	}
 }
 
-module.exports = new Sagawise();
+const sagawise = new Sagawise();
+sagawise.verify_signature = verify_signature;
+module.exports = sagawise;

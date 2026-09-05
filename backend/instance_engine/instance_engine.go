@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"wtfsaga/utils"
+	"wtfsaga/webhooksig"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -40,6 +41,8 @@ var codeStatus = map[string]int{
 	"TASK_ALREADY_COMPLETED": http.StatusConflict,
 	"TASK_ALREADY_FAILED":    http.StatusConflict,
 	"INSTANCE_TERMINAL":      http.StatusConflict,
+
+	"PAYLOAD_TOO_LARGE": http.StatusRequestEntityTooLarge,
 
 	"INTERNAL": http.StatusInternalServerError,
 }
@@ -255,6 +258,14 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	if action == "publish" {
 		body, err := io.ReadAll(r.Body)
 		_ = r.Body.Close()
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			// The body cap is installed by main (SAGAWISE_MAX_BODY_BYTES);
+			// contract §9. The payload would be stored and replayed in the
+			// failure webhook, so it is bounded. (phase 8)
+			writeError(w, "PAYLOAD_TOO_LARGE", "publish body exceeds the limit of "+strconv.FormatInt(tooBig.Limit, 10)+" bytes")
+			return
+		}
 		if err != nil {
 			writeError(w, "INVALID_BODY", "could not read request body: "+err.Error())
 			return
@@ -520,6 +531,14 @@ func (e *Engine) webhookJob(ctx context.Context, member string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.URL.RawQuery = url.Values{"service": {to}}.Encode()
+	if len(e.WebhookSecret) > 0 {
+		// W6: the receiver can check the delivery came from Sagawise and is
+		// not a replay. The timestamp is the engine clock so tests are
+		// deterministic; receivers compare it with their own clock.
+		ts := e.Clock.Now().Unix()
+		req.Header.Set(webhooksig.HeaderTimestamp, strconv.FormatInt(ts, 10))
+		req.Header.Set(webhooksig.HeaderSignature, webhooksig.Sign(e.WebhookSecret, ts, payload))
+	}
 	resp, err := e.HTTPClient.Do(req) // #nosec G704 -- see above
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", from, err)

@@ -32,6 +32,29 @@ Easy to adopt workflow tracking which instantly lets developers bring resilience
 
 ---
 
+## Authentication and webhook signatures
+
+Set `SAGAWISE_API_KEY` alongside `SAGAWISE_URL` (or pass `Sagawise(api_key=...)`);
+every call then carries `Authorization: Bearer <key>`. Sagawise answers 401
+`UNAUTHORIZED` without it.
+
+Failure webhooks are signed when the server has `SAGAWISE_WEBHOOK_SECRET`.
+Verify against the raw body before trusting a compensation request:
+
+```python
+from sagawise.sagawise import verify_signature
+
+@app.post('/failure_report')
+def failure_report():
+    if not verify_signature(os.environ['SAGAWISE_WEBHOOK_SECRET'], request.headers, request.get_data()):
+        abort(401)
+    # compensate ...
+    return '', 200
+```
+
+`verify_signature` returns `True` only when `X-Sagawise-Signature` matches
+and `X-Sagawise-Timestamp` is within 5 minutes of now (`tolerance_seconds`).
+
 ## Features
 
 - Call functions to interact with Sagawise

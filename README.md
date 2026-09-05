@@ -215,7 +215,14 @@ The image supports the following environment variables:
 | `POSTGRES_PASSWORD`       | Password for Postgres database                                   | `password`                               |
 | `POSTGRES_DATABASE`       | Database to be used sagawise                                     | `sagawise`                               |
 | `SERVER_ENV`              | Specifies the environment running the Sagawise app ( optional ). | `development, preview,stagin,production` |
+| `SAGAWISE_API_KEYS`       | Comma-separated API keys; clients send `Authorization: Bearer <key>`. Required unless `SAGAWISE_AUTH=off`. | none |
+| `SAGAWISE_AUTH`           | `api-key` (default) or `off` (open API, development only). | `api-key` |
+| `SAGAWISE_WEBHOOK_SECRET` | HMAC secret for signing failure webhooks (`X-Sagawise-Signature`). Empty = unsigned. | none |
+| `SAGAWISE_CORS_ORIGINS`   | Comma-separated exact browser origins allowed to call the API. Empty = none. | none |
+| `SAGAWISE_MAX_BODY_BYTES` | Largest accepted request body (K/M suffix). | `1M` |
 ```
+
+Security details, including how receivers verify webhook signatures, are in [`docs/threat-model.md`](docs/threat-model.md).
 
 ### **Volumes**
 

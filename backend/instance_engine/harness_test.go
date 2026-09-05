@@ -39,6 +39,8 @@ type webhookCall struct {
 	Service string // the `service=` query value (the consuming service)
 	Path    string
 	Body    map[string]interface{}
+	Raw     []byte      // the body byte for byte (what a signature covers)
+	Header  http.Header // the delivery's request headers
 }
 
 type webhookSink struct {
@@ -51,7 +53,8 @@ func (s *webhookSink) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
 	_ = json.Unmarshal(raw, &body)
 	s.mu.Lock()
-	s.calls = append(s.calls, webhookCall{Service: r.URL.Query().Get("service"), Path: r.URL.Path, Body: body})
+	s.calls = append(s.calls, webhookCall{Service: r.URL.Query().Get("service"), Path: r.URL.Path, Body: body,
+		Raw: raw, Header: r.Header.Clone()})
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusOK)
 }

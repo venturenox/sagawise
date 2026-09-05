@@ -134,6 +134,12 @@ where a compensating transaction belongs.
 
 ## Things worth knowing
 
+- **Every call to Sagawise carries an API key.** `sagawiseClient.js` sends
+  `Authorization: Bearer $SAGAWISE_API_KEY`; the example `.env` sets it to the
+  dev key in the root `.env` (`SAGAWISE_API_KEYS`). Without it Sagawise answers
+  401. The failure webhooks arrive signed (`X-Sagawise-Signature`); the SDKs'
+  `verify_signature` checks them, and a real service should before compensating.
+
 - **One topic carries every event.** Services filter on the `event` field in the
   payload, which is why each consumer needs its own `KAFKA_GROUP_ID`.
 - **The `workflow_instance_id` travels inside the message.** That is what lets a

@@ -83,3 +83,7 @@ Create the name of the service account to use
 {{- define "sagawise.application.port" -}}
 {{ default 5000 }}
 {{- end }}
+{{/* Name of the Secret holding Sagawise's own credentials (phase 8) */}}
+{{- define "sagawise.secretName" -}}
+{{- default (printf "%s-credentials" (include "sagawise.fullname" .)) .Values.auth.existingSecret }}
+{{- end }}

@@ -97,6 +97,9 @@ func launch(t testx.T, dslDir, servicesFile string, extra map[string]string) *pr
 		"POSTGRES_HOST": "localhost", "POSTGRES_PORT": "5432", "POSTGRES_USERNAME": "postgres",
 		"POSTGRES_PASSWORD": "venturenox", "POSTGRES_DATABASE": "sagawise",
 		"OTEL_SDK_DISABLED": "true",
+		// Phase 8: the binary refuses to start without a key (see the
+		// TestStartup_Auth* cases); the default launch has one.
+		"SAGAWISE_API_KEYS": stKey,
 	}
 	for _, k := range []string{"REDIS_HOST", "REDIS_PORT", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USERNAME", "POSTGRES_PASSWORD", "POSTGRES_DATABASE"} {
 		if v := os.Getenv(k); v != "" {
@@ -205,6 +208,26 @@ func goodWorkflow() utils.Workflow {
 	}
 }
 
+// stKey is the API key the launched binary is configured with.
+const stKey = "st-test-key"
+
+// call sends one authenticated (or not) request to the running binary.
+func (p *proc) call(t testx.T, method, path, auth string) *http.Response {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, method, "http://"+p.addr+path, nil)
+	if auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	_ = resp.Body.Close()
+	return resp
+}
+
 func goodServices() []utils.Service {
 	return []utils.Service{{ServiceName: "st_a", FailureUrl: "http://st_a/fail"}}
 }
@@ -274,5 +297,69 @@ func TestStartup_RedisUnreachableExits(t *testing.T) {
 		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()),
 			map[string]string{"REDIS_HOST": "127.0.0.1", "REDIS_PORT": "1"})
 		p.expectExit(t, 8*time.Second)
+	})
+}
+
+// ---- Phase 8: authentication is on by default (docs/threat-model.md T1) ----
+
+// No key configured and no explicit opt-out: the binary must not serve.
+func TestStartup_NoAPIKeyExits(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_API_KEYS": ""})
+		p.expectExit(t, 5*time.Second)
+	})
+}
+
+func TestStartup_BadAuthModeExits(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_AUTH": "none"})
+		p.expectExit(t, 5*time.Second)
+	})
+}
+
+func TestStartup_WildcardCORSExits(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_CORS_ORIGINS": "*"})
+		p.expectExit(t, 5*time.Second)
+	})
+}
+
+// With a key configured every endpoint but the probes demands it.
+func TestStartup_APIKeyRequired(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), nil)
+		if !p.serving(15 * time.Second) {
+			t.Fatalf("binary did not serve /live within 15s\n%s", tail(p.out))
+		}
+		for _, probe := range []string{"/live", "/ready", "/health"} {
+			if resp := p.call(t, http.MethodGet, probe, ""); resp.StatusCode != 200 {
+				t.Errorf("%s without a key: %d, want 200 (probes are exempt)", probe, resp.StatusCode)
+			}
+		}
+		if resp := p.call(t, http.MethodGet, "/workflows/list", ""); resp.StatusCode != 401 {
+			t.Errorf("no key: %d, want 401", resp.StatusCode)
+		}
+		if resp := p.call(t, http.MethodGet, "/workflows/list", "Bearer wrong"); resp.StatusCode != 401 {
+			t.Errorf("wrong key: %d, want 401", resp.StatusCode)
+		}
+		if resp := p.call(t, http.MethodPost, "/start_instance?workflow_name=nope", "Bearer "+stKey); resp.StatusCode != 404 {
+			t.Errorf("right key: %d, want 404 (the request reached the engine)", resp.StatusCode)
+		}
+	})
+}
+
+// The explicit opt-out serves an open API (development only).
+func TestStartup_AuthOffServesOpen(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_AUTH": "off", "SAGAWISE_API_KEYS": ""})
+		if !p.serving(15 * time.Second) {
+			t.Fatalf("binary did not serve /live within 15s\n%s", tail(p.out))
+		}
+		if resp := p.call(t, http.MethodGet, "/workflows/list", ""); resp.StatusCode != 200 {
+			t.Errorf("no key with auth off: %d, want 200", resp.StatusCode)
+		}
+		if !strings.Contains(p.out.String(), "SAGAWISE_AUTH=off") {
+			t.Errorf("no startup warning about the open API\n%s", tail(p.out))
+		}
 	})
 }

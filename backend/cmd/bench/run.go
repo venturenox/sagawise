@@ -288,7 +288,8 @@ func launchServer(bin, dslDir, servicesFile string) (*server, error) {
 	s := &server{addr: addr, done: make(chan struct{})}
 	s.cmd = exec.Command(bin) // #nosec G204 -- binary we just built
 	s.cmd.Env = append(os.Environ(),
-		"SAGAWISE_ADDR="+addr, "SAGAWISE_DSL_DIR="+dslDir, "SAGAWISE_SERVICES_FILE="+servicesFile, "OTEL_SDK_DISABLED=true")
+		"SAGAWISE_ADDR="+addr, "SAGAWISE_DSL_DIR="+dslDir, "SAGAWISE_SERVICES_FILE="+servicesFile, "OTEL_SDK_DISABLED=true",
+		"SAGAWISE_API_KEYS="+benchAPIKey, "SAGAWISE_WEBHOOK_SECRET=bench-webhook-secret")
 	s.cmd.Stdout, s.cmd.Stderr = io.Discard, io.Discard
 	if err := s.cmd.Start(); err != nil {
 		return nil, err

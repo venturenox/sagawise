@@ -17,6 +17,11 @@ import (
 // loader drives sagas over HTTP. It is open-loop: sagas start on a fixed
 // schedule regardless of how the server keeps up, so latency under load is
 // measured, not hidden by back-pressure.
+// benchAPIKey is the key the launched server is configured with and the
+// loader sends; the bench measures the authenticated path, as production
+// runs it.
+const benchAPIKey = "bench-api-key" // #nosec G101 -- throwaway key for the server the bench launches on loopback
+
 type loader struct {
 	base   string
 	client *http.Client
@@ -42,6 +47,7 @@ func (l *loader) call(method, path, body string) (string, time.Duration, bool) {
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set("Authorization", "Bearer "+benchAPIKey)
 	resp, err := l.client.Do(req)
 	if err != nil {
 		return "", time.Since(start), false

@@ -1,4 +1,7 @@
+import hmac
+import hashlib
 import os
+import time
 
 import requests
 
@@ -6,6 +9,54 @@ import requests
 # uses). The previous default of 1000 was meant as milliseconds and made every
 # hung call wait about 17 minutes.
 DEFAULT_TIMEOUT_SECONDS = 1.0
+
+# How far a webhook's timestamp may be from this clock before it is treated
+# as a replay (seconds).
+DEFAULT_TOLERANCE_SECONDS = 300
+
+
+def verify_signature(secret, headers, raw_body, tolerance_seconds=DEFAULT_TOLERANCE_SECONDS, now=None):
+    """Verify the signature of a failure webhook Sagawise delivered.
+
+    Sagawise signs every delivery with ``X-Sagawise-Timestamp`` and
+    ``X-Sagawise-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>``.
+    ``raw_body`` must be the request body bytes as received, before any JSON
+    parsing. Returns True only when the signature is valid and the timestamp
+    is within ``tolerance_seconds`` of ``now`` (default: the wall clock).
+
+    :param secret: the shared secret (``SAGAWISE_WEBHOOK_SECRET`` on the server), str or bytes
+    :param headers: the request headers (any case-insensitive mapping, e.g. ``flask.request.headers``)
+    :param raw_body: the raw request body, bytes or str
+    """
+    if not secret or headers is None or raw_body is None:
+        return False
+    if isinstance(secret, str):
+        secret = secret.encode()
+    if isinstance(raw_body, str):
+        raw_body = raw_body.encode()
+    lowered = {str(k).lower(): v for k, v in dict(headers).items()}
+    ts_header = lowered.get('x-sagawise-timestamp')
+    sig_header = lowered.get('x-sagawise-signature')
+    if not ts_header or not sig_header or not str(ts_header).strip().isdigit():
+        return False
+    ts = int(str(ts_header).strip())
+    if now is None:
+        now = time.time()
+    if abs(int(now) - ts) > tolerance_seconds:
+        return False
+    expected = hmac.new(secret, b'%d.' % ts + raw_body, hashlib.sha256).digest()
+    # Several v1= values may be present during a secret rotation.
+    for part in str(sig_header).split(','):
+        part = part.strip()
+        if not part.startswith('v1='):
+            continue
+        try:
+            got = bytes.fromhex(part[3:])
+        except ValueError:
+            return False
+        if hmac.compare_digest(got, expected):
+            return True
+    return False
 
 
 class Sagawise:
@@ -17,14 +68,22 @@ class Sagawise:
     answer, ``ConnectionError``/``Timeout`` for an unreachable server) for a
     failed request. Nothing is caught and returned as a value.
 
+    Every request carries the API key from ``SAGAWISE_API_KEY`` (or the
+    ``api_key`` argument) as a bearer token; Sagawise refuses requests
+    without one (401 ``UNAUTHORIZED``) unless it runs with ``SAGAWISE_AUTH=off``.
+
     :param timeout: per-request timeout in seconds (default 1.0)
+    :param api_key: the API key (default: the ``SAGAWISE_API_KEY`` environment variable)
     """
 
-    def __init__(self, timeout=DEFAULT_TIMEOUT_SECONDS):
+    def __init__(self, timeout=DEFAULT_TIMEOUT_SECONDS, api_key=None):
         self.base_url = os.getenv('SAGAWISE_URL')
         self.timeout = timeout
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})
+        api_key = api_key or os.getenv('SAGAWISE_API_KEY')
+        if api_key:
+            self.session.headers['Authorization'] = f'Bearer {api_key}'
 
     def _post(self, path, params, json=None):
         response = self.session.post(

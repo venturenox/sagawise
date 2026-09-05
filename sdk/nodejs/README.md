@@ -9,6 +9,7 @@ Easy to adopt workflow tracking which instantly lets developers bring resilience
 ## Table of Contents
 
 - [Features](#features)
+- [Authentication and webhook signatures](#authentication-and-webhook-signatures)
 - [Installing](#installing)
 - [Importing](#importing)
 - [Start Workflow](#start-workflow)
@@ -17,6 +18,30 @@ Easy to adopt workflow tracking which instantly lets developers bring resilience
 - [Fail](#fail)
 
 ---
+
+## Authentication and webhook signatures
+
+Set `SAGAWISE_API_KEY` alongside `SAGAWISE_URL`; every call then carries
+`Authorization: Bearer <key>`. Sagawise answers 401 `UNAUTHORIZED` without it.
+
+Failure webhooks are signed when the server has `SAGAWISE_WEBHOOK_SECRET`.
+Verify against the raw body before trusting a compensation request:
+
+```js
+const sagawise = require('@venturenox/sagawise');
+
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
+app.post('/failure_report', (req, res) => {
+	if (!sagawise.verify_signature({ secret: process.env.SAGAWISE_WEBHOOK_SECRET, headers: req.headers, rawBody: req.rawBody })) {
+		return res.sendStatus(401);
+	}
+	// compensate ...
+	res.sendStatus(200);
+});
+```
+
+`verify_signature` returns `true` only when `X-Sagawise-Signature` matches
+and `X-Sagawise-Timestamp` is within 5 minutes of now (`toleranceSeconds`).
 
 ## Features
 

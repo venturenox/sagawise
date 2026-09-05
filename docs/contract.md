@@ -97,6 +97,7 @@ Rationale for D2: a re-published message means the consumer gets a fresh copy, s
 - **W3.** Delivery has a timeout (5 s) and is retried with backoff for a bounded period. Delivery is at-least-once; receivers must tolerate duplicates. **[DECISION D3]** (#5)
 - **W4.** Delivery outcome never changes any state. A webhook that can never be delivered is logged and counted; the instance stays FAILED and archived.
 - **W5.** A `from` service with no registered `failure_url` is a startup-time DSL validation error (§7), not a runtime surprise.
+- **W6.** When `SAGAWISE_WEBHOOK_SECRET` is set, every delivery carries `X-Sagawise-Timestamp` (unix seconds, engine clock) and `X-Sagawise-Signature: v1=<hex HMAC-SHA256(secret, "<timestamp>.<body>")>`, the body signed byte for byte. A receiver verifies against the raw body and rejects a timestamp more than 5 minutes from its own clock (replay). With no secret the delivery carries neither header. Several `v1=` values may be present during a secret rotation; any one matching is valid. (phase 8, `docs/threat-model.md` T4)
 
 ## 7. Startup and DSL validation
 
@@ -123,8 +124,10 @@ The process starts serving only if all of this holds, otherwise it logs the reas
 |---|---|---|
 | 200 | Report accepted, or an idempotent duplicate under `is_retry=true` | |
 | 400 | The request is malformed | missing param, unknown `action_type`, `is_retry` not `true`/`false`, body not valid JSON on `publish` |
+| 401 | No valid API key | missing or unknown `Authorization: Bearer <key>` on any endpoint but `/live`, `/ready`, `/health` (phase 8; not sent under `SAGAWISE_AUTH=off`) |
 | 404 | The thing named does not exist | unknown `workflow_name`, unknown `workflow_instance_id`, no task matches `(topic, to)` |
 | 409 | The request is well formed but the state machine forbids it | every 409 code in §2–§4 |
+| 413 | The body exceeds `SAGAWISE_MAX_BODY_BYTES` (default 1 MiB) | an oversized `publish` payload; nothing is stored and the task stays as it was (phase 8) |
 | 500 | Sagawise's own infrastructure failed | Redis or Postgres error, timeout, unexpected reply |
 | 503 | Not ready | `/ready` while a dependency is unreachable |
 
@@ -150,7 +153,11 @@ Errors:
 {"error": "TASK_ALREADY_COMPLETED", "message": "task 1 (payment_done → shipping) is already COMPLETED"}
 ```
 
-Error codes are stable strings: `MISSING_PARAM`, `INVALID_PARAM`, `INVALID_BODY`, `WORKFLOW_NOT_FOUND`, `INSTANCE_NOT_FOUND`, `TASK_NOT_FOUND`, `TASK_NOT_PUBLISHED`, `TASK_ALREADY_PUBLISHED`, `TASK_ALREADY_COMPLETED`, `TASK_ALREADY_FAILED`, `INSTANCE_TERMINAL`, `INTERNAL`.
+Error codes are stable strings: `MISSING_PARAM`, `INVALID_PARAM`, `INVALID_BODY`, `UNAUTHORIZED`, `PAYLOAD_TOO_LARGE`, `WORKFLOW_NOT_FOUND`, `INSTANCE_NOT_FOUND`, `TASK_NOT_FOUND`, `TASK_NOT_PUBLISHED`, `TASK_ALREADY_PUBLISHED`, `TASK_ALREADY_COMPLETED`, `TASK_ALREADY_FAILED`, `INSTANCE_TERMINAL`, `INTERNAL`.
+
+### Authentication and CORS (phase 8)
+
+Every request except the probes carries `Authorization: Bearer <key>`, where the key is one of `SAGAWISE_API_KEYS`. The process refuses to start with no key unless `SAGAWISE_AUTH=off` is set. Cross-origin browser calls are answered only for origins listed in `SAGAWISE_CORS_ORIGINS`, never with credentials, never with a wildcard. `docs/threat-model.md` has the reasoning.
 
 ### Read endpoints
 
@@ -167,7 +174,7 @@ Error codes are stable strings: `MISSING_PARAM`, `INVALID_PARAM`, `INVALID_BODY`
 
 ## 11. Out of scope for v1
 
-Authentication and CORS policy (phase 8). Metrics and structured logs (phase 9). Eviction of archived documents from Redis. Multiple Sagawise replicas sharing one Redis (the atomicity rules make it possible; it is not yet tested). Changing the DSL without a rebuild.
+Per-service authorization (every API key can report on every topic; see the threat model). Metrics and structured logs (phase 9). Eviction of archived documents from Redis. Multiple Sagawise replicas sharing one Redis (the atomicity rules make it possible; it is not yet tested). Changing the DSL without a rebuild.
 
 ---
 

@@ -13,6 +13,8 @@ services:
       KAFKA_SECURITY_PROTOCOL: $KAFKA_SECURITY_PROTOCOL
       KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
       SAGAWISE_URL: http://sagawise:5000
+      SAGAWISE_API_KEY: $SAGAWISE_API_KEY
+      SAGAWISE_WEBHOOK_SECRET: $SAGAWISE_WEBHOOK_SECRET
       WORKFLOW_NAME: order_flow
     networks:
       - shared_network
@@ -33,6 +35,8 @@ services:
       KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
       KAFKA_GROUP_ID: ${UUID}order_flow_payments
       SAGAWISE_URL: http://sagawise:5000
+      SAGAWISE_API_KEY: $SAGAWISE_API_KEY
+      SAGAWISE_WEBHOOK_SECRET: $SAGAWISE_WEBHOOK_SECRET
     networks:
       - shared_network
 
@@ -52,6 +56,8 @@ services:
       KAFKA_EVENT_TOPIC: $KAFKA_EVENT_TOPIC
       KAFKA_GROUP_ID: ${UUID}order_flow_shipping
       SAGAWISE_URL: http://sagawise:5000
+      SAGAWISE_API_KEY: $SAGAWISE_API_KEY
+      SAGAWISE_WEBHOOK_SECRET: $SAGAWISE_WEBHOOK_SECRET
     networks:
       - shared_network
 

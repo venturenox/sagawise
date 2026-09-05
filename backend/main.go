@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 	"wtfsaga/db_connect"
+	"wtfsaga/httpsec"
 	"wtfsaga/instance_engine"
 	"wtfsaga/otel"
 	"wtfsaga/templating"
@@ -34,26 +35,60 @@ func envOr(name, def string) string {
 type server struct {
 	eng *instance_engine.Engine
 	srv *http.Server
+	sec securityConfig
 }
 
-// The `httpTracing` function logs the received request URL path and then calls the next HTTP handler
-// function.
+// httpTracing logs the request path. CORS and authentication are no longer
+// done here: they are the httpsec middleware installed in handler().
 func httpTracing(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Request Received: %s\n", r.URL.Path)
-
-		w.Header().Set("Access-Control-Allow-Origin", "*") // Replace with the React app's URL
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
 		next(w, r)
 	}
+}
+
+// securityConfig is what phase 8 reads from the environment. Every field
+// has a fail-closed default: no key means the API refuses everything, no
+// origin means no cross-origin browser access, no secret means unsigned
+// webhooks (allowed, but warned about). docs/threat-model.md.
+type securityConfig struct {
+	authOff       bool     // SAGAWISE_AUTH=off: serve without API keys
+	apiKeys       []string // SAGAWISE_API_KEYS: comma-separated bearer tokens
+	corsOrigins   []string // SAGAWISE_CORS_ORIGINS: comma-separated exact origins
+	webhookSecret string   // SAGAWISE_WEBHOOK_SECRET: HMAC key for failure webhooks
+	maxBody       int64    // SAGAWISE_MAX_BODY_BYTES: cap on a request body (default 1M)
+}
+
+// loadSecurityConfig reads and validates the phase 8 settings. The process
+// must not serve an unauthenticated API by accident: with no key and no
+// explicit SAGAWISE_AUTH=off it refuses to start.
+func loadSecurityConfig() (securityConfig, error) {
+	c := securityConfig{
+		apiKeys:       httpsec.ParseList(os.Getenv("SAGAWISE_API_KEYS")),
+		corsOrigins:   httpsec.ParseList(os.Getenv("SAGAWISE_CORS_ORIGINS")),
+		webhookSecret: os.Getenv("SAGAWISE_WEBHOOK_SECRET"),
+	}
+	switch mode := os.Getenv("SAGAWISE_AUTH"); mode {
+	case "", "api-key":
+		if len(c.apiKeys) == 0 {
+			return c, errors.New("SAGAWISE_API_KEYS is empty: set at least one API key, or SAGAWISE_AUTH=off to serve an unauthenticated API (development only)")
+		}
+	case "off":
+		c.authOff = true
+	default:
+		return c, fmt.Errorf("SAGAWISE_AUTH=%q: want \"api-key\" (default) or \"off\"", mode)
+	}
+	for _, o := range c.corsOrigins {
+		if o == "*" {
+			return c, errors.New("SAGAWISE_CORS_ORIGINS: \"*\" is not an origin; list the exact origins that may call the API from a browser")
+		}
+	}
+	n, err := httpsec.ParseBytes(envOr("SAGAWISE_MAX_BODY_BYTES", "1M"))
+	if err != nil {
+		return c, fmt.Errorf("SAGAWISE_MAX_BODY_BYTES: %w", err)
+	}
+	c.maxBody = n
+	return c, nil
 }
 
 // The `ping` function in Go responds with a message indicating that the Golang Server is up and
@@ -105,7 +140,17 @@ func (s *server) handler() http.Handler {
 	handleFunc("/ready", httpTracing(s.live))
 	handleFunc("/health", httpTracing(s.live))
 
-	return otelhttp.NewHandler(mux, "/")
+	// Order, outermost first: body cap, CORS (so a refused preflight and a
+	// 401 both carry the right headers), then authentication, then the
+	// routes. The probes are exempt from the key so Kubernetes can reach
+	// them; nothing else is.
+	var h http.Handler = mux
+	if !s.sec.authOff {
+		h = httpsec.NewAPIKeys(s.sec.apiKeys, "/live", "/ready", "/health").Wrap(h)
+	}
+	h = httpsec.NewCORS(s.sec.corsOrigins).Wrap(h)
+	h = httpsec.MaxBody(s.sec.maxBody, h)
+	return otelhttp.NewHandler(h, "/")
 }
 
 // main connects the stores, loads the DSL, starts the reaper, and serves
@@ -123,6 +168,22 @@ func run() error {
 	// ctx is the process lifetime: canceled by SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Configuration is checked before any connection is made, so a bad
+	// value fails in under a second rather than after the Postgres retry.
+	sec, err := loadSecurityConfig()
+	if err != nil {
+		return err
+	}
+	if sec.authOff {
+		log.Println("WARNING: SAGAWISE_AUTH=off: the API accepts unauthenticated requests")
+	}
+	if sec.webhookSecret == "" {
+		log.Println("WARNING: SAGAWISE_WEBHOOK_SECRET is empty: failure webhooks are not signed")
+	}
+	if len(sec.corsOrigins) == 0 {
+		log.Println("CORS: no origins allowed (SAGAWISE_CORS_ORIGINS is empty)")
+	}
 
 	rdb, err := db_connect.DBConnect(ctx)
 	if err != nil {
@@ -146,6 +207,7 @@ func run() error {
 
 	eng := instance_engine.New(rdb, db)
 	eng.Services = &instance_engine.FileRegistry{Path: envOr("SAGAWISE_SERVICES_FILE", "services.json")}
+	eng.WebhookSecret = []byte(sec.webhookSecret)
 	if err := instance_engine.ValidateServices(eng.Services, workflows); err != nil {
 		return err
 	}
@@ -186,7 +248,7 @@ func run() error {
 	defer srvCancel()
 
 	addr := envOr("SAGAWISE_ADDR", ":5000")
-	s := &server{eng: eng}
+	s := &server{eng: eng, sec: sec}
 	s.srv = &http.Server{
 		Addr:        addr,
 		BaseContext: func(_ net.Listener) context.Context { return srvCtx },

@@ -1,0 +1,34 @@
+# Dependency scanning (roadmap phase 8). One PR per ecosystem per week,
+# grouped so a routine bump is one review, not ten. Security updates are
+# not grouped and open immediately.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /sdk/nodejs
+    schedule:
+      interval: weekly
+    groups:
+      npm-deps:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /sdk/python
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

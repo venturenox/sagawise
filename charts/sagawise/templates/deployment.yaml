@@ -45,8 +45,13 @@ spec:
             value: {{ include "snippet.redis.host" . }}
           - name: REDIS_PORT
             value: {{ include "snippet.redis.port" . | quote }}
+          {{- if not .Values.redis.enabled }}
           - name: REDIS_PASSWORD
-            value: {{ include "snippet.redis.password" . | quote }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "sagawise.secretName" . }}
+                key: redis-password
+          {{- end }}
           - name: POSTGRES_HOST
             value: {{ include "snippet.postgresql.host" . }}
           - name: POSTGRES_PORT
@@ -56,12 +61,37 @@ spec:
           - name: POSTGRES_PASSWORD
             valueFrom:
               secretKeyRef:
-                name: sagawise-postgresql
+                {{- if .Values.postgresql.enabled }}
+                name: {{ include "sagawise.postgresql.fullname" . }}
                 key: postgres-password
+                {{- else }}
+                name: {{ include "sagawise.secretName" . }}
+                key: postgres-password
+                {{- end }}
           - name: POSTGRES_DATABASE
             value: {{ include "snippet.postgresql.database" . }}
           - name: SERVER_ENV
             value: development
+          # Phase 8 security settings (docs/threat-model.md).
+          - name: SAGAWISE_AUTH
+            value: {{ .Values.auth.mode | quote }}
+          {{- if ne .Values.auth.mode "off" }}
+          - name: SAGAWISE_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "sagawise.secretName" . }}
+                key: api-keys
+          {{- end }}
+          - name: SAGAWISE_WEBHOOK_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "sagawise.secretName" . }}
+                key: webhook-secret
+                optional: true
+          - name: SAGAWISE_CORS_ORIGINS
+            value: {{ join "," .Values.cors.origins | quote }}
+          - name: SAGAWISE_MAX_BODY_BYTES
+            value: {{ .Values.maxBodyBytes | quote }}
           livenessProbe:
             httpGet:
               path: /live
