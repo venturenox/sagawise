@@ -7,8 +7,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // #nosec G108 -- registers on DefaultServeMux, which only the opt-in SAGAWISE_PPROF_ADDR listener serves; the API uses its own mux
 	"os"
 	"os/signal"
+	"runtime"
 	"time"
 	"wtfsaga/db_connect"
 	"wtfsaga/instance_engine"
@@ -171,6 +173,20 @@ func main() {
 		defer func() {
 			if err := otelShutdown(context.Background()); err != nil {
 				log.Println("OpenTelemetry shutdown error: ", err)
+			}
+		}()
+	}
+
+	// Opt-in profiling endpoint for benchmarks (make bench-profile). Never set
+	// this in production: it exposes /debug/pprof on the given address.
+	if pprofAddr := os.Getenv("SAGAWISE_PPROF_ADDR"); pprofAddr != "" {
+		runtime.SetBlockProfileRate(10000)
+		runtime.SetMutexProfileFraction(10)
+		pprofSrv := &http.Server{Addr: pprofAddr, Handler: http.DefaultServeMux, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			log.Println("pprof listening on " + pprofAddr)
+			if err := pprofSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Println("pprof server error: ", err)
 			}
 		}()
 	}

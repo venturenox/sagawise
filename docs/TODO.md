@@ -66,13 +66,17 @@ Known-failing count at phase 3 close (`make test-status`): see the phase 3 commi
 
 ## Phase 4 — Baseline benchmark
 
-Run once on current main before any fix. Keep the numbers.
+Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/bench_test.go`; `make bench BENCH_LABEL=<label>` writes one immutable run directory under `docs/benchmarks/runs/`; `make bench-compare A= B=` writes a before/after report under `docs/benchmarks/comparisons/`. See `docs/benchmarks/README.md`.
 
-- [ ] Go benchmarks for `UpdateInstance` and the reaper tick.
-- [ ] HTTP load script (k6 or vegeta). Record p50, p99, error rate at fixed event rates.
-- [ ] Measure reaper lag: time from deadline to webhook under load.
-- [ ] Measure Redis commands per request.
-- [ ] Save results in `docs/benchmarks/`.
+- [x] Go benchmarks for `UpdateInstance` and the reaper tick. → start, publish, consume, full saga, reaper tick ×10/×50
+- [x] HTTP load script. Record p50, p99, error rate at fixed event rates. → Go load generator in `cmd/bench`, open-loop, real binary over HTTP
+- [x] Measure reaper lag: time from deadline to webhook under load.
+- [x] Measure Redis commands per request. → `INFO commandstats` delta per saga
+- [x] Measure archive completeness under load (lost `instance_history` rows, #9).
+- [x] Save results in `docs/benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
+- [x] Baseline run recorded before phase 5: `docs/benchmarks/runs/2026-09-05_0133_5321234_baseline`.
+- [x] Bottleneck profile (`make bench-profile`): saturation ramp with pprof at the knee, Redis command breakdown, scaling curves (instances, tasks per workflow, payload size, simultaneous timeouts), contention. Baseline: `runs/2026-09-05_0147_5321234_profile-baseline`. Verdict: Redis CPU is the ceiling (JSON.SET re-index per state write); recursive-descent JSONPath scales with document size; reaper lag is linear in simultaneous timeouts.
+- [ ] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons.
 
 ## Phase 5 — Quick wins PR
 
