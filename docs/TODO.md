@@ -98,7 +98,7 @@ Done on branch `quick-wins` (2026-09-05), stacked on `bench`. Contract tests tha
 
 One design. One PR. Test suite from Phase 3 is the gate.
 
-- [ ] Write a short design note first. Get it agreed.
+- [x] Write a short design note first. Get it agreed. — `docs/design-phase-6.md`, agreed 2026-09-05.
 - [ ] Move tasks under a `$.tasks` array in the Redis doc.
 - [ ] Resolve tasks in Go. No string-built JSONPath. (#12, #13)
 - [ ] Store payloads outside the searchable part of the doc.
