@@ -1,0 +1,146 @@
+{
+  "label": "after-phase-7",
+  "date": "2026-09-05T08:03:55+05:00",
+  "commit": "d13f921",
+  "dirty": false,
+  "env": {
+    "cpu": "AMD Ryzen 9 9900X 12-Core Processor",
+    "cpus": "12",
+    "go": "go1.27.1",
+    "mem": "18416732 kB",
+    "os_arch": "linux/amd64",
+    "postgres": "PostgreSQL 18.6",
+    "postgres_addr": "localhost:5432",
+    "redis": "7.4.7",
+    "redis_addr": "localhost:6379"
+  },
+  "config": {
+    "bench_count": "4",
+    "bench_time": "50x",
+    "duration": "20s",
+    "lag_tasks": "200",
+    "rates": "50,100,200"
+  },
+  "rates": [
+    {
+      "target_sagas_per_sec": 50,
+      "duration": "20s",
+      "sagas_started": 1000,
+      "sagas_completed": 1000,
+      "achieved_sagas_per_sec": 49.98779147169131,
+      "requests": 5000,
+      "errors": 0,
+      "error_rate": 0,
+      "endpoints": {
+        "consume": {
+          "count": 2000,
+          "p50_ms": 0.868971,
+          "p95_ms": 1.039217,
+          "p99_ms": 1.225499,
+          "max_ms": 1.567789
+        },
+        "publish": {
+          "count": 2000,
+          "p50_ms": 0.891591,
+          "p95_ms": 1.094293,
+          "p99_ms": 1.272946,
+          "max_ms": 5.425716
+        },
+        "start": {
+          "count": 1000,
+          "p50_ms": 0.929515,
+          "p95_ms": 1.185371,
+          "p99_ms": 1.396442,
+          "max_ms": 2.224405
+        }
+      },
+      "redis_cmds_per_saga": 32.118,
+      "archive_expected": 1000,
+      "archive_rows": 1000,
+      "archive_missing": 0
+    },
+    {
+      "target_sagas_per_sec": 100,
+      "duration": "20s",
+      "sagas_started": 2000,
+      "sagas_completed": 2000,
+      "achieved_sagas_per_sec": 99.9740811446123,
+      "requests": 10000,
+      "errors": 0,
+      "error_rate": 0,
+      "endpoints": {
+        "consume": {
+          "count": 4000,
+          "p50_ms": 0.867409,
+          "p95_ms": 1.025757,
+          "p99_ms": 1.207872,
+          "max_ms": 1.866273
+        },
+        "publish": {
+          "count": 4000,
+          "p50_ms": 0.875648,
+          "p95_ms": 1.033233,
+          "p99_ms": 1.221838,
+          "max_ms": 3.435066
+        },
+        "start": {
+          "count": 2000,
+          "p50_ms": 0.875679,
+          "p95_ms": 1.114391,
+          "p99_ms": 1.244775,
+          "max_ms": 2.806033
+        }
+      },
+      "redis_cmds_per_saga": 32.0595,
+      "archive_expected": 2000,
+      "archive_rows": 2000,
+      "archive_missing": 0
+    },
+    {
+      "target_sagas_per_sec": 200,
+      "duration": "20s",
+      "sagas_started": 4000,
+      "sagas_completed": 4000,
+      "achieved_sagas_per_sec": 199.95306092896806,
+      "requests": 20000,
+      "errors": 0,
+      "error_rate": 0,
+      "endpoints": {
+        "consume": {
+          "count": 8000,
+          "p50_ms": 0.870044,
+          "p95_ms": 1.059225,
+          "p99_ms": 1.250939,
+          "max_ms": 3.988152
+        },
+        "publish": {
+          "count": 8000,
+          "p50_ms": 0.881019,
+          "p95_ms": 1.067109,
+          "p99_ms": 1.269252,
+          "max_ms": 4.3933
+        },
+        "start": {
+          "count": 4000,
+          "p50_ms": 0.84461,
+          "p95_ms": 1.053667,
+          "p99_ms": 1.246725,
+          "max_ms": 4.554401
+        }
+      },
+      "redis_cmds_per_saga": 32.0305,
+      "archive_expected": 4000,
+      "archive_rows": 4000,
+      "archive_missing": 0
+    }
+  ],
+  "reaper_lag": {
+    "tasks": 200,
+    "received": 200,
+    "missing": 0,
+    "p50_ms": 182.761448,
+    "p99_ms": 1002.457243,
+    "max_ms": 1007.138997,
+    "min_ms": 12.378985
+  }
+}

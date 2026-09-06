@@ -1,0 +1,761 @@
+{
+  "label": "profile-after-phase-7",
+  "date": "2026-09-05T08:14:39+05:00",
+  "commit": "b974cf0",
+  "dirty": true,
+  "env": {
+    "cpu": "AMD Ryzen 9 9900X 12-Core Processor",
+    "cpus": "12",
+    "go": "go1.27.1",
+    "mem": "18416732 kB",
+    "os_arch": "linux/amd64",
+    "postgres": "PostgreSQL 18.6",
+    "postgres_addr": "localhost:5432",
+    "redis": "7.4.7",
+    "redis_addr": "localhost:6379"
+  },
+  "config": {
+    "instances": "10000,100000",
+    "payloads": "100,10000,500000",
+    "pprof_seconds": "10",
+    "ramp_hold": "6s",
+    "ramp_max": "8000",
+    "ramp_start": "200",
+    "timeouts": "100,500,2000"
+  },
+  "ramp": [
+    {
+      "target_sagas_per_sec": 200,
+      "achieved_sagas_per_sec": 199.8286940876964,
+      "requests_per_sec": 999.0875513229527,
+      "requests": 6000,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 1200,
+        "p50_ms": 0.873048,
+        "p95_ms": 1.094431,
+        "p99_ms": 1.199492,
+        "max_ms": 2.442776
+      },
+      "publish": {
+        "count": 2400,
+        "p50_ms": 0.902315,
+        "p95_ms": 1.074867,
+        "p99_ms": 1.208228,
+        "max_ms": 1.635945
+      },
+      "consume": {
+        "count": 2400,
+        "p50_ms": 0.890377,
+        "p95_ms": 1.07203,
+        "p99_ms": 1.18312,
+        "max_ms": 1.864358
+      },
+      "redis_cpu_pct": 24.576921007095628,
+      "redis_ping_p50_ms": 0.269087,
+      "redis_ping_p99_ms": 0.456689,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 300,
+      "achieved_sagas_per_sec": 299.7183255668342,
+      "requests_per_sec": 1498.4692073134156,
+      "requests": 9000,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 1800,
+        "p50_ms": 0.927195,
+        "p95_ms": 1.203124,
+        "p99_ms": 1.425969,
+        "max_ms": 1.817911
+      },
+      "publish": {
+        "count": 3600,
+        "p50_ms": 0.921033,
+        "p95_ms": 1.164792,
+        "p99_ms": 1.341804,
+        "max_ms": 1.749774
+      },
+      "consume": {
+        "count": 3600,
+        "p50_ms": 0.903157,
+        "p95_ms": 1.168241,
+        "p99_ms": 1.348203,
+        "max_ms": 1.889853
+      },
+      "redis_cpu_pct": 31.54732217054316,
+      "redis_ping_p50_ms": 0.286224,
+      "redis_ping_p99_ms": 0.534856,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 450,
+      "achieved_sagas_per_sec": 449.6269434009928,
+      "requests_per_sec": 2247.7274542630507,
+      "requests": 13500,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 2700,
+        "p50_ms": 0.967467,
+        "p95_ms": 1.269161,
+        "p99_ms": 1.448733,
+        "max_ms": 2.38994
+      },
+      "publish": {
+        "count": 5400,
+        "p50_ms": 0.962437,
+        "p95_ms": 1.226212,
+        "p99_ms": 1.410503,
+        "max_ms": 2.353486
+      },
+      "consume": {
+        "count": 5400,
+        "p50_ms": 0.960204,
+        "p95_ms": 1.264907,
+        "p99_ms": 1.440041,
+        "max_ms": 2.536398
+      },
+      "redis_cpu_pct": 41.2009441356398,
+      "redis_ping_p50_ms": 0.300499,
+      "redis_ping_p99_ms": 0.543298,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 675,
+      "achieved_sagas_per_sec": 674.4286200265418,
+      "requests_per_sec": 3371.4963971357033,
+      "requests": 20250,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 4050,
+        "p50_ms": 1.02045,
+        "p95_ms": 1.367644,
+        "p99_ms": 1.596179,
+        "max_ms": 2.708145
+      },
+      "publish": {
+        "count": 8100,
+        "p50_ms": 1.028303,
+        "p95_ms": 1.353647,
+        "p99_ms": 1.558552,
+        "max_ms": 2.637484
+      },
+      "consume": {
+        "count": 8100,
+        "p50_ms": 1.000116,
+        "p95_ms": 1.342616,
+        "p99_ms": 1.550743,
+        "max_ms": 2.737299
+      },
+      "redis_cpu_pct": 53.74345070175494,
+      "redis_ping_p50_ms": 0.325307,
+      "redis_ping_p99_ms": 0.67334,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 1012,
+      "achieved_sagas_per_sec": 1009.9051796413489,
+      "requests_per_sec": 5047.967040440391,
+      "requests": 30325,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 6065,
+        "p50_ms": 1.162749,
+        "p95_ms": 1.608788,
+        "p99_ms": 1.894764,
+        "max_ms": 4.142037
+      },
+      "publish": {
+        "count": 12130,
+        "p50_ms": 1.174517,
+        "p95_ms": 1.613709,
+        "p99_ms": 1.88952,
+        "max_ms": 6.746574
+      },
+      "consume": {
+        "count": 12130,
+        "p50_ms": 1.167655,
+        "p95_ms": 1.588335,
+        "p99_ms": 1.874773,
+        "max_ms": 4.377905
+      },
+      "redis_cpu_pct": 62.377924311838825,
+      "redis_ping_p50_ms": 0.389294,
+      "redis_ping_p99_ms": 0.736819,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 1518,
+      "achieved_sagas_per_sec": 1509.1121967860988,
+      "requests_per_sec": 7541.312423142886,
+      "requests": 45335,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 9067,
+        "p50_ms": 1.376529,
+        "p95_ms": 2.051193,
+        "p99_ms": 2.503425,
+        "max_ms": 3.751191
+      },
+      "publish": {
+        "count": 18134,
+        "p50_ms": 1.377819,
+        "p95_ms": 2.035352,
+        "p99_ms": 2.436222,
+        "max_ms": 4.485443
+      },
+      "consume": {
+        "count": 18134,
+        "p50_ms": 1.365329,
+        "p95_ms": 2.032587,
+        "p99_ms": 2.431701,
+        "max_ms": 5.185314
+      },
+      "redis_cpu_pct": 70.63289530060523,
+      "redis_ping_p50_ms": 0.46194,
+      "redis_ping_p99_ms": 1.1178,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 2277,
+      "achieved_sagas_per_sec": 2167.1626729096893,
+      "requests_per_sec": 10826.830616165065,
+      "requests": 65105,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 13021,
+        "p50_ms": 1.734645,
+        "p95_ms": 2.671264,
+        "p99_ms": 3.683813,
+        "max_ms": 56.937191
+      },
+      "publish": {
+        "count": 26042,
+        "p50_ms": 1.743679,
+        "p95_ms": 2.681425,
+        "p99_ms": 3.487814,
+        "max_ms": 56.13771
+      },
+      "consume": {
+        "count": 26042,
+        "p50_ms": 1.737872,
+        "p95_ms": 2.667415,
+        "p99_ms": 3.372217,
+        "max_ms": 51.742263
+      },
+      "redis_cpu_pct": 75.4841708138537,
+      "redis_ping_p50_ms": 0.583471,
+      "redis_ping_p99_ms": 1.662671,
+      "pass": true
+    },
+    {
+      "target_sagas_per_sec": 3415,
+      "achieved_sagas_per_sec": 2950.836330581139,
+      "requests_per_sec": 14739.453850609723,
+      "requests": 88655,
+      "errors": 0,
+      "error_rate": 0,
+      "start": {
+        "count": 17731,
+        "p50_ms": 2.116958,
+        "p95_ms": 3.483758,
+        "p99_ms": 5.039699,
+        "max_ms": 9.203464
+      },
+      "publish": {
+        "count": 35462,
+        "p50_ms": 2.164948,
+        "p95_ms": 3.473212,
+        "p99_ms": 5.037858,
+        "max_ms": 9.233908
+      },
+      "consume": {
+        "count": 35462,
+        "p50_ms": 2.153335,
+        "p95_ms": 3.419718,
+        "p99_ms": 4.946366,
+        "max_ms": 9.14616
+      },
+      "redis_cpu_pct": 84.63189739492965,
+      "redis_ping_p50_ms": 0.726857,
+      "redis_ping_p99_ms": 2.070143,
+      "pass": false
+    }
+  ],
+  "knee_sagas_per_sec": 2277,
+  "knee_reason": "achieved 2951 \u003c 90% of target 3415 (load generator or server saturated)",
+  "pprof_top": {
+    "block": "File: sagawise\nBuild ID: b246a40b6e92940ee886f294e413a970092b1224\nType: delay\nTime: 2026-09-05 08:15:57 PKT\nShowing nodes accounting for 310.25s, 99.51% of 311.78s total\nDropped 132 nodes (cum \u003c= 1.56s)\n      flat  flat%   sum%        cum   cum%\n   239.15s 76.71% 76.71%    239.15s 76.71%  runtime.selectgo\n    62.14s 19.93% 96.64%     62.14s 19.93%  runtime.chansend1\n     5.51s  1.77% 98.40%      5.51s  1.77%  sync.(*WaitGroup).Wait\n     3.45s  1.11% 99.51%      3.45s  1.11%  sync.(*Mutex).Lock (inline)\n         0     0% 99.51%      3.34s  1.07%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.(*middleware).serveHTTP\n         0     0% 99.51%      3.34s  1.07%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.NewMiddleware.func2.1\n         0     0% 99.51%     74.30s 23.83%  go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).process.func1\n         0     0% 99.51%      2.37s  0.76%  log.(*Logger).output\n         0     0% 99.51%      2.37s  0.76%  log.Printf\n         0     0% 99.51%      3.27s  1.05%  main.httpTracing.func1\n         0     0% 99.51%     13.40s  4.30%  net/http.(*ServeMux).ServeHTTP\n         0     0% 99.51%     15.11s  4.85%  net/http.(*Server).Serve.gowrap3\n         0     0% 99.51%     15.11s  4.85%  net/http.(*conn).serve\n         0     0% 99.51%     13.47s  4.32%  net/http.HandlerFunc.ServeHTTP\n         0     0% 99.51%     13.47s  4.32%  net/http.serverHandler.ServeHTTP\n         0     0% 99.51%     10.13s  3.25%  net/http/pprof.Profile\n         0     0% 99.51%     10.12s  3.25%  net/http/pprof.sleep\n         0     0% 99.51%     74.24s 23.81%  wtfsaga/instance_engine.(*Engine).StartDeadlineReaper.func1\n         0     0% 99.51%    148.05s 47.48%  wtfsaga/instance_engine.(*Worker).Start.func1\n         0     0% 99.51%     67.65s 21.70%  wtfsaga/instance_engine.(*Worker).tick\n",
+    "cpu": "File: sagawise\nBuild ID: b246a40b6e92940ee886f294e413a970092b1224\nType: cpu\nTime: 2026-09-05 08:15:47 PKT\nDuration: 10s, Total samples = 27.42s (274.17%)\nShowing nodes accounting for 15.40s, 56.16% of 27.42s total\nDropped 836 nodes (cum \u003c= 0.14s)\nShowing top 25 nodes out of 254\n      flat  flat%   sum%        cum   cum%\n     6.40s 23.34% 23.34%      6.40s 23.34%  internal/runtime/syscall/linux.Syscall6\n     4.56s 16.63% 39.97%      4.56s 16.63%  runtime.futex\n     0.44s  1.60% 41.58%      0.44s  1.60%  runtime.usleep\n     0.43s  1.57% 43.14%      0.43s  1.57%  runtime.procyieldAsm\n     0.38s  1.39% 44.53%      0.43s  1.57%  runtime.step\n     0.30s  1.09% 45.62%      0.39s  1.42%  runtime.scanObject\n     0.28s  1.02% 46.64%      0.28s  1.02%  runtime.memmove\n     0.21s  0.77% 47.41%      1.13s  4.12%  runtime.lock2\n     0.20s  0.73% 48.14%      0.20s  0.73%  time.runtimeNow\n     0.19s  0.69% 48.83%      0.82s  2.99%  runtime.pcvalue\n     0.19s  0.69% 49.53%      0.19s  0.69%  runtime.write1\n     0.18s  0.66% 50.18%      0.46s  1.68%  runtime.(*unwinder).resolveInternal\n     0.16s  0.58% 50.77%      0.16s  0.58%  runtime.nextFreeFast (inline)\n     0.16s  0.58% 51.35%      0.16s  0.58%  runtime.osyield\n     0.14s  0.51% 51.86%      0.15s  0.55%  runtime.casgstatus\n     0.14s  0.51% 52.37%      0.14s  0.51%  runtime.memclrNoHeapPointers\n     0.13s  0.47% 52.84%      0.43s  1.57%  internal/poll.runtime_pollSetDeadline\n     0.13s  0.47% 53.32%      0.58s  2.12%  runtime.runqgrab\n     0.12s  0.44% 53.76%      0.14s  0.51%  runtime.findfunc\n     0.12s  0.44% 54.19%      1.44s  5.25%  runtime.mallocgc\n     0.12s  0.44% 54.63%      0.18s  0.66%  runtime.mallocgcSmallScanNoHeaderSC2\n     0.12s  0.44% 55.07%      0.79s  2.88%  runtime.stealWork\n     0.11s   0.4% 55.47%      7.27s 26.51%  runtime.findRunnable\n     0.10s  0.36% 55.84%      0.91s  3.32%  runtime.tracebackPCs\n     0.09s  0.33% 56.16%     13.62s 49.67%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.(*middleware).serveHTTP\n",
+    "cpu-cumulative": "File: sagawise\nBuild ID: b246a40b6e92940ee886f294e413a970092b1224\nType: cpu\nTime: 2026-09-05 08:15:47 PKT\nDuration: 10s, Total samples = 27.42s (274.17%)\nShowing nodes accounting for 11.62s, 42.38% of 27.42s total\nDropped 836 nodes (cum \u003c= 0.14s)\nShowing top 40 nodes out of 254\n      flat  flat%   sum%        cum   cum%\n     0.04s  0.15%  0.15%     17.86s 65.13%  net/http.(*conn).serve\n     0.01s 0.036%  0.18%     13.63s 49.71%  net/http.HandlerFunc.ServeHTTP\n         0     0%  0.18%     13.63s 49.71%  net/http.serverHandler.ServeHTTP\n     0.09s  0.33%  0.51%     13.62s 49.67%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.(*middleware).serveHTTP\n         0     0%  0.51%     13.62s 49.67%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.NewMiddleware.func2.1\n     0.02s 0.073%  0.58%     12.23s 44.60%  net/http.(*ServeMux).ServeHTTP\n     0.04s  0.15%  0.73%     12.09s 44.09%  main.httpTracing.func1\n     0.07s  0.26%  0.98%      8.59s 31.33%  wtfsaga/instance_engine.(*Engine).UpdateInstance\n     0.01s 0.036%  1.02%      8.41s 30.67%  github.com/redis/go-redis/v9.(*Client).Process\n     0.03s  0.11%  1.13%      8.40s 30.63%  github.com/redis/go-redis/v9.(*hooksMixin).processHook (inline)\n     0.03s  0.11%  1.24%      8.35s 30.45%  github.com/redis/go-redis/extra/redisotel/v9.(*tracingHook).ProcessHook.func1\n     0.01s 0.036%  1.28%      7.74s 28.23%  runtime.mcall\n     0.01s 0.036%  1.31%      7.74s 28.23%  runtime.schedule\n         0     0%  1.31%      7.66s 27.94%  runtime.park_m\n     0.11s   0.4%  1.71%      7.27s 26.51%  runtime.findRunnable\n     6.40s 23.34% 25.05%      6.40s 23.34%  internal/runtime/syscall/linux.Syscall6\n     0.02s 0.073% 25.13%      6.12s 22.32%  github.com/redis/go-redis/extra/redisotel/v9.(*metricsHook).ProcessHook.func1\n         0     0% 25.13%      5.98s 21.81%  syscall.Syscall\n     0.02s 0.073% 25.20%      5.96s 21.74%  syscall.RawSyscall6\n         0     0% 25.20%      5.92s 21.59%  internal/poll.ignoringEINTRIO (inline)\n         0     0% 25.20%      5.53s 20.17%  github.com/redis/go-redis/v9.(*baseClient).process\n         0     0% 25.20%      5.53s 20.17%  github.com/redis/go-redis/v9.(*baseClient).withConn\n         0     0% 25.20%      5.51s 20.09%  github.com/redis/go-redis/v9.(*baseClient).processCommand\n     0.01s 0.036% 25.24%      5.48s 19.99%  github.com/redis/go-redis/v9.(*baseClient)._process\n         0     0% 25.24%      5.48s 19.99%  github.com/redis/go-redis/v9.(*baseClient).processWithRetry\n     0.02s 0.073% 25.31%      4.99s 18.20%  internal/poll.(*FD).Write\n         0     0% 25.31%      4.92s 17.94%  syscall.Write (inline)\n         0     0% 25.31%      4.92s 17.94%  syscall.write\n         0     0% 25.31%      4.83s 17.61%  wtfsaga/instance_engine.(*Engine).jsonGet\n     0.01s 0.036% 25.35%      4.77s 17.40%  bufio.(*Writer).Flush\n     4.56s 16.63% 41.98%      4.56s 16.63%  runtime.futex\n     0.06s  0.22% 42.20%      4.42s 16.12%  github.com/redis/go-redis/v9.(*baseClient)._process.func1\n     0.02s 0.073% 42.27%      4.28s 15.61%  net.(*conn).Write\n         0     0% 42.27%      4.26s 15.54%  net.(*netFD).Write\n         0     0% 42.27%      4.20s 15.32%  github.com/redis/go-redis/v9.cmdable.JSONGet\n     0.01s 0.036% 42.30%      3.73s 13.60%  wtfsaga/instance_engine.(*Engine).transition\n         0     0% 42.30%      3.68s 13.42%  wtfsaga/instance_engine.(*Engine).readTaskIdentity\n         0     0% 42.30%      3.49s 12.73%  github.com/redis/go-redis/v9.(*Script).Run\n     0.02s 0.073% 42.38%      3.48s 12.69%  github.com/redis/go-redis/v9.(*Script).EvalSha\n         0     0% 42.38%      3.46s 12.62%  github.com/redis/go-redis/v9.cmdable.EvalSha\n",
+    "goroutine": "File: sagawise\nBuild ID: b246a40b6e92940ee886f294e413a970092b1224\nType: goroutine\nTime: 2026-09-05 08:15:57 PKT\nShowing nodes accounting for 58, 93.55% of 62 total\nShowing top 25 nodes out of 134\n      flat  flat%   sum%        cum   cum%\n        50 80.65% 80.65%         50 80.65%  runtime.gopark\n         3  4.84% 85.48%          3  4.84%  syscall.Syscall\n         1  1.61% 87.10%          1  1.61%  encoding/json/jsontext.(*decoderState).reset\n         1  1.61% 88.71%          1  1.61%  go.opentelemetry.io/otel/sdk/trace.(*recordingSpan).IsRecording\n         1  1.61% 90.32%          1  1.61%  runtime.goroutineProfileWithLabels\n         1  1.61% 91.94%          1  1.61%  runtime.notetsleepg\n         1  1.61% 93.55%          1  1.61%  syscall.Syscall6\n         0     0% 93.55%         33 53.23%  bufio.(*Reader).Peek\n         0     0% 93.55%         33 53.23%  bufio.(*Reader).fill\n         0     0% 93.55%          1  1.61%  bufio.(*Writer).Flush\n         0     0% 93.55%          1  1.61%  encoding/json.Unmarshal\n         0     0% 93.55%          1  1.61%  encoding/json/jsontext.export.GetBufferedDecoder (inline)\n         0     0% 93.55%          1  1.61%  encoding/json/jsontext.getBufferedDecoder\n         0     0% 93.55%          1  1.61%  encoding/json/v2.Unmarshal\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5.(*Conn).Exec\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5.(*Conn).exec\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5.(*Conn).execPrepared\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn.(*PgConn).ExecStatement\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn.(*PgConn).execExtendedSuffix\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn.(*PgConn).peekMessage\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn.(*PgConn).receiveMessage\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn.(*ResultReader).readUntilRowDescription\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn.(*ResultReader).receiveMessage\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgconn/internal/bgreader.(*BGReader).Read\n         0     0% 93.55%          1  1.61%  github.com/jackc/pgx/v5/pgproto3.(*Frontend).Receive\n",
+    "heap": "File: sagawise\nBuild ID: b246a40b6e92940ee886f294e413a970092b1224\nType: inuse_space\nTime: 2026-09-05 08:15:57 PKT\nShowing nodes accounting for 7386.37kB, 100% of 7386.37kB total\nShowing top 25 nodes out of 47\n      flat  flat%   sum%        cum   cum%\n 3586.99kB 48.56% 48.56%  3586.99kB 48.56%  runtime.mallocgc\n 1056.33kB 14.30% 62.86%  1056.33kB 14.30%  bufio.NewWriterSize (inline)\n  669.43kB  9.06% 71.93%   669.43kB  9.06%  go.opentelemetry.io/otel/sdk/log.(*BatchProcessor).process.func1\n  528.17kB  7.15% 79.08%   528.17kB  7.15%  bufio.NewReaderSize (inline)\n  521.05kB  7.05% 86.13%   521.05kB  7.05%  encoding/xml.map.init.0\n  512.38kB  6.94% 93.07%   512.38kB  6.94%  github.com/jackc/pgx/v5/pgproto3.(*Query).Encode\n  512.02kB  6.93%   100%   512.02kB  6.93%  context.(*cancelCtx).propagateCancel\n         0     0%   100%   512.02kB  6.93%  context.WithCancel\n         0     0%   100%   512.02kB  6.93%  context.withCancel (inline)\n         0     0%   100%   521.05kB  7.05%  encoding/xml.init\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5.(*Conn).Exec\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5.(*Conn).exec\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5.(*Conn).execSimpleProtocol\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5/pgconn.(*PgConn).Exec\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5/pgproto3.(*Frontend).SendQuery\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5/pgxpool.(*Conn).Exec\n         0     0%   100%   512.38kB  6.94%  github.com/jackc/pgx/v5/pgxpool.(*Pool).Exec\n         0     0%   100%  1584.50kB 21.45%  github.com/redis/go-redis/v9/internal/pool.(*ConnPool).dialConn\n         0     0%   100%  1584.50kB 21.45%  github.com/redis/go-redis/v9/internal/pool.(*ConnPool).newConn\n         0     0%   100%  1584.50kB 21.45%  github.com/redis/go-redis/v9/internal/pool.(*ConnPool).queuedNewConn.func2\n         0     0%   100%  1584.50kB 21.45%  github.com/redis/go-redis/v9/internal/pool.NewConnWithBufferSize\n         0     0%   100%   528.17kB  7.15%  github.com/redis/go-redis/v9/internal/proto.NewReaderSize (inline)\n         0     0%   100%   512.38kB  6.94%  main.main\n         0     0%   100%   512.38kB  6.94%  main.run\n         0     0%   100%   512.02kB  6.93%  net/http.(*conn).readRequest\n",
+    "mutex": "File: sagawise\nBuild ID: b246a40b6e92940ee886f294e413a970092b1224\nType: delay\nTime: 2026-09-05 08:15:57 PKT\nShowing nodes accounting for 136.83s, 100% of 136.83s total\nDropped 385 nodes (cum \u003c= 0.68s)\nShowing top 25 nodes out of 81\n      flat  flat%   sum%        cum   cum%\n   127.08s 92.87% 92.87%    127.08s 92.87%  runtime.unlock (partial-inline)\n     5.80s  4.24% 97.12%      5.80s  4.24%  runtime._LostContendedRuntimeLock\n     3.95s  2.88%   100%      4.06s  2.97%  sync.(*Mutex).Unlock (partial-inline)\n         0     0%   100%      3.76s  2.75%  _.goready.func1\n         0     0%   100%      1.71s  1.25%  github.com/redis/go-redis/extra/redisotel/v9.(*metricsHook).ProcessHook.func1\n         0     0%   100%      1.73s  1.26%  github.com/redis/go-redis/extra/redisotel/v9.(*tracingHook).ProcessHook.func1\n         0     0%   100%      1.73s  1.26%  github.com/redis/go-redis/v9.(*Client).Process\n         0     0%   100%      0.71s  0.52%  github.com/redis/go-redis/v9.(*Script).EvalSha\n         0     0%   100%      0.71s  0.52%  github.com/redis/go-redis/v9.(*Script).Run\n         0     0%   100%      1.70s  1.24%  github.com/redis/go-redis/v9.(*baseClient)._process\n         0     0%   100%      1.70s  1.24%  github.com/redis/go-redis/v9.(*baseClient).process\n         0     0%   100%      1.70s  1.24%  github.com/redis/go-redis/v9.(*baseClient).processCommand\n         0     0%   100%      1.70s  1.24%  github.com/redis/go-redis/v9.(*baseClient).processWithRetry\n         0     0%   100%      1.72s  1.26%  github.com/redis/go-redis/v9.(*baseClient).withConn\n         0     0%   100%      1.73s  1.26%  github.com/redis/go-redis/v9.(*hooksMixin).processHook (inline)\n         0     0%   100%      0.71s  0.52%  github.com/redis/go-redis/v9.cmdable.EvalSha\n         0     0%   100%      0.82s   0.6%  github.com/redis/go-redis/v9.cmdable.JSONGet\n         0     0%   100%      0.71s  0.52%  github.com/redis/go-redis/v9.cmdable.eval\n         0     0%   100%      5.70s  4.17%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.(*middleware).serveHTTP\n         0     0%   100%      5.70s  4.17%  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp.NewMiddleware.func2.1\n         0     0%   100%      2.63s  1.93%  internal/poll.(*FD).SetReadDeadline\n         0     0%   100%      0.83s   0.6%  internal/poll.ignoringEINTRIO (inline)\n         0     0%   100%      2.75s  2.01%  internal/poll.runtime_pollSetDeadline\n         0     0%   100%      2.75s  2.01%  internal/poll.setDeadlineImpl\n         0     0%   100%      3.08s  2.25%  log.(*Logger).output\n"
+  },
+  "commands": [
+    {
+      "endpoint": "start",
+      "command": "json.get",
+      "calls_per_request": 1.38,
+      "usec_per_call": 6.391304347826087
+    },
+    {
+      "endpoint": "start",
+      "command": "json.set",
+      "calls_per_request": 1,
+      "usec_per_call": 38.8
+    },
+    {
+      "endpoint": "start",
+      "command": "hdel",
+      "calls_per_request": 0.38,
+      "usec_per_call": 0.18421052631578946
+    },
+    {
+      "endpoint": "start",
+      "command": "zrem",
+      "calls_per_request": 0.38,
+      "usec_per_call": 0.7763157894736842
+    },
+    {
+      "endpoint": "publish",
+      "command": "json.get",
+      "calls_per_request": 2,
+      "usec_per_call": 12.835
+    },
+    {
+      "endpoint": "publish",
+      "command": "json.set",
+      "calls_per_request": 1,
+      "usec_per_call": 34.51
+    },
+    {
+      "endpoint": "publish",
+      "command": "zadd",
+      "calls_per_request": 1,
+      "usec_per_call": 3.035
+    },
+    {
+      "endpoint": "publish",
+      "command": "evalsha",
+      "calls_per_request": 1,
+      "usec_per_call": 89.28
+    },
+    {
+      "endpoint": "publish",
+      "command": "json.merge",
+      "calls_per_request": 1,
+      "usec_per_call": 13.75
+    },
+    {
+      "endpoint": "consume",
+      "command": "json.get",
+      "calls_per_request": 2,
+      "usec_per_call": 12.445
+    },
+    {
+      "endpoint": "consume",
+      "command": "json.merge",
+      "calls_per_request": 1,
+      "usec_per_call": 37.535
+    },
+    {
+      "endpoint": "consume",
+      "command": "zrem",
+      "calls_per_request": 1,
+      "usec_per_call": 1.72
+    },
+    {
+      "endpoint": "consume",
+      "command": "evalsha",
+      "calls_per_request": 1,
+      "usec_per_call": 76.365
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "zrem",
+      "calls_per_request": 2,
+      "usec_per_call": 2.6325
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "zadd",
+      "calls_per_request": 2,
+      "usec_per_call": 1.5975
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "evalsha",
+      "calls_per_request": 1.025,
+      "usec_per_call": 90.09268292682927
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "hdel",
+      "calls_per_request": 1,
+      "usec_per_call": 0.27
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "json.merge",
+      "calls_per_request": 2,
+      "usec_per_call": 21.9175
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "zrangebyscore",
+      "calls_per_request": 0.025,
+      "usec_per_call": 9.6
+    },
+    {
+      "endpoint": "consume(final)",
+      "command": "json.get",
+      "calls_per_request": 3,
+      "usec_per_call": 11.818333333333333
+    }
+  ],
+  "instances_in_redis": [
+    {
+      "level": "0",
+      "endpoints": {
+        "consume": {
+          "count": 1600,
+          "p50_ms": 0.864886,
+          "p95_ms": 1.046749,
+          "p99_ms": 1.18501,
+          "max_ms": 1.828915
+        },
+        "publish": {
+          "count": 1600,
+          "p50_ms": 0.870858,
+          "p95_ms": 1.037707,
+          "p99_ms": 1.205825,
+          "max_ms": 1.996251
+        },
+        "start": {
+          "count": 800,
+          "p50_ms": 0.857299,
+          "p95_ms": 1.052402,
+          "p99_ms": 1.234162,
+          "max_ms": 1.41864
+        }
+      },
+      "extra": {
+        "get_p50_ms": 0.516834,
+        "list_p50_ms": 1.231937,
+        "list_p99_ms": 1.424409
+      }
+    },
+    {
+      "level": "10000",
+      "endpoints": {
+        "consume": {
+          "count": 1600,
+          "p50_ms": 0.889413,
+          "p95_ms": 1.069093,
+          "p99_ms": 1.188629,
+          "max_ms": 1.709366
+        },
+        "publish": {
+          "count": 1600,
+          "p50_ms": 0.899115,
+          "p95_ms": 1.076361,
+          "p99_ms": 1.223064,
+          "max_ms": 1.525151
+        },
+        "start": {
+          "count": 800,
+          "p50_ms": 0.881598,
+          "p95_ms": 1.116925,
+          "p99_ms": 1.264969,
+          "max_ms": 1.471545
+        }
+      },
+      "extra": {
+        "get_p50_ms": 0.516353,
+        "list_p50_ms": 1.460735,
+        "list_p99_ms": 1.825947,
+        "redis_bytes_per_instance": 1430.1904
+      }
+    },
+    {
+      "level": "100000",
+      "endpoints": {
+        "consume": {
+          "count": 1600,
+          "p50_ms": 0.914615,
+          "p95_ms": 1.096501,
+          "p99_ms": 1.226341,
+          "max_ms": 4.15758
+        },
+        "publish": {
+          "count": 1600,
+          "p50_ms": 0.937669,
+          "p95_ms": 1.128448,
+          "p99_ms": 1.260679,
+          "max_ms": 2.218456
+        },
+        "start": {
+          "count": 800,
+          "p50_ms": 0.92835,
+          "p95_ms": 1.166107,
+          "p99_ms": 1.322988,
+          "max_ms": 1.607627
+        }
+      },
+      "extra": {
+        "get_p50_ms": 0.522506,
+        "list_p50_ms": 2.472995,
+        "list_p99_ms": 2.796735,
+        "redis_bytes_per_instance": 1213.52088
+      }
+    }
+  ],
+  "tasks_per_workflow": [
+    {
+      "level": "2",
+      "endpoints": {
+        "consume": {
+          "count": 3200,
+          "p50_ms": 0.8438,
+          "p95_ms": 1.003969,
+          "p99_ms": 1.165064,
+          "max_ms": 3.722362
+        },
+        "publish": {
+          "count": 3200,
+          "p50_ms": 0.851279,
+          "p95_ms": 1.022291,
+          "p99_ms": 1.17331,
+          "max_ms": 3.001019
+        },
+        "start": {
+          "count": 1600,
+          "p50_ms": 0.808839,
+          "p95_ms": 1.004453,
+          "p99_ms": 1.133415,
+          "max_ms": 3.176188
+        }
+      },
+      "extra": {
+        "error_rate": 0,
+        "sagas_per_sec": 199.87939512156652
+      }
+    },
+    {
+      "level": "10",
+      "endpoints": {
+        "consume": {
+          "count": 3810,
+          "p50_ms": 0.87762,
+          "p95_ms": 1.043056,
+          "p99_ms": 1.175467,
+          "max_ms": 2.916748
+        },
+        "publish": {
+          "count": 3810,
+          "p50_ms": 0.906725,
+          "p95_ms": 1.08336,
+          "p99_ms": 1.233785,
+          "max_ms": 3.429467
+        },
+        "start": {
+          "count": 381,
+          "p50_ms": 0.90725,
+          "p95_ms": 1.131238,
+          "p99_ms": 1.261062,
+          "max_ms": 2.636708
+        }
+      },
+      "extra": {
+        "error_rate": 0,
+        "sagas_per_sec": 47.50638606122064
+      }
+    },
+    {
+      "level": "50",
+      "endpoints": {
+        "consume": {
+          "count": 4000,
+          "p50_ms": 0.938136,
+          "p95_ms": 1.132244,
+          "p99_ms": 1.283966,
+          "max_ms": 5.034403
+        },
+        "publish": {
+          "count": 4000,
+          "p50_ms": 0.999364,
+          "p95_ms": 1.187437,
+          "p99_ms": 1.36038,
+          "max_ms": 3.274553
+        },
+        "start": {
+          "count": 80,
+          "p50_ms": 1.068768,
+          "p95_ms": 1.319918,
+          "p99_ms": 1.470079,
+          "max_ms": 1.482072
+        }
+      },
+      "extra": {
+        "error_rate": 0,
+        "sagas_per_sec": 9.77994090543324
+      }
+    }
+  ],
+  "payload_size": [
+    {
+      "level": "100B",
+      "endpoints": {
+        "consume": {
+          "count": 800,
+          "p50_ms": 0.902475,
+          "p95_ms": 1.078834,
+          "p99_ms": 1.281389,
+          "max_ms": 5.53345
+        },
+        "publish": {
+          "count": 800,
+          "p50_ms": 0.924717,
+          "p95_ms": 1.136935,
+          "p99_ms": 1.357885,
+          "max_ms": 1.470125
+        },
+        "start": {
+          "count": 400,
+          "p50_ms": 0.952918,
+          "p95_ms": 1.235339,
+          "p99_ms": 1.392875,
+          "max_ms": 1.59257
+        }
+      },
+      "extra": {
+        "error_rate": 0
+      }
+    },
+    {
+      "level": "10000B",
+      "endpoints": {
+        "consume": {
+          "count": 800,
+          "p50_ms": 0.889683,
+          "p95_ms": 1.058492,
+          "p99_ms": 1.18445,
+          "max_ms": 1.285082
+        },
+        "publish": {
+          "count": 800,
+          "p50_ms": 0.96213,
+          "p95_ms": 1.173244,
+          "p99_ms": 1.302651,
+          "max_ms": 1.648935
+        },
+        "start": {
+          "count": 400,
+          "p50_ms": 0.980623,
+          "p95_ms": 1.249335,
+          "p99_ms": 1.446887,
+          "max_ms": 1.601709
+        }
+      },
+      "extra": {
+        "error_rate": 0
+      }
+    },
+    {
+      "level": "500000B",
+      "endpoints": {
+        "consume": {
+          "count": 800,
+          "p50_ms": 1.138213,
+          "p95_ms": 1.377172,
+          "p99_ms": 1.49355,
+          "max_ms": 1.742531
+        },
+        "publish": {
+          "count": 800,
+          "p50_ms": 2.212286,
+          "p95_ms": 2.617684,
+          "p99_ms": 2.925457,
+          "max_ms": 3.590174
+        },
+        "start": {
+          "count": 400,
+          "p50_ms": 1.012404,
+          "p95_ms": 1.26466,
+          "p99_ms": 1.449166,
+          "max_ms": 1.543325
+        }
+      },
+      "extra": {
+        "error_rate": 0
+      }
+    }
+  ],
+  "simultaneous_timeouts": [
+    {
+      "tasks": 100,
+      "received": 100,
+      "missing": 0,
+      "p50_ms": 647.773911,
+      "p99_ms": 652.0049,
+      "max_ms": 652.00734,
+      "min_ms": 644.048617
+    },
+    {
+      "tasks": 500,
+      "received": 500,
+      "missing": 0,
+      "p50_ms": 480.392139,
+      "p99_ms": 500.767806,
+      "max_ms": 501.310397,
+      "min_ms": 459.517491
+    },
+    {
+      "tasks": 2000,
+      "received": 2000,
+      "missing": 0,
+      "p50_ms": -876.116387,
+      "p99_ms": 128.044439,
+      "max_ms": 129.90021,
+      "min_ms": -958.59366
+    }
+  ],
+  "contention": {
+    "rounds": 10,
+    "same_instance": {
+      "count": 400,
+      "p50_ms": 3.427091,
+      "p95_ms": 5.352769,
+      "p99_ms": 6.168888,
+      "max_ms": 7.837011
+    },
+    "separate_instances": {
+      "count": 400,
+      "p50_ms": 3.272735,
+      "p95_ms": 5.488491,
+      "p99_ms": 6.216829,
+      "max_ms": 6.633757
+    }
+  },
+  "findings": [
+    "Knee: 2277 sagas/s (~11385 requests/s). The next step, 3415 sagas/s, breached: achieved 2951 \u003c 90% of target 3415 (load generator or server saturated).",
+    "Redis is near saturation at the knee: 85% of one core, ping p99 2.07 ms. Reducing commands per request (phase 7) raises the ceiling directly.",
+    "Redis commands per request: start 3.1, publish 6.0, consume 5.0, final consume 11.1 (INFO commandstats; commands run inside the transition script count too, so this is Redis work, not client round-trips, which are 2 per report since phase 6).",
+    "Most expensive Redis work per request: evalsha on consume(final) (1.0 calls × 90 µs).",
+    "JSON.SET costs 39 µs against 13 µs for JSON.GET (3×). Every state write re-indexes the whole document in RediSearch (`workflows_index` covers `$.tasks[*].topic/from/to` and the instance stamps), so write count, not read count, is what Redis CPU pays for. A final consume does 0 writes.",
+    "Instances already in Redis: consume p50 0.9 → 0.9 ms from 0 to 100000 instances (+6%). List endpoint p50 1.2 → 2.5 ms.",
+    "Tasks per workflow: consume p50 0.8 → 0.9 ms from 2 to 50 tasks (+11%) at a constant ~1000 req/s. Growth here is document size: the script reads every task's state and each JSON.SET re-indexes the document.",
+    "Payload size: consume p50 0.9 → 1.1 ms from 100B to 500000B (+26%). The payload travels with the publish and is written by the script's JSON.SET; a consume never reads it.",
+    "Simultaneous timeouts: max lag 652 ms at 100 → 130 ms at 2000, i.e. ~-0.3 ms per overdue task. The reaper runs one script call per overdue member, sequentially; lag grows linearly with the number of tasks that expire together. Missing webhooks: 0.",
+    "Contention: 20 concurrent reports on one instance p50 3.4 ms vs on separate instances 3.3 ms (+5%). Redis runs one transition script at a time, so reports on one instance queue behind each other; this is the per-instance ceiling.",
+    "Server CPU at the knee, cumulative share by engine function: instance_engine.(*Engine).UpdateInstance 31.33%, instance_engine.(*Engine).jsonGet 17.61%, instance_engine.(*Engine).transition 13.60%, instance_engine.(*Engine).readTaskIdentity 13.42%"
+  ]
+}

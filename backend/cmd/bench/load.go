@@ -17,6 +17,11 @@ import (
 // loader drives sagas over HTTP. It is open-loop: sagas start on a fixed
 // schedule regardless of how the server keeps up, so latency under load is
 // measured, not hidden by back-pressure.
+// benchAPIKey is the key the launched server is configured with and the
+// loader sends; the bench measures the authenticated path, as production
+// runs it.
+const benchAPIKey = "bench-api-key" // #nosec G101 -- throwaway key for the server the bench launches on loopback
+
 type loader struct {
 	base   string
 	client *http.Client
@@ -42,12 +47,13 @@ func (l *loader) call(method, path, body string) (string, time.Duration, bool) {
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	req.Header.Set("Authorization", "Bearer "+benchAPIKey)
 	resp, err := l.client.Do(req)
 	if err != nil {
 		return "", time.Since(start), false
 	}
 	data, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return string(data), time.Since(start), resp.StatusCode >= 200 && resp.StatusCode < 300
 }
 
@@ -186,8 +192,24 @@ func (l *loader) runRate(ctx context.Context, spec flowSpec, rate float64, durat
 
 // measureReaperLag publishes n tasks with a 2s timeout and never consumes
 // them, then measures deadline -> webhook arrival.
+//
+// The instances are created first and only then published, concurrently, so
+// that all n deadlines really do fall due together -- which is the thing
+// this measurement is named after. Publishing them one at a time in a single
+// loop spread the deadlines across the whole publish phase: at n=500 the
+// first task's deadline expired while the loop was still publishing the
+// last, so the reaper fired those before the client-side stamp was reached
+// and the reported lag went negative. The number was then a measure of the
+// harness's own publish rate, not of the reaper.
+//
+// Each task is also stamped individually, from the return of its own publish
+// call, rather than from one reading shared by the whole burst: at n=2000
+// even a concurrent burst outlasts the 2 s timeout, so a shared stamp taken
+// after the last publish overshoots the earliest deadlines and the lag goes
+// negative again. A per-task stamp is at most one request latency later than
+// the deadline the server actually armed, in either direction.
 func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n int, wait time.Duration) LagResult {
-	deadlines := map[string]time.Time{}
+	ids := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		body, _, ok := l.call(http.MethodPost, "/start_instance?workflow_name="+timeoutName, "")
 		if !ok {
@@ -199,15 +221,36 @@ func (l *loader) measureReaperLag(ctx context.Context, hooks *webhookReceiver, n
 		if json.Unmarshal([]byte(body), &resp) != nil || resp.ID == "" {
 			continue
 		}
-		payload := fmt.Sprintf(`{"bench_id":%q}`, resp.ID)
-		_, _, ok = l.call(http.MethodPost, "/update_instance?workflow_instance_id="+resp.ID+
-			"&action_type=publish&event_name=bench_tt&is_retry=false", payload)
-		// The server stamps the deadline from its clock during the request;
-		// the response time is within one request latency of it.
-		if ok {
-			deadlines[resp.ID] = time.Now().Add(lagTimeout * time.Millisecond)
-		}
+		ids = append(ids, resp.ID)
 	}
+
+	var (
+		mu        sync.Mutex
+		wg        sync.WaitGroup
+		deadlines = make(map[string]time.Time, len(ids))
+		sem       = make(chan struct{}, lagPublishParallel)
+	)
+	for _, id := range ids {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			payload := fmt.Sprintf(`{"bench_id":%q}`, id)
+			_, _, ok := l.call(http.MethodPost, "/update_instance?workflow_instance_id="+id+
+				"&action_type=publish&event_name=bench_tt&is_retry=false", payload)
+			// The server armed this task's deadline from its own clock during
+			// the call, so reading the clock right after it returns is within
+			// one request latency of the real deadline.
+			if ok {
+				at := time.Now().Add(lagTimeout * time.Millisecond)
+				mu.Lock()
+				deadlines[id] = at
+				mu.Unlock()
+			}
+		}(id)
+	}
+	wg.Wait()
 
 	res := LagResult{Tasks: len(deadlines)}
 	until := time.Now().Add(lagTimeout*time.Millisecond + wait)
@@ -257,7 +300,7 @@ func redisCommandCalls(ctx context.Context, rdb *redis.Client) int64 {
 		for _, kv := range strings.Split(strings.SplitN(line, ":", 2)[1], ",") {
 			if strings.HasPrefix(kv, "calls=") {
 				var n int64
-				fmt.Sscanf(kv, "calls=%d", &n)
+				_, _ = fmt.Sscanf(kv, "calls=%d", &n)
 				total += n
 			}
 		}

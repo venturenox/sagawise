@@ -32,9 +32,9 @@ func listIDs(t testx.T, body []byte) ([]string, int) {
 }
 
 // Contract §9: the list is paged with an explicit default, never a silent
-// cap at the RediSearch default of 10. (#10)
+// cap at the RediSearch default of 10. (#10, fixed in phase 5)
 func TestContract_ListIsNotCappedAtTen(t *testing.T) {
-	testx.XFail(t, "#10", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		const n = 12
 		for i := 0; i < n; i++ {
@@ -53,7 +53,7 @@ func TestContract_ListIsNotCappedAtTen(t *testing.T) {
 
 // A hyphen in a workflow name is a literal, not RediSearch negation. (#10)
 func TestContract_ListHyphenatedName(t *testing.T) {
-	testx.XFail(t, "#10", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		wf := twoTaskFlow()
 		wf.Name = "it-hyphen-flow"
 		e := newEnv(t, wf)
@@ -71,7 +71,7 @@ func TestContract_ListHyphenatedName(t *testing.T) {
 
 // No matches is an empty page, not an error. (#10)
 func TestContract_ListEmptyIs200(t *testing.T) {
-	testx.XFail(t, "#10", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		w := e.do(e.eng.ListWorkflowInstances, http.MethodGet, "/workflow_instances/list?workflow_name=it_nonexistent_zz", "")
 		if w.Code != 200 {
@@ -86,7 +86,7 @@ func TestContract_ListEmptyIs200(t *testing.T) {
 
 // limit/offset paging. (#10)
 func TestContract_ListPaging(t *testing.T) {
-	testx.XFail(t, "#10", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		const n = 5
 		for i := 0; i < n; i++ {

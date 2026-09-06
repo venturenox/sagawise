@@ -66,6 +66,7 @@ const register = async function (
 		const resp = await axios({
 			method: 'post',
 			url: process.env.SAGAWISE_URL+'/start_instance',
+			headers: { Authorization: `Bearer ${process.env.SAGAWISE_API_KEY}` },
 			params: {
 				workflow_name: 'user_creation',
 				workflow_version: '1.0',
@@ -93,6 +94,7 @@ const register = async function (
 		const resp2 = await axios({
 			method: 'post',
 			url: process.env.SAGAWISE_URL+'/update_instance',
+			headers: { Authorization: `Bearer ${process.env.SAGAWISE_API_KEY}` },
 			params: {
 				workflow_instance_id: resp.data.workflow_instance_id,
 				workflow_version: '1.0',

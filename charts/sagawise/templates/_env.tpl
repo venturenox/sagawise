@@ -9,12 +9,13 @@
   value: {{ include "snippet.redis.password" . | quote }}
 {{- end }}
 
+{{- /*
+The connection string never carries the password: the binary reads
+REDIS_PASSWORD (a Secret reference) and adds it itself, so the plain env
+var that `kubectl describe pod` prints holds no credential.
+*/ -}}
 {{- define "snippet.redis.connection.string" -}}
-{{- if .Values.redis.enabled -}}
-  redis://{{ include "snippet.redis.host" . }}:{{ include "snippet.redis.port" . }}
-{{- else -}}
-  redis://default:{{ include "snippet.redis.password" . }}@{{ include "snippet.redis.host" . }}:{{ include "snippet.redis.port" . }}
-{{- end }}
+redis://{{ include "snippet.redis.host" . }}:{{ include "snippet.redis.port" . }}
 {{- end }}
 
 

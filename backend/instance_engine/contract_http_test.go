@@ -11,7 +11,7 @@ import (
 
 // Contract §9 (D4, D6): status codes and JSON bodies with stable error codes.
 func TestContract_StatusCodesAndErrorBodies(t *testing.T) {
-	testx.XFail(t, "D4/D6", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 
@@ -61,12 +61,25 @@ func TestContract_StatusCodesAndErrorBodies(t *testing.T) {
 
 		w = e.report(id, "publish", "it_order_created", "", "false", `not json`)
 		check("bad body", w, http.StatusBadRequest, "INVALID_BODY")
+
+		w = e.do(e.eng.StartInstance, http.MethodPost, "/start_instance?workflow_name=it_no_such_flow", "")
+		check("unknown workflow", w, http.StatusNotFound, "WORKFLOW_NOT_FOUND")
+		if got := jsonBody(t, w)["error"]; got != "WORKFLOW_NOT_FOUND" {
+			t.Errorf("unknown workflow: error = %v", got)
+		}
+
+		w = e.consume(id, "it_order_created", "it_payments")
+		check("consume", w, http.StatusOK, "")
+		body = jsonBody(t, w)
+		if body["task_index"] != float64(0) || body["task_state"] != "COMPLETED" || body["workflow_state"] != "PENDING" {
+			t.Errorf("consume success body = %v", body)
+		}
 	})
 }
 
-// Contract §4: is_retry must parse strictly. (#2)
+// Contract §4: is_retry must parse strictly.
 func TestContract_IsRetryStrictParsing(t *testing.T) {
-	testx.XFail(t, "#2", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		for _, bad := range []string{"maybe", "1", "0", "t", "f", "yes"} {
@@ -89,7 +102,7 @@ func TestContract_IsRetryStrictParsing(t *testing.T) {
 
 // Contract D5: an infrastructure error is a 500, never a business answer. (#7)
 func TestContract_InfraErrorIs500(t *testing.T) {
-	testx.XFail(t, "#7", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 		e.mustOK(e.publish(id, "it_order_created"), "publish")
@@ -110,7 +123,7 @@ func TestContract_InfraErrorIs500(t *testing.T) {
 
 // Contract D7: the get endpoint takes an instance id, not a Redis key.
 func TestContract_GetByInstanceID(t *testing.T) {
-	testx.XFail(t, "D7", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		id := e.start()
 

@@ -33,20 +33,67 @@ serviceAccount:
 podAnnotations: {}
 
 # Defines security settings at the Pod level, which apply to all containers within the Pod.
+# The image runs as uid 65532 and writes nothing to disk, so the restricted
+# Pod Security Standard is the default here (phase 8).
 podSecurityContext:
-  {}
-  # fsGroup: 2000
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
 
 # Configures security-related settings at the container level
 # impacting how a container operates and interacts with the underlying node’s resources.
 securityContext:
-  {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# --- Sagawise security (phase 8, docs/threat-model.md) ---
+
+auth:
+  # "api-key" (default): every request except the probes must carry
+  # `Authorization: Bearer <key>` with one of auth.apiKeys. "off": an open
+  # API, for development clusters only; the server logs a warning.
+  mode: api-key
+  # The accepted keys. Rotate by listing the old and the new key, rolling
+  # the clients, then removing the old one. Rendered into a Secret unless
+  # existingSecret is set.
+  apiKeys: []
+  # Name of a Secret the operator manages instead of the chart's. It must
+  # hold the keys `api-keys` (comma-separated), `webhook-secret`, and, for
+  # external stores, `redis-password` / `postgres-password`.
+  existingSecret: ""
+
+webhook:
+  # HMAC-SHA256 secret failure webhooks are signed with
+  # (X-Sagawise-Signature). Empty means unsigned deliveries; receivers
+  # should verify (see the SDKs' verify_signature).
+  secret: ""
+
+cors:
+  # Browser origins allowed to call the API, exact (scheme://host[:port]).
+  # Empty means no cross-origin browser access; "*" is refused at startup.
+  origins: []
+
+# Largest accepted request body (publish payload). K/M suffixes allowed.
+maxBodyBytes: 1M
+
+networkPolicy:
+  # Default-deny ingress to the Sagawise pods; only `ingress` may reach the
+  # API port. Needs a CNI that enforces NetworkPolicy.
+  enabled: false
+  # Peers allowed in, as NetworkPolicy `from` entries. Example: the
+  # ingress-nginx namespace and the namespaces of the reporting services.
+  ingress: []
+  #  - namespaceSelector:
+  #      matchLabels:
+  #        kubernetes.io/metadata.name: ingress-nginx
+  # Egress rules; empty leaves egress open (webhooks go where services.json
+  # points, and Redis/Postgres may be external).
+  egress: []
 
 service:
   type: ClusterIP

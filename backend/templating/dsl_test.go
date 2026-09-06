@@ -14,8 +14,7 @@ import (
 	"wtfsaga/utils"
 )
 
-// Contract §7: a DSL that fails validation is never stored as a template.
-// Today ParseDSL stores whatever parses as JSON. (#6, #8)
+// Contract §7: a DSL that fails validation is never stored as a template. (#6)
 
 func setDefault(t testx.T, name, def string) {
 	t.Helper()
@@ -38,10 +37,13 @@ func load(t testx.T, workflows ...utils.Workflow) func(name string) bool {
 	t.Setenv("REDIS_CONNECTION_STRING", "")
 
 	ctx := context.Background()
-	rdb := db_connect.DBConnect(ctx)
-	db := db_connect.ConnectPostgres(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
 		t.Fatalf("redis: %v", err)
+	}
+	db, err := db_connect.ConnectPostgres(ctx)
+	if err != nil {
+		t.Fatalf("postgres: %v", err)
 	}
 
 	dir := t.TempDir()
@@ -62,10 +64,10 @@ func load(t testx.T, workflows ...utils.Workflow) func(name string) bool {
 			}
 		}
 		db.Close()
-		rdb.Close()
+		_ = rdb.Close()
 	})
 
-	ParseDSL(ctx, rdb, db, dir)
+	_, _ = ParseDSL(ctx, rdb, db, dir) // invalid input is expected to error; the assertions are on what was stored
 	return func(name string) bool {
 		n, _ := rdb.Exists(ctx, "workflow_template:"+name).Result()
 		return n == 1
@@ -121,7 +123,7 @@ func TestDSL_InvalidWorkflowsAreRejected(t *testing.T) {
 	for _, c := range cases {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			testx.XFail(t, "#6", func(t testx.T) {
+			testx.Run(t, func(t testx.T) {
 				wf := valid("dsl_invalid")
 				c.mutate(&wf)
 				exists := load(t, wf)
@@ -135,12 +137,18 @@ func TestDSL_InvalidWorkflowsAreRejected(t *testing.T) {
 
 // A missing timeout key must be a validation error, not a task with no deadline.
 func TestDSL_MissingTimeoutIsRejected(t *testing.T) {
-	testx.XFail(t, "#6", func(t testx.T) {
-		_ = load(t) // sets env defaults and verifies connectivity
+	testx.Run(t, func(t testx.T) {
+		_ = load(t, valid("dsl_probe")) // sets env defaults and verifies connectivity
 		ctx := context.Background()
-		rdb := db_connect.DBConnect(ctx)
-		db := db_connect.ConnectPostgres(ctx)
-		t.Cleanup(func() { rdb.Del(ctx, "workflow_template:dsl_notimeout"); db.Close(); rdb.Close() })
+		rdb, err := db_connect.DBConnect(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		db, err := db_connect.ConnectPostgres(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { rdb.Del(ctx, "workflow_template:dsl_notimeout"); db.Close(); _ = rdb.Close() })
 
 		dir := t.TempDir()
 		raw := `{"workflow":{"name":"dsl_notimeout","version":"1.0","schema_version":"1.0",
@@ -148,7 +156,9 @@ func TestDSL_MissingTimeoutIsRejected(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "x.json"), []byte(raw), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		ParseDSL(ctx, rdb, db, dir)
+		if _, err := ParseDSL(ctx, rdb, db, dir); err == nil {
+			t.Errorf("ParseDSL accepted a task with no timeout")
+		}
 		if n, _ := rdb.Exists(ctx, "workflow_template:dsl_notimeout").Result(); n == 1 {
 			t.Errorf("workflow with a missing timeout was stored")
 		}

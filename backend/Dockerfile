@@ -56,7 +56,13 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM alpine AS build-release-stage
 
 # Install curl for health checks (liveness/readiness probes in Kubernetes)
-RUN apk add curl
+RUN apk add --no-cache curl
+
+# The server runs as an unprivileged user (phase 8). It needs no write
+# access anywhere: the DSL and services.json are read-only inputs and all
+# state lives in Redis and Postgres, so the image also works with a
+# read-only root filesystem (the Helm chart's default).
+RUN addgroup -S -g 65532 sagawise && adduser -S -u 65532 -G sagawise -H -s /sbin/nologin sagawise
 
 WORKDIR /
 
@@ -68,6 +74,8 @@ COPY backend/sagawise/* /sagawise/
 
 # Copy services configuration (failure webhook URLs for each service)
 COPY services.json services.json
+
+USER 65532:65532
 
 # The executable runs when the container starts
 # ENTRYPOINT is the final command executed at container runtime

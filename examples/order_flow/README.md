@@ -92,22 +92,21 @@ docker compose logs -f orders payments shipping
 ### Inspect the workflow state
 
 ```bash
-curl -s "http://localhost:5000/workflow_instances/get?doc_key=workflow_instance:$ID" | python3 -m json.tool
+curl -s "http://localhost:5000/workflow_instances/get?workflow_instance_id=$ID" | python3 -m json.tool
 ```
 
-Note the `doc_key` needs the `workflow_instance:` prefix, even though
-`start_instance` returns the bare id.
-
-Workflow completion is evaluated **asynchronously**, so immediately after the
-last consume you will see both tasks `COMPLETED` while the workflow itself is
-still `PENDING`. Wait ~20s and it flips to `COMPLETED`, then gets archived:
+The document lists the tasks under `tasks[]`, each with its `state`, stamps and
+the published `payload`. The workflow's own `state` flips to `COMPLETED` in the
+same atomic step as the last consume, and the instance is then archived to
+Postgres within about a second:
 
 ```bash
 docker exec -e PGPASSWORD=venturenox postgres psql -U postgres -d sagawise -tAc \
   "SELECT id, name, instance_data->>'state' FROM instance_history WHERE id='$ID'"
 ```
 
-Only completed workflows are written to Postgres. A failed one stays in Redis.
+Both completed and failed workflows are archived; the Redis document stays
+too, so the get endpoint keeps working after archiving.
 
 ---
 
@@ -135,13 +134,20 @@ where a compensating transaction belongs.
 
 ## Things worth knowing
 
+- **Every call to Sagawise carries an API key.** `sagawiseClient.js` sends
+  `Authorization: Bearer $SAGAWISE_API_KEY`; the example `.env` sets it to the
+  dev key in the root `.env` (`SAGAWISE_API_KEYS`). Without it Sagawise answers
+  401. The failure webhooks arrive signed (`X-Sagawise-Signature`); the SDKs'
+  `verify_signature` checks them, and a real service should before compensating.
+
 - **One topic carries every event.** Services filter on the `event` field in the
   payload, which is why each consumer needs its own `KAFKA_GROUP_ID`.
 - **The `workflow_instance_id` travels inside the message.** That is what lets a
   downstream service report against a workflow it did not start.
 - **Reporting can legitimately fail.** If a task already timed out, Sagawise
-  answers `403`. Both consumers wrap their handler in a `try/catch` so one
-  rejected report cannot kill the consumer for every message behind it.
+  answers `409` with a JSON body naming the reason (`TASK_ALREADY_FAILED` or
+  `INSTANCE_TERMINAL`). Both consumers wrap their handler in a `try/catch` so
+  one rejected report cannot kill the consumer for every message behind it.
 - **The dev topic keeps messages for 5 minutes** (`retention.ms=300000`), so
   stale events from earlier runs do not get replayed into a new run.
 - **Adding a service means editing

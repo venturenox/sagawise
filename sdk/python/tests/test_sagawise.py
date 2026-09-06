@@ -2,9 +2,7 @@
 every call sends the HTTP request it describes, a failed request is raised to
 the caller (never returned as a value), and timeouts are in a sane unit.
 
-Tests today's code cannot pass are marked xfail(strict=True) with the
-finding, so the run stays green while the gap is visible and flips to a
-failure the day the fix lands. Run with `python -m pytest -q` from sdk/python.
+Run with `python -m pytest -q` from sdk/python.
 """
 import json
 import os
@@ -15,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 import requests
 
-from sagawise.sagawise import Sagawise
+from sagawise.sagawise import Sagawise, verify_signature
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -25,7 +23,8 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length).decode() if length else ""
         url = urlparse(self.path)
-        _Handler.requests.append({"path": url.path, "query": parse_qs(url.query), "body": body})
+        _Handler.requests.append({"path": url.path, "query": parse_qs(url.query), "body": body,
+                                  "headers": {k.lower(): v for k, v in self.headers.items()}})
         if "boom" in self.path:
             self.send_response(500)
             self.end_headers()
@@ -83,13 +82,11 @@ def test_consume_and_fail_send_requests(sdk):
     assert last()["query"]["action_type"] == ["fail"]
 
 
-@pytest.mark.xfail(strict=True, reason="#15 (cut list): exceptions are returned as values, not raised")
 def test_5xx_raises(sdk):
     with pytest.raises(requests.exceptions.HTTPError):
         sdk.consume_message("abc123", "1.0", "boom", "payments")
 
 
-@pytest.mark.xfail(strict=True, reason="#15 (cut list): exceptions are returned as values, not raised")
 def test_unreachable_server_raises(server):
     os.environ["SAGAWISE_URL"] = "http://127.0.0.1:1"
     try:
@@ -99,7 +96,6 @@ def test_unreachable_server_raises(server):
         os.environ["SAGAWISE_URL"] = f"http://127.0.0.1:{server.server_port}"
 
 
-@pytest.mark.xfail(strict=True, reason="#15 (cut list): timeout=1000 is passed to requests, which reads seconds (~17 minutes)")
 def test_default_timeout_is_seconds_not_ms():
     assert Sagawise().timeout <= 60
 
@@ -107,3 +103,57 @@ def test_default_timeout_is_seconds_not_ms():
 def test_missing_required_args_raise():
     with pytest.raises(ValueError):
         Sagawise().start_workflow("", "1.0")
+
+
+def test_is_retry_is_sent_lowercase(sdk):
+    sdk.consume_message("abc123", "1.0", "order_created", "payments", is_retry=True)
+    assert last()["query"]["is_retry"] == ["true"]
+
+
+def test_missing_args_send_nothing(sdk):
+    with pytest.raises(ValueError):
+        sdk.publish_message("abc123", "1.0", "order_created", payload=None)
+    with pytest.raises(ValueError):
+        sdk.consume_message("abc123", "1.0", "", "payments")
+    assert _Handler.requests == []
+
+
+# ---- Phase 8: API key and webhook signature ----
+
+def test_requests_carry_the_api_key(server, monkeypatch):
+    monkeypatch.setenv("SAGAWISE_API_KEY", "test-api-key")
+    Sagawise().start_workflow("order_flow", "1.0")
+    assert _Handler.requests[-1]["headers"]["authorization"] == "Bearer test-api-key"
+    Sagawise(api_key="explicit-key").start_workflow("order_flow", "1.0")
+    assert _Handler.requests[-1]["headers"]["authorization"] == "Bearer explicit-key"
+
+
+# Shared with backend/webhooksig/webhooksig_test.go and the Node SDK test.
+VEC_SECRET = "whsec_test_0123456789"
+VEC_TS = "1757000000"
+VEC_BODY = '{"order_id":42,"workflow_instance_id":"abc"}'
+VEC_SIG = "v1=ae24e8081e830be2781f7fdb0f89712f9ab9ba0519cf53d737f558bd3b6de8da"
+
+
+def _headers(ts=VEC_TS, sig=VEC_SIG):
+    return {"X-Sagawise-Timestamp": ts, "X-Sagawise-Signature": sig}
+
+
+def test_verify_signature_accepts_the_shared_vector():
+    assert verify_signature(VEC_SECRET, _headers(), VEC_BODY, now=1757000030)
+    assert verify_signature(VEC_SECRET.encode(), _headers(), VEC_BODY.encode(), now=1757000030)
+    assert verify_signature(VEC_SECRET, _headers(sig="v1=00," + VEC_SIG), VEC_BODY, now=1757000030), "rotation"
+    assert verify_signature(VEC_SECRET, {"x-sagawise-timestamp": VEC_TS, "x-sagawise-signature": VEC_SIG}, VEC_BODY, now=1757000030), "header case"
+
+
+def test_verify_signature_rejects_tampering_wrong_secret_and_replay():
+    ok = lambda **kw: verify_signature(**{"secret": VEC_SECRET, "headers": _headers(), "raw_body": VEC_BODY, "now": 1757000030, **kw})
+    assert not ok(raw_body=VEC_BODY + " "), "body changed"
+    assert not ok(secret="other"), "wrong secret"
+    assert not ok(headers=_headers(ts="1757000001")), "timestamp changed"
+    assert not ok(headers=_headers(sig="v1=zz")), "malformed hex"
+    assert not ok(headers={"X-Sagawise-Timestamp": VEC_TS}), "missing signature"
+    assert not ok(headers={}), "missing headers"
+    assert not ok(now=1757000000 + 6 * 60), "replayed 6 minutes later"
+    assert ok(now=1757000000 + 5 * 60), "at the tolerance edge"
+    assert not ok(now=1757000000 + 90, tolerance_seconds=60), "custom tolerance"

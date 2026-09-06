@@ -41,11 +41,14 @@ const (
 	flowName    = "bench_flow"    // two tasks, long timeout: the load workload
 	timeoutName = "bench_timeout" // one task, 2s timeout: the reaper-lag workload
 	lagTimeout  = 2000            // ms
+	// lagPublishParallel bounds the concurrent publish burst that arms the
+	// deadlines, so they all fall due together rather than across the loop.
+	lagPublishParallel = 64
 )
 
 func setDefault(name, def string) {
 	if os.Getenv(name) == "" {
-		os.Setenv(name, def)
+		_ = os.Setenv(name, def)
 	}
 }
 
@@ -57,19 +60,19 @@ func runBenchmark(cfg runConfig) (string, error) {
 	setDefault("POSTGRES_USERNAME", "postgres")
 	setDefault("POSTGRES_PASSWORD", "venturenox")
 	setDefault("POSTGRES_DATABASE", "sagawise")
-	os.Setenv("REDIS_CONNECTION_STRING", "")
+	_ = os.Setenv("REDIS_CONNECTION_STRING", "")
 
 	ctx := context.Background()
-	rdb := db_connect.DBConnect(ctx)
-	if err := rdb.Ping(ctx).Err(); err != nil {
+	rdb, err := db_connect.DBConnect(ctx)
+	if err != nil {
 		return "", fmt.Errorf("redis: %w", err)
 	}
-	db := db_connect.ConnectPostgres(ctx)
-	if err := db.Ping(ctx); err != nil {
+	db, err := db_connect.ConnectPostgres(ctx)
+	if err != nil {
 		return "", fmt.Errorf("postgres: %w", err)
 	}
 	defer db.Close()
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 
 	res := &Results{Label: cfg.label, Date: time.Now().Format(time.RFC3339), Env: map[string]string{}, Config: map[string]string{
 		"rates": cfg.rates, "duration": cfg.duration.String(), "lag_tasks": strconv.Itoa(cfg.lagTasks),
@@ -88,7 +91,7 @@ func runBenchmark(cfg runConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(work)
+	defer func() { _ = os.RemoveAll(work) }()
 	bin := filepath.Join(work, "sagawise")
 	fmt.Fprintln(os.Stderr, "building server...")
 	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil { // #nosec G204 -- fixed argv; bin is a temp path we created
@@ -280,12 +283,13 @@ func launchServer(bin, dslDir, servicesFile string) (*server, error) {
 		return nil, err
 	}
 	addr := l.Addr().String()
-	l.Close()
+	_ = l.Close()
 
 	s := &server{addr: addr, done: make(chan struct{})}
 	s.cmd = exec.Command(bin) // #nosec G204 -- binary we just built
 	s.cmd.Env = append(os.Environ(),
-		"SAGAWISE_ADDR="+addr, "SAGAWISE_DSL_DIR="+dslDir, "SAGAWISE_SERVICES_FILE="+servicesFile, "OTEL_SDK_DISABLED=true")
+		"SAGAWISE_ADDR="+addr, "SAGAWISE_DSL_DIR="+dslDir, "SAGAWISE_SERVICES_FILE="+servicesFile, "OTEL_SDK_DISABLED=true",
+		"SAGAWISE_API_KEYS="+benchAPIKey, "SAGAWISE_WEBHOOK_SECRET=bench-webhook-secret")
 	s.cmd.Stdout, s.cmd.Stderr = io.Discard, io.Discard
 	if err := s.cmd.Start(); err != nil {
 		return nil, err
@@ -296,7 +300,7 @@ func launchServer(bin, dslDir, servicesFile string) (*server, error) {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get("http://" + addr + "/live") // #nosec G107 -- local address chosen above
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == 200 {
 				return s, nil
 			}
@@ -390,7 +394,9 @@ func cleanupBenchData(ctx context.Context, rdb *redis.Client, db *pgxpool.Pool) 
 	}
 	for _, name := range benchWorkflowNames() {
 		for {
-			res := rdb.Do(ctx, "FT.SEARCH", "workflows_index", "@workflow_name:"+name, "NOCONTENT", "LIMIT", "0", "10000").Val()
+			// workflow_name is a TAG field since phase 5; bench names are
+			// [a-z_] so no escaping is needed inside the braces.
+			res := rdb.Do(ctx, "FT.SEARCH", "workflows_index", "@workflow_name:{"+name+"}", "NOCONTENT", "LIMIT", "0", "10000").Val()
 			m, _ := res.(map[interface{}]interface{})
 			results, _ := m["results"].([]interface{})
 			if len(results) == 0 {
@@ -408,14 +414,19 @@ func cleanupBenchData(ctx context.Context, rdb *redis.Client, db *pgxpool.Pool) 
 		}
 		_, _ = db.Exec(ctx, `DELETE FROM instance_history WHERE name = $1`, name)
 	}
-	// Deadlines of deleted instances: drop members whose instance is gone.
-	members, _ := rdb.ZRange(ctx, "task_deadlines", 0, -1).Result()
-	if len(members) > 0 {
+	// Deadlines and queued jobs of deleted instances: drop members whose
+	// instance is gone (the workers would drop them one by one otherwise).
+	for _, key := range []string{"task_deadlines", "webhook_pending", "archive_pending"} {
+		members, _ := rdb.ZRange(ctx, key, 0, -1).Result()
+		if len(members) == 0 {
+			continue
+		}
 		pipe := rdb.Pipeline()
 		for _, m := range members {
 			id, _, _ := strings.Cut(m, ":")
 			if n, _ := rdb.Exists(ctx, "workflow_instance:"+id).Result(); n == 0 {
-				pipe.ZRem(ctx, "task_deadlines", m)
+				pipe.ZRem(ctx, key, m)
+				pipe.HDel(ctx, strings.TrimSuffix(key, "_pending")+"_attempts", m)
 			}
 		}
 		_, _ = pipe.Exec(ctx)

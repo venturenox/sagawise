@@ -14,7 +14,7 @@ import (
 // Contract T4: two concurrent reports on one task see exactly one winner.
 // consume vs fail on the same PUBLISHED task, repeated. (#1)
 func TestContract_ConcurrentConsumeVsFail(t *testing.T) {
-	testx.XFailFlaky(t, "#1", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		const rounds = 30
 		bothWon, failWins := 0, 0
@@ -61,7 +61,7 @@ func TestContract_ConcurrentConsumeVsFail(t *testing.T) {
 // Contract TO4 + guarantee 4: consume of the last task vs the reaper on the
 // same overdue task. One outcome, and the archive row agrees with Redis.
 func TestContract_ReaperVsConsumeLastTask(t *testing.T) {
-	testx.XFailFlaky(t, "#1", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		const rounds = 20
 		for i := 0; i < rounds; i++ {
@@ -102,7 +102,7 @@ func TestContract_ReaperVsConsumeLastTask(t *testing.T) {
 // moves the instance to FAILED, exactly one webhook fires, the other task
 // stays frozen. (#1, #3)
 func TestContract_ConcurrentSiblingFailures(t *testing.T) {
-	testx.XFailFlaky(t, "#1", func(t testx.T) {
+	testx.Run(t, func(t testx.T) {
 		e := newEnv(t)
 		const rounds = 20
 		for i := 0; i < rounds; i++ {

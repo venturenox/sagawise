@@ -816,13 +816,13 @@
   <p>Sagawise keeps its working memory in <strong>Redis</strong>, a fast in-memory data store. It uses a Redis feature that stores whole JSON documents, so each instance is one document.</p>
 
   <p>When Sagawise starts, it reads every workflow file and stores each one in Redis as a template under the key <code>workflow_template:&lt;name&gt;</code>. When a service starts a run, Sagawise copies the template into a new document under <code>workflow_instance:&lt;id&gt;</code>, where the ID is twenty random characters.</p>
-  <span class="src"><code>backend/templating/templating.go:46-65</code> stores the templates<code>backend/instance_engine/instance_engine.go:128-143</code> builds one instance from a template<code>backend/instance_engine/instance_engine.go:81-87</code> makes the ID</span>
+  <span class="src"><code>backend/templating/templating.go</code> <code>ParseDSL</code> stores the templates<code>backend/instance_engine/instance_engine.go</code> <code>StartInstance</code> builds one instance from a template, <code>generateID</code> makes the ID</span>
 
-  <p>The shape of that document is unusual, and it explains some of the code. The tasks are stored under the keys <code>"0"</code>, <code>"1"</code>, and so on. The run's own details — its name, its state, when it started — sit right beside them under keys like <code>"name"</code> and <code>"state"</code>. There is no separate list of tasks. Everything is one flat object.</p>
+  <p>The document has two parts. The run's own details — its name, its state, when it started and when it ended — sit at the top level under keys like <code>"name"</code> and <code>"state"</code>. The tasks are a list under <code>"tasks"</code>, in the order the workflow file declares them, and a task is identified by its position in that list. Each task carries its topic, sender, receiver, timeout, state, timestamps and, once it has been sent, a copy of the message that was published. (Before the phase 6 rewrite the tasks were top-level keys named <code>"0"</code>, <code>"1"</code>, … and the code told them apart from run details by testing whether the key was a number; that layout is gone.)</p>
 
   <figure class="bleed">
     <div class="fig-body">
-      <svg viewBox="0 0 900 340" role="img" aria-label="A workflow_instance document holds metadata keys named name, version, state, startedAt alongside task objects stored under stringified integer keys zero and one. Code distinguishes tasks from metadata by testing whether strconv.Atoi succeeds on the key.">
+      <svg viewBox="0 0 900 340" role="img" aria-label="A workflow_instance document holds run details named name, version, state, startedAt at the top level, and a tasks list whose elements zero and one carry topic, from, to, timeout, state and payload. The search index reads only explicit paths, so payload fields are never indexed.">
         <defs>
           <marker id="d2-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--signal)"/>
@@ -833,19 +833,19 @@
         <text class="svg-mono" x="42" y="46" fill="var(--signal)">workflow_instance:Kp2xQ...tR9</text>
 
         <rect x="42" y="60" width="434" height="94" rx="4" fill="var(--surface)" stroke="var(--inert)" stroke-dasharray="3 3"/>
-        <text class="svg-tiny" x="56" y="79" fill="var(--inert)">DETAILS ABOUT THE RUN</text>
+        <text class="svg-tiny" x="56" y="79" fill="var(--inert)">DETAILS ABOUT THE RUN (top level)</text>
         <text class="svg-mono" x="56" y="99" fill="var(--ink-soft)">"name": "order_flow"</text>
         <text class="svg-mono" x="56" y="117" fill="var(--ink-soft)">"state": "PENDING"</text>
         <text class="svg-mono" x="56" y="135" fill="var(--ink-soft)">"startedAt": 1761… &nbsp; "version": "1.0"</text>
 
         <rect x="42" y="166" width="434" height="66" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="1.5"/>
-        <text class="svg-mono" x="56" y="187" fill="var(--signal)">"0": {</text>
+        <text class="svg-mono" x="56" y="187" fill="var(--signal)">tasks[0]</text>
         <text class="svg-mono" x="120" y="187" fill="var(--ink-soft)">topic: order_created, from: orders,</text>
         <text class="svg-mono" x="120" y="205" fill="var(--ink-soft)">to: payments, timeout: 20000,</text>
-        <text class="svg-mono" x="120" y="223" fill="var(--ink-soft)">state: PENDING, index: "0" }</text>
+        <text class="svg-mono" x="120" y="223" fill="var(--ink-soft)">state: PENDING, payload: {…} }</text>
 
         <rect x="42" y="242" width="434" height="60" rx="4" fill="var(--surface)" stroke="var(--signal)" stroke-width="1.5"/>
-        <text class="svg-mono" x="56" y="263" fill="var(--signal)">"1": {</text>
+        <text class="svg-mono" x="56" y="263" fill="var(--signal)">tasks[1]</text>
         <text class="svg-mono" x="120" y="263" fill="var(--ink-soft)">topic: payment_done, from: payments,</text>
         <text class="svg-mono" x="120" y="281" fill="var(--ink-soft)">to: shipping, timeout: 20000, … }</text>
 
@@ -853,19 +853,19 @@
         <path d="M 500 200 L 560 200" fill="none" stroke="var(--signal)" stroke-width="1.5" marker-end="url(#d2-arr)"/>
 
         <rect x="566" y="88" width="308" height="150" rx="5" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.5"/>
-        <text class="svg-head" x="586" y="114" fill="var(--signal)">How the code tells them apart</text>
-        <text class="svg-mono" x="586" y="140" fill="var(--ink)">is the key a whole number?</text>
-        <text class="svg-mono" x="586" y="164" fill="var(--ink-soft)">no   →  a detail about the run</text>
-        <text class="svg-mono" x="586" y="186" fill="var(--ink-soft)">yes  →  a task</text>
-        <text class="svg-tiny" x="586" y="212" fill="var(--ink-faint)">the code does exactly this test</text>
-        <text class="svg-tiny" x="586" y="226" fill="var(--ink-faint)">whenever it walks the document</text>
+        <text class="svg-head" x="586" y="114" fill="var(--signal)">Where the code looks</text>
+        <text class="svg-mono" x="586" y="140" fill="var(--ink)">run details: top-level keys</text>
+        <text class="svg-mono" x="586" y="164" fill="var(--ink-soft)">tasks: the "tasks" list, by position</text>
+        <text class="svg-mono" x="586" y="186" fill="var(--ink-soft)">messages: tasks[i].payload, never searched</text>
+        <text class="svg-tiny" x="586" y="212" fill="var(--ink-faint)">the search index names exact paths,</text>
+        <text class="svg-tiny" x="586" y="226" fill="var(--ink-faint)">so nothing inside a message is indexed</text>
       </svg>
     </div>
-    <figcaption><b>Tasks and run details share one flat document.</b> The only thing that tells them apart is whether the key is a number. Any new field added to the run must therefore not have a numeric name.
-      <span class="src"><code>backend/instance_engine/instance_engine.go:354-367</code> walks the document and does the number test at line 356</span></figcaption>
+    <figcaption><b>Run details at the top, tasks in a list.</b> A task is named by its position, which is also its index in the workflow file. The search index names exact paths (<code>$.tasks[*].topic</code> and so on), so a message that happens to contain a field called <code>topic</code> can never be mistaken for a task.
+      <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>instanceDoc</code> and <code>instanceTask</code> are the document's shape<code>backend/templating/templating.go</code> the index definition<code>docs/design-phase-6.md</code> §1 the layout decision</span></figcaption>
   </figure>
 
-  <p>To find the right task for a report, Sagawise does not loop through the document. It asks Redis to search inside the JSON using a small query. The query depends on the kind of report, and the difference matters:</p>
+  <p>To find the right task for a report, Sagawise reads the topic and receiver of every task in the list and compares them, in Go, with the values the report carries. The values are compared as plain text; nothing from a report is ever turned into a query, and the saved messages are never looked at. What is compared depends on the kind of report, and the difference matters:</p>
 
   <div class="table-wrap">
     <table>
@@ -892,7 +892,7 @@
     </table>
   </div>
 
-  <span class="src"><code>backend/instance_engine/instance_engine.go:197</code> the "I sent it" query<code>backend/instance_engine/instance_engine.go:257</code> the "I got it" query — the same lookup now serves both "I got it" and "it failed"</span>
+  <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>readTaskIdentity</code> reads the topic and receiver of every task; <code>UpdateInstance</code> does the comparison for all three kinds of report</span>
 
   <p>Section <a href="#callback">07</a> shows what this asymmetry makes possible.</p>
 </section>
@@ -991,12 +991,12 @@
 
   <h3>The reaper</h3>
 
-  <p>A background loop called the <strong>reaper</strong> runs once every second. It asks Redis for every entry whose score is in the past. For each one it finds, it takes two careful steps before doing anything:</p>
-  <span class="src"><code>backend/instance_engine/reaper.go:26-42</code> the once-a-second loop<code>backend/instance_engine/reaper.go:44-74</code> what each tick does</span>
+  <p>A background loop called the <strong>reaper</strong> runs once every second. It asks Redis for the overdue entries (up to a thousand per tick). For each one it asks Redis to run one small script that does the checking and the changing as a single step:</p>
+  <span class="src"><code>backend/instance_engine/reaper.go</code> <code>StartDeadlineReaper</code> the once-a-second loop, <code>reapExpiredDeadlines</code> what each tick does<code>backend/instance_engine/transition.lua</code> the script, action <code>reap</code></span>
 
   <figure class="bleed">
     <div class="fig-body">
-      <svg viewBox="0 0 900 400" role="img" aria-label="Reaper flowchart: every second, read deadline entries with score at or before now. For each, ZREM it; if the removal returned zero another replica claimed it, so skip. Otherwise re-read the task state from the RedisJSON document; if it is not still PUBLISHED, skip. Otherwise call reportFailure.">
+      <svg viewBox="0 0 900 400" role="img" aria-label="Reaper flowchart: every second, read deadline entries with score at or before now. For each, run the transition script: inside it, read the task state; if it is not still PUBLISHED or the run has ended, drop the stale entry and do nothing else; otherwise mark the task FAILED, remove the entry and queue the call to the sender, all in the same step. A Redis error leaves the entry for the next tick.">
         <defs>
           <marker id="d5-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -1019,25 +1019,25 @@
 
         <g color="var(--warn)">
           <rect x="400" y="152" width="152" height="80" rx="4" fill="var(--warn-wash)" stroke="var(--warn)" stroke-width="1.75"/>
-          <text class="svg-tiny" x="476" y="174" text-anchor="middle" fill="var(--warn)">STEP 1 — CLAIM IT</text>
-          <text class="svg-mono" x="476" y="194" text-anchor="middle" fill="var(--ink)">remove the entry</text>
-          <text class="svg-tiny" x="476" y="214" text-anchor="middle" fill="var(--ink-soft)">did I remove it?</text>
+          <text class="svg-tiny" x="476" y="174" text-anchor="middle" fill="var(--warn)">ONE SCRIPT — CHECK</text>
+          <text class="svg-mono" x="476" y="194" text-anchor="middle" fill="var(--ink)">read the task's state</text>
+          <text class="svg-tiny" x="476" y="214" text-anchor="middle" fill="var(--ink-soft)">still PUBLISHED, run still open?</text>
         </g>
         <line x1="554" y1="192" x2="596" y2="192" stroke="var(--warn)" stroke-width="1.75" marker-end="url(#d5-arr)" color="var(--warn)"/>
         <text class="svg-mono" x="575" y="184" text-anchor="middle" fill="var(--warn)">yes</text>
 
         <line x1="476" y1="236" x2="476" y2="300" stroke="var(--inert)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#d5-arr)" color="var(--inert)"/>
-        <text class="svg-mono" x="488" y="268" fill="var(--inert)">no → another copy of Sagawise got it first</text>
+        <text class="svg-mono" x="488" y="268" fill="var(--inert)">no → stale entry: drop it, change nothing</text>
 
         <g color="var(--signal)">
           <rect x="600" y="152" width="164" height="80" rx="4" fill="var(--signal-wash)" stroke="var(--signal)" stroke-width="1.75"/>
-          <text class="svg-tiny" x="682" y="174" text-anchor="middle" fill="var(--signal)">STEP 2 — CHECK AGAIN</text>
-          <text class="svg-mono" x="682" y="194" text-anchor="middle" fill="var(--ink)">read the task's state</text>
-          <text class="svg-tiny" x="682" y="214" text-anchor="middle" fill="var(--ink-soft)">still PUBLISHED?</text>
+          <text class="svg-tiny" x="682" y="174" text-anchor="middle" fill="var(--signal)">SAME SCRIPT — CHANGE</text>
+          <text class="svg-mono" x="682" y="194" text-anchor="middle" fill="var(--ink)">task → FAILED, entry removed</text>
+          <text class="svg-tiny" x="682" y="214" text-anchor="middle" fill="var(--ink-soft)">call to the sender queued</text>
         </g>
 
         <line x1="682" y1="236" x2="682" y2="300" stroke="var(--inert)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#d5-arr)" color="var(--inert)"/>
-        <text class="svg-mono" x="694" y="268" fill="var(--inert)">no → "I got it" just arrived</text>
+        <text class="svg-mono" x="694" y="268" fill="var(--inert)">Redis error → nothing changed, retry next tick</text>
 
         <rect x="400" y="306" width="364" height="40" rx="4" fill="var(--surface-sunk)" stroke="var(--inert)" stroke-dasharray="4 3"/>
         <text class="svg-mono" x="582" y="331" text-anchor="middle" fill="var(--inert)">do nothing — leave the task alone</text>
@@ -1047,16 +1047,16 @@
 
         <g color="var(--fail)">
           <rect x="286" y="48" width="164" height="60" rx="4" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.75"/>
-          <text class="svg-label" x="368" y="72" text-anchor="middle" fill="var(--fail)">mark it FAILED</text>
-          <text class="svg-tiny" x="368" y="90" text-anchor="middle" fill="var(--ink-soft)">and tell the sender — §07</text>
+          <text class="svg-label" x="368" y="72" text-anchor="middle" fill="var(--fail)">the run is FAILED</text>
+          <text class="svg-tiny" x="368" y="90" text-anchor="middle" fill="var(--ink-soft)">the sender is told — §07</text>
         </g>
       </svg>
     </div>
-    <figcaption><b>Two checks before any action.</b> Removing the entry first means that if several copies of Sagawise are running, only one of them can win. Re-reading the task's state then guards against a receive report that arrived a moment ago.
-      <span class="src"><code>backend/instance_engine/reaper.go:46</code> reads the overdue entries<code>backend/instance_engine/reaper.go:54-58</code> step 1<code>backend/instance_engine/reaper.go:67-69</code> step 2<code>backend/instance_engine/reaper.go:72</code> marks it failed</span></figcaption>
+    <figcaption><b>Check and change in one step.</b> Redis runs the script without letting anything else in between, so the state check, the change to FAILED and the removal of the entry cannot be separated. If several copies of Sagawise pick up the same entry, exactly one finds the task still PUBLISHED; the others see a task that has already moved on and drop the stale entry.
+      <span class="src"><code>backend/instance_engine/reaper.go</code> <code>reapExpiredDeadlines</code> reads the overdue entries and runs the script on each<code>backend/instance_engine/transition.lua</code> the <code>reap</code> branch of <code>decide</code></span></figcaption>
   </figure>
 
-  <p>The order of those two checks matters. If the reaper read the state first and removed the entry second, two running copies of Sagawise could both see <code>PUBLISHED</code> and both report the same failure. Removing first makes the removal a kind of lock: Redis tells exactly one caller "yes, you removed it".</p>
+  <p>The entry is removed only inside the script that marks the task FAILED, never before it. If the process dies or Redis returns an error while deciding, nothing has changed and the entry is still there on the next tick. Sagawise used to remove the entry first, as a kind of lock, and read the state afterwards; a crash or a Redis hiccup between the two lost the clock for good, and the task stayed PUBLISHED forever.</p>
 
   <aside class="callout">
     <span class="tag">Two different time units</span>
@@ -1064,10 +1064,10 @@
     <span class="src"><code>backend/instance_engine/instance_engine.go:237</code> milliseconds<code>backend/instance_engine/instance_engine.go:133</code><code>backend/instance_engine/instance_engine.go:76</code> seconds — every task timestamp is stamped by <code>markTask</code></span>
   </aside>
 
-  <aside class="callout crit">
-    <span class="tag">A known gap, still open</span>
-    <p>The second check makes the race between "I got it" and the reaper very small, but does not remove it. Sagawise reads a task's state and then writes a new state as two separate steps. If "I got it" arrives between those two steps, the reaper can overwrite <code>COMPLETED</code> with <code>FAILED</code>. The window is well under a millisecond. Closing it fully would mean doing each read-and-write as one atomic operation inside Redis.</p>
-    <span class="src"><code>backend/instance_engine/reaper.go:67-72</code> the read, then the call that writes<code>backend/instance_engine/instance_engine.go:301</code> the write itself</span>
+  <aside class="callout">
+    <span class="tag">A gap that used to be here</span>
+    <p>Earlier versions read a task's state and wrote the new one as two separate steps, so an "I got it" arriving between them could be overwritten by the reaper's <code>FAILED</code>. Every change now goes through the same script, whether it comes from a report or from the reaper. Redis runs one of the two first; the other sees a task that is no longer PUBLISHED and is refused — a <code>409</code> for the report, a dropped entry for the reaper. The same script also ends the run and, when the run fails, removes the clocks of its other tasks, so a run fails once and the sender is called once.</p>
+    <span class="src"><code>backend/instance_engine/transition.lua</code><code>docs/contract.md</code> §2–§5 and §10, the rules the script implements</span>
   </aside>
 </section>
 
@@ -1075,10 +1075,11 @@
 <section id="callback">
   <h2><span class="num">07</span> Telling the sender</h2>
 
-  <p>A task can fail in two ways. A service can say so directly, by sending an "it failed" report. Or the reaper can decide it failed because the clock ran out. Both paths end in the same place: a function called <code>reportFailure</code> in <code>backend/instance_engine/instance_engine.go:298-338</code>.</p>
-  <span class="src"><code>backend/instance_engine/instance_engine.go:277</code> the "it failed" report calls it<code>backend/instance_engine/reaper.go:72</code> the reaper calls it</span>
+  <p>A task can fail in two ways. A service can say so directly, by sending an "it failed" report. Or the reaper can decide it failed because the clock ran out. Both paths run the same transition script, and the script does the first half of the work in one step: it marks the task <code>FAILED</code>, removes its clock, records the time, decides whether the run is now finished, and adds one entry to a second sorted set called <code>webhook_pending</code>.</p>
+  <span class="src"><code>backend/instance_engine/transition.lua</code> the <code>fail</code> and <code>reap</code> branches<code>backend/instance_engine/instance_engine.go</code> <code>UpdateInstance</code> for the report<code>backend/instance_engine/reaper.go</code> for the clock</span>
 
-  <p>It does six things. It removes the task's clock. It marks the task <code>FAILED</code>. It records the time. It checks whether the run is now finished. It looks up the sender, the receiver, and the message that was sent. Then it makes an HTTP call to tell a service what happened.</p>
+  <p>A background <strong>worker</strong> does the second half. It drains <code>webhook_pending</code>: for each entry it looks up the sender, the receiver and the saved message, and makes an HTTP call to tell the sender what happened. Splitting the work in two matters. The state change is instant and cannot be lost. The call is slow and can fail, so it is retried with growing pauses (2 s, 6 s, 18 s… up to five minutes) for eight attempts, and a slow receiver only delays its own call, never the reaper or anyone else's call. If every attempt fails the entry is dropped, logged and counted; the task and the run stay <code>FAILED</code> regardless.</p>
+  <span class="src"><code>backend/instance_engine/queue.go</code> the worker<code>backend/instance_engine/instance_engine.go</code> <code>webhookJob</code> one delivery<code>docs/contract.md</code> §6 the delivery rules</span>
 
   <p>Which service? Not the one that failed. <strong>The one that sent the message.</strong></p>
 
@@ -1086,7 +1087,7 @@
 
   <figure class="bleed">
     <div class="fig-body">
-      <svg viewBox="0 0 900 360" role="img" aria-label="reportFailure removes the deadline, sets the task state to FAILED with a failedAt timestamp, calls checkWorkflowState, resolves the from-service failure URL from services.json, and POSTs the stored payload to the orders service with a query parameter naming the service that failed. The report goes to orders, the publisher, not to payments, the consumer that went silent.">
+      <svg viewBox="0 0 900 360" role="img" aria-label="The transition script sets the task state to FAILED with a failedAt timestamp, removes the deadline, ends the run and queues an entry in webhook_pending. The webhook worker then resolves the from-service failure URL from services.json and POSTs the stored payload to the orders service with a query parameter naming the service that failed, retrying with backoff. The report goes to orders, the publisher, not to payments, the consumer that went silent.">
         <defs>
           <marker id="d6-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
@@ -1108,13 +1109,13 @@
         <text class="svg-tiny" x="338" y="96" text-anchor="middle" fill="var(--fail)">receiver — silent</text>
 
         <rect x="24" y="146" width="392" height="192" rx="5" fill="var(--fail-wash)" stroke="var(--fail)" stroke-width="1.5"/>
-        <text class="svg-head" x="42" y="170" fill="var(--fail)">reportFailure</text>
-        <text class="svg-mono" x="42" y="196" fill="var(--ink-soft)">1 · remove the task's clock</text>
-        <text class="svg-mono" x="42" y="218" fill="var(--ink-soft)">2 · task → FAILED</text>
-        <text class="svg-mono" x="42" y="240" fill="var(--ink-soft)">3 · record the time</text>
-        <text class="svg-mono" x="42" y="262" fill="var(--ink-soft)">4 · is the run complete?</text>
-        <text class="svg-mono" x="42" y="284" fill="var(--ink-soft)">5 · look up sender, receiver, message</text>
-        <text class="svg-mono" x="42" y="306" fill="var(--fail)">6 · call the sender's failure address</text>
+        <text class="svg-head" x="42" y="170" fill="var(--fail)">script, then worker</text>
+        <text class="svg-mono" x="42" y="196" fill="var(--ink-soft)">1 · task → FAILED, clock removed</text>
+        <text class="svg-mono" x="42" y="218" fill="var(--ink-soft)">2 · record the time; the run ends</text>
+        <text class="svg-mono" x="42" y="240" fill="var(--ink-soft)">3 · queue an entry in webhook_pending</text>
+        <text class="svg-mono" x="42" y="262" fill="var(--ink-soft)">4 · worker: look up sender, receiver, message</text>
+        <text class="svg-mono" x="42" y="284" fill="var(--fail)">5 · worker: call the sender's failure address</text>
+        <text class="svg-mono" x="42" y="306" fill="var(--ink-soft)">6 · failed? retry later; 8 tries, then give up</text>
         <text class="svg-tiny" x="42" y="326" fill="var(--ink-faint)">the message was saved when "I sent it" arrived</text>
 
         <line x1="420" y1="242" x2="472" y2="242" stroke="var(--fail)" stroke-width="1.75" marker-end="url(#d6-arr)" color="var(--fail)"/>
@@ -1144,22 +1145,22 @@
   </figure>
 
   <p>Two details make this work. When a service reports "I sent it", it includes a copy of the message body, and Sagawise saves that copy on the task. Later, when the task fails, Sagawise sends that same copy back to the sender. The sender does not need to keep its own record of what it sent.</p>
-  <span class="src"><code>backend/instance_engine/instance_engine.go:203-212</code> reads the body once for all matching tasks<code>backend/instance_engine/instance_engine.go:229</code> saves it on the task<code>backend/instance_engine/instance_engine.go:311-314</code> reads it back on failure</span>
+  <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>UpdateInstance</code> reads the body once and hands it to the script, which saves it at <code>tasks[i].payload</code>; <code>webhookJob</code> reads it back on failure</span>
 
   <p>The address to call comes from <code>services.json</code> at the root of the repository. Sagawise reads that file from disk every time a task fails, looks up the sender's name, and uses the address it finds.</p>
-  <span class="src"><code>backend/instance_engine/instance_engine.go:90-106</code></span>
+  <span class="src"><code>backend/instance_engine/engine.go</code> <code>FileRegistry</code></span>
 
   <aside class="callout">
-    <span class="tag">An unregistered service is skipped</span>
-    <p>If the sender's name is not in <code>services.json</code>, the lookup returns an empty address. Sagawise notices this, writes <code>No failure_url registered for service …</code> to its log, and skips the call. The task is still marked <code>FAILED</code> either way — only the outbound notification is dropped, so the sender never learns it must compensate. Whenever a new service is added, check that it appears in this file, and watch the log for that message.</p>
-    <span class="src"><code>backend/instance_engine/instance_engine.go:105</code> returns the empty string<code>backend/instance_engine/instance_engine.go:316-319</code> checks it and skips</span>
+    <span class="tag">An unregistered service stops the program from starting</span>
+    <p>Every sender named in every workflow file must have an address in <code>services.json</code>. Sagawise checks this once at startup and refuses to run otherwise, so a task can never fail without a sender to call. (If the address were missing anyway, the worker would log and drop the call; the task stays <code>FAILED</code>.)</p>
+    <span class="src"><code>backend/instance_engine/engine.go</code> <code>ValidateServices</code><code>backend/main.go</code> calls it before serving</span>
   </aside>
 
   <h3>One message, several receivers</h3>
 
   <p>Section <a href="#storage">05</a> noted that an "I sent it" report matches tasks by topic alone. This is what lets one message reach more than one service.</p>
 
-  <p>The project's second workflow, <code>backend/sagawise/user_creation.json</code>, has two tasks on the same topic, <code>user_created_saga</code>, going to two different services. One "I sent it" report starts both tasks. Each gets its own clock. Each waits for its own "I got it". One can complete while the other times out.</p>
+  <p>The project's second workflow, <code>backend/sagawise/user_creation.json</code>, has two tasks on the same topic, <code>user_created_saga</code>, going to two different services. One "I sent it" report starts both tasks, together or not at all. Each gets its own clock. Each waits for its own "I got it". One can complete while the other is still waiting; if one of them then times out, the run is <code>FAILED</code>, the other's clock is removed, and the sender is called once.</p>
   <span class="src"><code>backend/sagawise/user_creation.json:12-23</code> the two tasks that share a topic</span>
 
   <figure class="bleed">
@@ -1194,12 +1195,12 @@
         <text class="svg-mono" x="614" y="190" fill="var(--ink)">task 2 → intermediate</text>
         <text class="svg-tiny" x="614" y="210" fill="var(--warn)">PUBLISHED · its own 19.5 s clock</text>
 
-        <text class="svg-tiny" x="737" y="128" text-anchor="middle" fill="var(--ink-faint)">separate lives — either one can</text>
-        <text class="svg-tiny" x="737" y="144" text-anchor="middle" fill="var(--ink-faint)">finish while the other times out</text>
+        <text class="svg-tiny" x="737" y="128" text-anchor="middle" fill="var(--ink-faint)">separate clocks — either can finish</text>
+        <text class="svg-tiny" x="737" y="144" text-anchor="middle" fill="var(--ink-faint)">first; the first failure ends the run</text>
       </svg>
     </div>
     <figcaption><b>Matching by topic alone is what allows fan-out.</b> Both tasks start from one report. Their "I got it" reports then name the receiver, so each one finishes on its own.
-      <span class="src"><code>backend/instance_engine/instance_engine.go:197</code> the topic-only query<code>backend/instance_engine/instance_engine.go:214-247</code> the loop that starts every matching task</span></figcaption>
+      <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>UpdateInstance</code> collects every task on the topic<code>backend/instance_engine/transition.lua</code> publishes them in one step, all or none</span></figcaption>
   </figure>
 </section>
 
@@ -1272,15 +1273,15 @@
         <text class="svg-tiny" x="602" y="251" text-anchor="middle" fill="var(--ink-faint)">and kept in Redis too</text>
 
         <text class="svg-tiny" x="700" y="220" fill="var(--ink-faint)">both are final — archived</text>
-        <text class="svg-tiny" x="700" y="236" fill="var(--ink-faint)">once, by whichever writer</text>
-        <text class="svg-tiny" x="700" y="252" fill="var(--ink-faint)">gets there first</text>
+        <text class="svg-tiny" x="700" y="236" fill="var(--ink-faint)">by a background worker that</text>
+        <text class="svg-tiny" x="700" y="252" fill="var(--ink-faint)">retries until Postgres answers</text>
       </svg>
     </div>
     <figcaption><b>A run ends in one of two ways.</b> Every task COMPLETED makes the run COMPLETED. A single FAILED task makes the whole run FAILED at once — the saga is compensating and can never finish. Both states are final and both are archived.
       <span class="src"><code>backend/instance_engine/instance_engine.go:354-378</code> counts the tasks and picks the terminal state<code>backend/instance_engine/instance_engine.go:381-397</code> the only place a run changes state</span></figcaption>
   </figure>
 
-  <p>The table below shows what each report does, depending on the task's current state. A <span class="pill inertp">403</span> means Sagawise refuses the report and tells the caller why.</p>
+  <p>The table below shows what each report does, depending on the task's current state. A <span class="pill inertp">409</span> means Sagawise refuses the report and tells the caller why, with a stable error code such as <code>TASK_ALREADY_COMPLETED</code>. Once a run has ended, every report on it is refused with <code>INSTANCE_TERMINAL</code>, whatever the task's state.</p>
 
   <div class="table-wrap">
     <table>
@@ -1291,35 +1292,35 @@
         <tr>
           <td class="mono">"I sent it"</td>
           <td><span class="pill warnp">→ PUBLISHED</span><span class="sub">the clock starts</span></td>
-          <td><span class="pill inertp">403</span><span class="sub">already sent</span></td>
-          <td><span class="pill inertp">403</span></td>
+          <td><span class="pill inertp">409</span><span class="sub">already sent</span></td>
+          <td><span class="pill inertp">409</span></td>
         </tr>
         <tr>
           <td class="mono">"I got it"</td>
-          <td><span class="pill inertp">403</span><span class="sub">nothing was sent yet</span></td>
+          <td><span class="pill inertp">409</span><span class="sub">nothing was sent yet</span></td>
           <td><span class="pill ok">→ COMPLETED</span><span class="sub">the clock stops</span></td>
-          <td><span class="pill inertp">403</span></td>
+          <td><span class="pill inertp">409</span></td>
         </tr>
         <tr>
           <td class="mono">"it failed"</td>
-          <td><span class="pill inertp">403</span></td>
+          <td><span class="pill inertp">409</span></td>
           <td><span class="pill failp">→ FAILED</span><span class="sub">the sender is called</span></td>
-          <td><span class="pill inertp">403</span></td>
+          <td><span class="pill inertp">409</span></td>
         </tr>
         <tr>
           <td class="mono">clock ran out</td>
           <td><span class="pill inertp">cannot happen</span><span class="sub">no clock exists yet</span></td>
           <td><span class="pill failp">→ FAILED</span><span class="sub">the sender is called</span></td>
-          <td><span class="pill inertp">ignored</span><span class="sub">reaper's second check</span></td>
+          <td><span class="pill inertp">ignored</span><span class="sub">stale entry dropped</span></td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <span class="src"><code>backend/instance_engine/instance_engine.go:255-293</code> the "I got it" and "it failed" rules, which now share one function<code>backend/instance_engine/instance_engine.go:214-247</code> the "I sent it" rules<code>backend/instance_engine/reaper.go:67-69</code> the clock-ran-out rule</span>
+  <span class="src"><code>backend/instance_engine/transition.lua</code> <code>decide</code> is this table<code>docs/contract.md</code> §2 the same table, with the rules it follows from</span>
 
-  <p>Every report accepts a flag called <code>is_retry</code>. When it is set to <code>true</code>, every <span class="pill inertp">403</span> in the table above is skipped and the change is forced through. It exists for cases where a message is delivered a second time. It removes all of the guards at once, so it should be used with care.</p>
-  <span class="src"><code>backend/instance_engine/instance_engine.go:165</code> where the flag is read<code>backend/instance_engine/instance_engine.go:222</code> overrides the "I sent it" guard<code>backend/instance_engine/instance_engine.go:270</code> overrides the "I got it" and "it failed" guard<code>backend/instance_engine/instance_engine.go:286</code> overrides the lost-deadline-race guard</span>
+  <p>Every report accepts a flag called <code>is_retry</code>. It exists for the case where a message, or the HTTP report about it, is delivered a second time. With <code>is_retry=true</code> a report that repeats a change already made — "I sent it" for a task already sent, "I got it" for one already received — is answered <code>200</code> and changes nothing. There is one exception: repeating "I sent it" while the task is still waiting restarts its clock and replaces the saved message, because the receiver is about to get a fresh copy. The flag never forces a change the table forbids. A task that is <code>COMPLETED</code> or <code>FAILED</code> stays so, and a run that has ended accepts nothing but these harmless repeats. (It used to skip every guard in the table at once; that is what audit finding #2 was about.)</p>
+  <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>parseRetry</code> reads the flag, strictly<code>backend/instance_engine/transition.lua</code> the <code>IDEMPOTENT</code> answers<code>docs/contract.md</code> §4 the retry rules</span>
 </section>
 
 <!-- ============================================ 9 ============================================ -->
@@ -1328,7 +1329,7 @@
 
   <p>Sagawise is written in Go. The source lives under <code>backend/</code>. Note that the Go module is still named <code>wtfsaga</code>, the project's former name, so imports read <code>wtfsaga/instance_engine</code> rather than <code>sagawise/...</code>.</p>
 
-  <p>The whole engine is about 950 lines across four files. Most of the thinking happens in two of them.</p>
+  <p>The engine is about 1,900 lines across seven files, one of them a Lua script that Redis runs. Most of the thinking happens in three of them: the script, the report handler, and the queue worker.</p>
 
   <div class="table-wrap">
     <table>
@@ -1337,24 +1338,39 @@
       </thead>
       <tbody>
         <tr>
+          <td class="mono">instance_engine/transition.lua</td>
+          <td class="mono">180</td>
+          <td>The state machine. Runs inside Redis as one atomic step: checks the task's state, writes the new one, adds or removes the clock, ends the run when it should, and queues the archive and the call to the sender. Every change to a task or a run goes through it, whether it comes from a report or from the reaper.</td>
+        </tr>
+        <tr>
           <td class="mono">instance_engine/instance_engine.go</td>
-          <td class="mono">538</td>
-          <td>Handles every report. Moves tasks and runs between states. Calls the sender on failure. Copies finished runs to Postgres. Also contains the read-only listing endpoints, which make up about a fifth of the file. The first eighty lines are small shared helpers that the rest of the file is written in terms of.</td>
+          <td class="mono">705</td>
+          <td>Handles every report: checks the parameters, finds the task by comparing topic and receiver in Go, runs the script, answers in JSON. Holds the two jobs the workers run (one archive insert, one call to a sender) and the read-only listing endpoints.</td>
+        </tr>
+        <tr>
+          <td class="mono">instance_engine/queue.go</td>
+          <td class="mono">220</td>
+          <td>A worker over a sorted-set queue: claim the entries that are due, run the job, remove the entry on success or push it back with a longer pause on failure. Used twice, for archiving and for calling senders.</td>
         </tr>
         <tr>
           <td class="mono">instance_engine/reaper.go</td>
-          <td class="mono">74</td>
+          <td class="mono">102</td>
           <td>The sorted set of clocks and the loop that checks it. Short, but it is the only place Sagawise decides anything on its own.</td>
         </tr>
         <tr>
+          <td class="mono">instance_engine/engine.go</td>
+          <td class="mono">204</td>
+          <td>The <code>Engine</code> struct that owns every dependency (the Redis client, the Postgres pool, the clock, the service registry, the HTTP client, the two workers) and the startup check that every sender has a failure address.</td>
+        </tr>
+        <tr>
           <td class="mono">templating/templating.go</td>
-          <td class="mono">121</td>
-          <td>Runs once at startup. Reads the workflow files into Redis, creates the search indexes, creates the Postgres table.</td>
+          <td class="mono">216</td>
+          <td>Runs once at startup. Validates and reads the workflow files into Redis, creates or recreates the search indexes, creates the Postgres table.</td>
         </tr>
         <tr>
           <td class="mono">main.go</td>
-          <td class="mono">216</td>
-          <td>Wires the web endpoints, starts the reaper, handles shutdown. No logic of its own.</td>
+          <td class="mono">240</td>
+          <td>Wires the web endpoints, starts the reaper and the workers, handles shutdown in order. No logic of its own.</td>
         </tr>
       </tbody>
     </table>
@@ -1380,8 +1396,8 @@
         </tr>
         <tr>
           <td class="mono">GET /workflow_instances/get</td>
-          <td>Read one run's full document. The <code>doc_key</code> must include the <code>workflow_instance:</code> prefix, even though <code>/start_instance</code> returns the bare ID.
-            <span class="sub">instance_engine.go:520-538 · routed at main.go:156</span></td>
+          <td>Read one run's full document, by the bare <code>workflow_instance_id</code> that <code>/start_instance</code> returned.
+            <span class="sub">GetWorkflowInstance in instance_engine.go</span></td>
         </tr>
         <tr>
           <td class="mono">GET /workflow_instances/list</td>
@@ -1428,14 +1444,14 @@
   <ul class="notes">
     <li><strong>Workflow files and <code>services.json</code> are baked into the container image.</strong> Editing either one does nothing until the image is rebuilt with <code>make restart</code>.
       <span class="src"><code>backend/Dockerfile:33-34</code><code>Makefile:13-14</code></span></li>
-    <li><strong>The Redis search indexes are created once and never updated.</strong> The create command fails quietly if the index already exists, because its error is discarded. If you change an index's shape, you must delete the Redis data before it takes effect.
-      <span class="src"><code>backend/templating/templating.go:70-106</code> the three index definitions</span></li>
+    <li><strong>The Redis search indexes rebuild themselves when their definition changes.</strong> Startup stores a hash of each index definition in Redis and drops and recreates the index when the code's definition differs. Changing an index's shape needs no manual step; the documents are kept and re-indexed.
+      <span class="src"><code>backend/templating/templating.go</code> <code>ensureIndex</code> and the two index definitions in <code>ParseDSL</code></span></li>
     <li><strong>Finished runs are copied to Postgres but deliberately left in Redis.</strong> Redis stays the live store that every read endpoint queries; Postgres is only the long-term archive. Nothing prunes Redis, so it grows without bound.
-      <span class="src"><code>backend/instance_engine/instance_engine.go:418-426</code> the archive write, and the comment explaining why nothing is deleted</span></li>
-    <li><strong>Almost every read of the instance document goes through two helpers.</strong> RedisJSON path queries always return an array, so <code>jsonFirstMatch</code> and <code>jsonMatches</code> wrap the read-unmarshal-check-length dance that would otherwise be repeated at every call site. New code that reads the document should use them rather than calling <code>JSONGet</code> directly.
-      <span class="src"><code>backend/instance_engine/instance_engine.go:52-70</code> the two helpers</span></li>
-    <li><strong>A missing query parameter is reported for every parameter at once.</strong> <code>requireParams</code> builds one 400 response naming all of them, which is why the error bodies read like <code>action_type required. event_name required.</code>
-      <span class="src"><code>backend/instance_engine/instance_engine.go:36-48</code></span></li>
+      <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>archiveJob</code> the archive write, and the comment explaining why nothing is deleted</span></li>
+    <li><strong>Go never writes a task's state directly.</strong> Every change goes through <code>transition.lua</code>, run by <code>Engine.transition</code>. New behaviour that touches state belongs in the script, so that it stays one atomic step; Go only decides which task the report is about and how to phrase the answer. The document layout the script expects is called schema 2; a document from before the rewrite (tasks under <code>"0"</code>, <code>"1"</code>) is refused with a 500, and a development stack is upgraded with <code>make clean</code>.
+      <span class="src"><code>backend/instance_engine/transition.lua</code><code>backend/instance_engine/instance_engine.go</code> <code>transition</code>, <code>readTaskIdentity</code><code>docs/design-phase-6.md</code> the design and its decisions</span></li>
+    <li><strong>Every answer is JSON, and every error carries a stable code.</strong> <code>requireParams</code> reports every missing parameter at once, so a body reads like <code>{"error":"MISSING_PARAM","message":"missing query parameter(s): action_type, event_name"}</code>. A refusal by the state machine is a <code>409</code>, an unknown thing a <code>404</code>, and a Redis or Postgres problem a <code>500</code> with the code <code>INTERNAL</code>, never a business answer.
+      <span class="src"><code>backend/instance_engine/instance_engine.go</code> <code>codeStatus</code>, <code>writeError</code><code>docs/contract.md</code> §9</span></li>
     <li><strong>Database setup runs only on a first, empty volume.</strong> <code>postgres-dev/setup-databases.sh</code> creates one database per entry in <code>POSTGRES_DATABASE_LIST</code> in the root <code>.env</code>, but it does not run again if <code>db_data/</code> already exists.
       <span class="src"><code>postgres-dev/setup-databases.sh</code><code>.env:13</code> the database list<code>Makefile:16-20</code> — <code>make clean</code> removes the volume</span></li>
   </ul>
@@ -1512,11 +1528,16 @@
         <tr><th>Path</th><th>What it is</th></tr>
       </thead>
       <tbody>
-        <tr><td class="mono">backend/main.go</td><td>Web endpoints, startup, shutdown. Starts the reaper at line 175.</td></tr>
-        <tr><td class="mono">backend/instance_engine/instance_engine.go</td><td>Handles every report; all state changes; the failure call. Opens with the shared helpers the rest of the file is built on.</td></tr>
+        <tr><td class="mono">backend/main.go</td><td>Web endpoints, startup, shutdown. Starts the reaper and the two queue workers.</td></tr>
+        <tr><td class="mono">backend/instance_engine/transition.lua</td><td>The state machine, run inside Redis as one atomic step per report or timeout.</td></tr>
+        <tr><td class="mono">backend/instance_engine/instance_engine.go</td><td>Handles every report; finds the task; runs the script; the archive and failure-call jobs.</td></tr>
+        <tr><td class="mono">backend/instance_engine/queue.go</td><td>The worker that drains a sorted-set queue with a lease and retries.</td></tr>
         <tr><td class="mono">backend/instance_engine/reaper.go</td><td>The clock store and the loop that finds overdue clocks.</td></tr>
-        <tr><td class="mono">backend/templating/templating.go</td><td>Startup: reads workflow files, creates indexes and the Postgres table.</td></tr>
-        <tr><td class="mono">backend/db_connect/</td><td>Connection setup for Redis (two clients) and Postgres.</td></tr>
+        <tr><td class="mono">backend/instance_engine/engine.go</td><td>The Engine struct: every dependency in one place, plus the startup check of services.json.</td></tr>
+        <tr><td class="mono">backend/templating/templating.go</td><td>Startup: validates and reads workflow files, creates indexes and the Postgres table.</td></tr>
+        <tr><td class="mono">backend/db_connect/</td><td>Connection setup for Redis (one client) and Postgres.</td></tr>
+        <tr><td class="mono">docs/contract.md</td><td>The rules the engine must follow: state machine, retries, timeouts, the call to the sender, archiving, status codes.</td></tr>
+        <tr><td class="mono">docs/design-phase-6.md</td><td>Why the engine is built the way this document describes.</td></tr>
         <tr><td class="mono">backend/utils/</td><td>The Go structs for a workflow, a task, and a service entry.</td></tr>
         <tr><td class="mono">backend/otel/</td><td>Tracing setup.</td></tr>
         <tr><td class="mono">backend/sagawise/order_flow.json</td><td>The two-task workflow used throughout this document.</td></tr>
@@ -1540,7 +1561,7 @@
 </section>
 
 <footer>
-  <p>Written from the source on branch <code>correctness</code>, current as of the refactor that reduced the engine to two files of 538 and 74 lines. Line numbers refer to that branch and will drift as the code changes; the file paths are stable. This document is <code>backend/docs/engine-internals.html</code>.</p>
+  <p>Written from the source on branch <code>correctness</code> and revised for the phase 6 state-machine rewrite (branch <code>state-machine</code>, 2026-09-05), which moved the tasks into a list, put every state change into one Redis script, and made the archive and the call to the sender durable queues. Line numbers that remain in earlier sections are from the original and have drifted; file, function and script names are current. This document is <code>backend/docs/engine-internals.html</code>.</p>
 </footer>
 
 </main>
