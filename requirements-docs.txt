@@ -1,0 +1,2 @@
+# Documentation site (mkdocs.yml). Install with `make docs-tools`.
+mkdocs-material==9.7.7

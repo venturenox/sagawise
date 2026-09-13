@@ -537,7 +537,7 @@ func populateInstances(ctx context.Context, rdb *redis.Client, from, to int) {
 	now := time.Now().Unix()
 	pipe := rdb.Pipeline()
 	for i := from; i < to; i++ {
-		// Schema 2 layout (docs/design-phase-6.md §1): tasks under $.tasks.
+		// Schema 2 layout (docs/history/design-phase-6.md §1): tasks under $.tasks.
 		doc := map[string]interface{}{
 			"schema": 2, "name": flowName, "version": "1.0", "schema_version": "1.0", "state": "PENDING",
 			"startedAt": now, "completedAt": 0, "failedAt": 0,

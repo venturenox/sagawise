@@ -1,10 +1,10 @@
 # Sagawise Nodejs SDK
 
-![sagawise platform logo](https://raw.githubusercontent.com/venturenox/sagawise/main/sdk/sagawise-platform-logo.png)
+![sagawise platform logo](https://raw.githubusercontent.com/venturenox/sagawise/main/docs/assets/sagawise-platform-logo.png)
 
 Easy to adopt workflow tracking which instantly lets developers bring resilience into their implementations of saga patterns.
 
-[Website](https://venturenox.com/work/sagawise/) | [Documentation](https://github.com/venturenox/wtfsaga/tree/main) | [NodeJS SDK Documentation](https://github.com/venturenox/sagawise/blob/main/sdk/nodejs)
+[Website](https://venturenox.com/work/sagawise/) | [Documentation](https://venturenox.github.io/sagawise/) | [NodeJS SDK Documentation](https://github.com/venturenox/sagawise/blob/main/sdk/nodejs)
 
 ## Table of Contents
 
@@ -59,21 +59,25 @@ and `X-Sagawise-Timestamp` is within 5 minutes of now (`toleranceSeconds`).
 
 ## Installing
 
-Sagawise will soon be published on `npm` and `yarn` (see Roadmap)
+Sagawise will soon be published on `npm` and `yarn` (see Roadmap). Until then, install it from a clone of the repository:
+
+```
+npm install /path/to/sagawise/sdk/nodejs
+```
 
 <!-- ### Using npm
 ```
-npm install sagawise
+npm install @venturenox/sagawise
 ```
 
 ### Using yarn
 ```
-yarn add sagawise
+yarn add @venturenox/sagawise
 ```
 
 ### Using pnpm
 ```
-pnpm add sagawise
+pnpm add @venturenox/sagawise
 ``` -->
 
 ---
@@ -83,7 +87,7 @@ pnpm add sagawise
 Once the package is installed, you can import the library using `require` approach. **Only default export is available**:
 
 ```javascript
-const sagawise = require("sagawise");
+const sagawise = require("@venturenox/sagawise");
 ```
 
 The client reads `SAGAWISE_URL` (base URL of the Sagawise server) at import time, and `SAGAWISE_TIMEOUT_MS` (per-request timeout, default `1000`).

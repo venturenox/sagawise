@@ -34,7 +34,7 @@ func renderReport(res *Results, goBench string) string {
 	fmt.Fprintf(&b, "- **Config:** rates %s sagas/s, %s per rate, %s reaper-lag tasks, go-bench count %s × %s\n\n",
 		res.Config["rates"], res.Config["duration"], res.Config["lag_tasks"], res.Config["bench_count"], res.Config["bench_time"])
 
-	b.WriteString("Method: the real server binary on a free port, driven open-loop over HTTP. One saga = 5 requests (start, publish, consume, publish, consume) on a two-task workflow. Archive completeness counts `instance_history` rows for completed sagas after the rate finishes. Reaper lag is deadline → failure-webhook arrival for tasks published with a 2s timeout and never consumed. See `docs/benchmarks/README.md`.\n\n")
+	b.WriteString("Method: the real server binary on a free port, driven open-loop over HTTP. One saga = 5 requests (start, publish, consume, publish, consume) on a two-task workflow. Archive completeness counts `instance_history` rows for completed sagas after the rate finishes. Reaper lag is deadline → failure-webhook arrival for tasks published with a 2s timeout and never consumed. See `docs/benchmarks.md`.\n\n")
 
 	b.WriteString("## Load\n\n")
 	b.WriteString("| target sagas/s | achieved | requests | errors | start p50/p99 ms | publish p50/p99 ms | consume p50/p99 ms | redis cmds/saga | archived / completed |\n")

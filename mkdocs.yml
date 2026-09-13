@@ -1,0 +1,87 @@
+# Documentation site: `make docs` serves it locally, `make docs-build` checks
+# it (strict: a broken link fails the build), .github/workflows/docs.yml
+# publishes it to GitHub Pages on every push to main.
+#
+# The nav below is the whole site. A file in docs/ that is not listed here is
+# still built but not linked; a file matched by exclude_docs is not built.
+
+site_name: Sagawise
+site_description: Saga-pattern bookkeeper for distributed transactions.
+site_url: https://venturenox.github.io/sagawise/
+repo_url: https://github.com/venturenox/sagawise
+repo_name: venturenox/sagawise
+edit_uri: edit/main/docs/
+copyright: Apache-2.0
+
+docs_dir: docs
+strict: true
+# Plain .html pages rather than directory URLs, so the built site/ also works
+# opened straight from the filesystem, with no web server.
+use_directory_urls: false
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+plugins:
+  - search
+
+# Raw benchmark runs and comparison reports live in benchmarks/ at the repo
+# root: data, not documentation. docs/benchmarks.md is the method and the
+# charts. Vendored chart READMEs live under charts/.
+
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Your first saga: first-saga.md
+  - Explanation:
+      - Concepts: concepts.md
+      - Architecture: architecture.md
+      - History:
+          - history/index.md
+          - Correctness audit (2026-08-29): history/correctness-audit-2026-08-29.md
+          - Roadmap: history/TODO.md
+          - State-machine design: history/design-phase-6.md
+  - How-to:
+      - Operations: operations.md
+      - Security: security.md
+      - Benchmarks: benchmarks.md
+      - Development: development.md
+  - Reference:
+      - Contract: contract.md
+      - HTTP API: api.md
+      - Configuration: configuration.md

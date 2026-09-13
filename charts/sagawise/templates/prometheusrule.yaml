@@ -1,0 +1,92 @@
+{{- /*
+Alerting rules for the Prometheus Operator (phase 9). The same rules, with
+the same names, live in deploy/alerts.yml for a plain Prometheus; keep them
+in step. Runbook: docs/operations.md.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "sagawise.fullname" . }}
+  namespace: {{ include "relname" . }}
+  labels:
+    {{- include "sagawise.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: sagawise
+      rules:
+        - alert: SagawiseDown
+          expr: up{job=~".*{{ include "sagawise.fullname" . }}.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Sagawise is not being scraped"
+            description: "No metrics from {{ "{{ $labels.instance }}" }} for 2 minutes. Reports fail and timeouts are not enforced."
+        - alert: SagawiseReaperStalled
+          expr: time() - sagawise_reaper_last_tick_seconds > 60
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Reaper has not ticked for over a minute"
+            description: "{{ "{{ $labels.instance }}" }}: last reaper tick {{ "{{ $value | humanizeDuration }}" }} ago. Timed-out tasks are not being failed."
+        - alert: SagawiseReaperBehind
+          expr: sagawise_reaper_overdue_seconds > 10
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Reaper is behind on deadlines"
+            description: "{{ "{{ $labels.instance }}" }}: a deadline has been overdue for {{ "{{ $value | humanizeDuration }}" }}. Timeouts fire late."
+        - alert: SagawiseReaperErrors
+          expr: increase(sagawise_reaper_ticks_total{result="error"}[5m]) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Reaper ticks are failing"
+            description: "{{ "{{ $labels.instance }}" }}: reaper ticks have errored for 5 minutes (usually Redis). Deadlines wait for the next successful tick."
+        - alert: SagawiseArchiveFailing
+          expr: increase(sagawise_queue_jobs_total{queue="archive",result="failed"}[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Archives to Postgres are failing"
+            description: "{{ "{{ $labels.instance }}" }}: archive jobs have failed for 10 minutes. Terminal instances wait in archive_pending until Postgres returns."
+        - alert: SagawiseArchiveBacklog
+          expr: sagawise_queue_pending{queue="archive"} > 1000
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Archive backlog is growing"
+            description: "{{ "{{ $labels.instance }}" }}: {{ "{{ $value }}" }} terminal instances are waiting to be archived."
+        - alert: SagawiseWebhookGaveUp
+          expr: increase(sagawise_queue_jobs_total{queue="webhook",result="gave_up"}[1h]) > 0
+          labels:
+            severity: critical
+          annotations:
+            summary: "A failure webhook was dropped after all retries"
+            description: "{{ "{{ $labels.instance }}" }}: {{ "{{ $value }}" }} webhook(s) given up in the last hour. Find the instance ids in the log (msg=\"giving up on job\") and compensate by hand."
+        - alert: SagawiseStoreDown
+          expr: sagawise_store_up == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ "{{ $labels.store }}" }} is unreachable from Sagawise"
+            description: "{{ "{{ $labels.instance }}" }} cannot reach {{ "{{ $labels.store }}" }}. Redis down: the API answers 500 and /ready is 503. Postgres down: the API serves, archives queue up."
+        - alert: SagawiseRedisPersistenceOff
+          expr: sagawise_redis_appendonly == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Redis AOF persistence is off"
+            description: "{{ "{{ $labels.instance }}" }}: Redis reports appendonly no. Armed deadlines will not survive a Redis restart."
+{{- end }}

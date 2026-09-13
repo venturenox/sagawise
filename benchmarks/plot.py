@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Draw the benchmark plots under docs/benchmarks/plots/ from the run directories.
+"""Draw the benchmark plots into docs/assets/benchmarks/ from the run directories.
 
-Usage:  python3 docs/benchmarks/plots/plot.py        (needs matplotlib)
+Usage:  python3 benchmarks/plot.py        (needs matplotlib)
 
 Every figure reads runs/*/load.json, runs/*/profile.json and runs/*/go-bench.txt
 directly, so re-running the script after a new `make bench` refreshes the PNGs.
-Which run stands for which phase is pinned in RUNS below; see README.md in this
+Which run stands for which phase is pinned in RUNS below; see docs/benchmarks.md in this
 directory for why (harness fixes make some runs incomparable).
 """
 import json
@@ -21,7 +21,8 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RUNS = os.path.join(HERE, "..", "runs")
+RUNS = os.path.join(HERE, "runs")
+OUT = os.path.join(HERE, "..", "docs", "assets", "benchmarks")
 
 # Phase -> run directory. Load runs (load.json + go-bench.txt).
 LOAD_RUNS = {
@@ -109,7 +110,7 @@ def gobench(name):
 
 
 def save(fig, name):
-    fig.savefig(os.path.join(HERE, name), dpi=150, bbox_inches="tight", facecolor=SURFACE)
+    fig.savefig(os.path.join(OUT, name), dpi=150, bbox_inches="tight", facecolor=SURFACE)
     plt.close(fig)
     print("wrote", name)
 

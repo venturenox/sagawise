@@ -1,6 +1,6 @@
 # Sagawise threat model
 
-**Status:** v1, 2026-09-05. Roadmap phase 8 (`docs/TODO.md`). One page: who can call what, what an attacker gains, and which control answers each threat. Every control below is implemented and tested; the "not covered" list at the end is deliberate.
+**Scope:** who can call what, what an attacker gains, and which control answers each threat. Every control below is implemented and tested; the list of what is not covered, at the end, is deliberate.
 
 ## What Sagawise is, for this purpose
 
@@ -19,7 +19,8 @@ Assets, in order of value:
 |---|---|---|
 | Reporting services (via the SDKs or plain HTTP) | `/start_instance`, `/update_instance` | Trusted to report the truth about their own topics. Must present an API key. |
 | Operators, dashboards | `/workflows/list`, `/workflow_instances/list`, `/workflow_instances/get` | Read payloads. Must present an API key. A browser UI must also be on the CORS allowlist. |
-| Kubernetes / Docker | `/live`, `/ready`, `/health` | No key. They reveal only "up or not". |
+| Kubernetes / Docker | `/live`, `/ready`, `/health` | No key. They reveal only "up or not" per check, never an error string or an address. |
+| Prometheus | `/metrics` on `SAGAWISE_METRICS_ADDR` (default `:9464`) | No key. A separate listener, never on the API port, so it stays off the ingress; in Kubernetes a second container port gated by `networkPolicy.metricsIngress`. Reveals aggregate counts and latencies, no ids or payloads. |
 | Sagawise itself → services | POST to each service's `failure_url` | The service must be able to tell a real delivery from a forged one. |
 | Redis, Postgres | internal | Reached over the network with credentials from Secrets. Not exposed by the API. |
 | Benchmark harness | `/debug/pprof` on `SAGAWISE_PPROF_ADDR` | Opt-in, never set in production. |
@@ -39,23 +40,15 @@ There is one role. Every key can do everything; per-service keys that may report
 | T7 | **Known-vulnerable dependencies.** | `govulncheck` and `gosec` already run on every PR. Dependabot now opens weekly grouped PRs for Go modules, npm, pip, the Docker base image and the GitHub Actions. | `.github/dependabot.yml`, `.github/workflows/ci.yml` | CI |
 | T8 | **Reading arbitrary Redis keys through the API.** | Already closed by contract D7: `/workflow_instances/get` accepts only an instance id and builds the key itself. | `GetWorkflowInstance` | contract tests |
 
-## Configuration summary
+## Configuration
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `SAGAWISE_AUTH` | `api-key` | `off` serves an open API (development only; warned). |
-| `SAGAWISE_API_KEYS` | required | Comma-separated bearer tokens. Rotate by listing old and new, rolling the clients, dropping the old. |
-| `SAGAWISE_CORS_ORIGINS` | empty (none) | Exact origins allowed to call from a browser. |
-| `SAGAWISE_WEBHOOK_SECRET` | empty (unsigned) | HMAC secret for failure webhooks. |
-| `SAGAWISE_MAX_BODY_BYTES` | `1M` | Cap on a request body. |
-
-Clients: `Authorization: Bearer <key>` on every request; the SDKs read `SAGAWISE_API_KEY`. Receivers: verify with `verify_signature` (SDKs) or `webhooksig.Verify` (Go) using the raw body.
+The variables named above are defined in [configuration](configuration.md). Clients send `Authorization: Bearer <key>` on every request; the SDKs read `SAGAWISE_API_KEY`. Rotate keys by listing old and new, rolling the clients, then dropping the old. Receivers verify webhooks with `verify_signature` (SDKs) or `webhooksig.Verify` (Go) against the raw body.
 
 ## Not covered in v1, on purpose
 
 - **Per-service authorization.** Every key can report on every topic. Binding a key to the services it may speak for needs the registry refactor that is already on the roadmap (services.json is a build-time file). Until then, one key per deployment, or one per service purely for rotation and audit.
 - **TLS.** Sagawise speaks plain HTTP. Terminate TLS at the ingress (the chart's ingress has a TLS block) or a mesh. Keys sent over plain HTTP on an untrusted network are readable.
-- **Rate limiting.** A key holder can start sagas until Redis is full. Bound it at the ingress, or add a per-key limiter in phase 9 when metrics exist to size it.
-- **Audit log.** Which key did what is not recorded; phase 9 structured logging is where it belongs.
-- **Redis and Postgres hardening** (AUTH, TLS, network isolation) beyond passing the password through a Secret: the operator's stores, the chart's subcharts, and phase 9 (AOF persistence).
+- **Rate limiting.** A key holder can start sagas until Redis is full. Bound it at the ingress, or add a per-key limiter, now that metrics exist to size it.
+- **Audit log.** The access log records every request (method, path, status, `request_id`, `instance_id`, the action and event names, the remote address; 401s included) but not *which* key was used, since every key is equal. Per-key attribution comes with per-service keys.
+- **Redis and Postgres hardening** (AUTH, TLS, network isolation) beyond passing the password through a Secret: the operator's stores and the chart's subcharts. The AOF check (`SAGAWISE_REDIS_AOF`) is about durability, not access.
 - **Secrets at rest** in `.env` and the example `.env` files: dev defaults, labelled as such.

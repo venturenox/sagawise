@@ -2,7 +2,7 @@
 // API-key authentication, a CORS allowlist, and a request body cap. Each
 // piece is a plain http.Handler wrapper with no package-level state, so
 // main wires them and tests exercise them in isolation. Roadmap phase 8;
-// threat model in docs/threat-model.md.
+// threat model in docs/security.md.
 package httpsec
 
 import (

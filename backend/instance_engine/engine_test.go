@@ -2,6 +2,7 @@ package instance_engine
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -211,7 +212,7 @@ func TestRequireParams(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/update_instance?action_type=publish", nil)
 	w := httptest.NewRecorder()
 
-	if requireParams(r, w, "action_type", "workflow_instance_id", "event_name") {
+	if requireParams(slog.Default(), r, w, "action_type", "workflow_instance_id", "event_name") {
 		t.Fatal("requireParams returned true with missing params")
 	}
 	if w.Code != http.StatusBadRequest {
@@ -236,7 +237,7 @@ func TestRequireParams(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	if !requireParams(r, w, "action_type") {
+	if !requireParams(slog.Default(), r, w, "action_type") {
 		t.Fatal("requireParams returned false with all params present")
 	}
 	if w.Code != http.StatusOK || w.Body.Len() != 0 {
@@ -254,7 +255,7 @@ func TestWriteErrorStatusMapping(t *testing.T) {
 	}
 	for code, want := range cases {
 		w := httptest.NewRecorder()
-		writeError(w, code, "m")
+		writeError(slog.Default(), w, code, "m")
 		if w.Code != want {
 			t.Errorf("%s: status %d, want %d", code, w.Code, want)
 		}

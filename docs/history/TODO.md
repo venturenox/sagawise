@@ -1,7 +1,7 @@
 # Sagawise TODO
 
 Ordered. Each phase is one or more PRs. Tick items as they land.
-Findings numbered `#N` refer to `docs/correctness-audit-2026-08-29.md`.
+Findings numbered `#N` refer to `docs/history/correctness-audit-2026-08-29.md`.
 
 ## Phase 0 — CI
 
@@ -66,17 +66,17 @@ Known-failing count at phase 3 close (`make test-status`): see the phase 3 commi
 
 ## Phase 4 — Baseline benchmark
 
-Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/bench_test.go`; `make bench BENCH_LABEL=<label>` writes one immutable run directory under `docs/benchmarks/runs/`; `make bench-compare A= B=` writes a before/after report under `docs/benchmarks/comparisons/`. See `docs/benchmarks/README.md`.
+Tooling on branch `bench` (2026-09-05): `backend/cmd/bench` + `instance_engine/bench_test.go`; `make bench BENCH_LABEL=<label>` writes one immutable run directory under `benchmarks/runs/`; `make bench-compare A= B=` writes a before/after report under `benchmarks/comparisons/`. See `benchmarks/README.md`.
 
 - [x] Go benchmarks for `UpdateInstance` and the reaper tick. → start, publish, consume, full saga, reaper tick ×10/×50
 - [x] HTTP load script. Record p50, p99, error rate at fixed event rates. → Go load generator in `cmd/bench`, open-loop, real binary over HTTP
 - [x] Measure reaper lag: time from deadline to webhook under load.
 - [x] Measure Redis commands per request. → `INFO commandstats` delta per saga
 - [x] Measure archive completeness under load (lost `instance_history` rows, #9).
-- [x] Save results in `docs/benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
-- [x] Baseline run recorded before phase 5: `docs/benchmarks/runs/2026-09-05_0517_8f8e27c_baseline`.
+- [x] Save results in `benchmarks/`. One directory per run, never overwritten; `env.txt` records machine and commit.
+- [x] Baseline run recorded before phase 5: `benchmarks/runs/2026-09-05_0517_8f8e27c_baseline`.
 - [x] Bottleneck profile (`make bench-profile`): saturation ramp with pprof at the knee, Redis command breakdown, scaling curves (instances, tasks per workflow, payload size, simultaneous timeouts), contention. Baseline: `runs/2026-09-05_0521_8f8e27c_profile-baseline`. Verdict: Redis CPU is the ceiling (JSON.SET re-index per state write); recursive-descent JSONPath scales with document size; reaper lag is linear in simultaneous timeouts.
-- [x] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 done: `runs/2026-09-05_0811_b974cf0_after-phase-7`, `runs/2026-09-05_0818_a89cf09_profile-after-phase-7`: Redis commands per saga -14 %, document writes per report roughly halved, reaper max lag -46 % at 2000 simultaneous timeouts, 0 errors, 0 lost archives. See the phase 7 section for the two measurement caveats (the reaper-lag harness fix, and which comparison to trust). All four phases are plotted side by side in `docs/benchmarks/plots/` (regenerate with `python3 docs/benchmarks/plots/plot.py`).
+- [x] After each of phases 5, 6, 7: run `make bench BENCH_LABEL=after-phase-N` and `make bench-profile BENCH_LABEL=after-phase-N`, and commit both comparisons. Phase 5 done: `runs/2026-09-05_0543_2637bcc_after-phase-5`, `runs/2026-09-05_0546_2637bcc_profile-after-phase-5`, neutral (same knee, ±8 % noise). Phase 6 done: `runs/2026-09-05_0738_84161db_after-phase-6`, `runs/2026-09-05_0741_84161db_profile-after-phase-6`: publish/consume p50 -61 to -69 % and p99 -52 to -72 % at every rate, Redis CPU lower, knee unchanged (1518 sagas/s), reaper lag p50 -81 %, 0 errors, 0 lost archives. Phase 7 done: `runs/2026-09-05_0811_b974cf0_after-phase-7`, `runs/2026-09-05_0818_a89cf09_profile-after-phase-7`: Redis commands per saga -14 %, document writes per report roughly halved, reaper max lag -46 % at 2000 simultaneous timeouts, 0 errors, 0 lost archives. See the phase 7 section for the two measurement caveats (the reaper-lag harness fix, and which comparison to trust). All four phases are plotted side by side in `benchmarks/plots/` (regenerate with `python3 benchmarks/plots/plot.py`).
 
 ## Phase 5 — Quick wins PR
 
@@ -98,9 +98,9 @@ Done on branch `quick-wins` (2026-09-05), stacked on `bench`. Contract tests tha
 
 One design. One PR. Test suite from Phase 3 is the gate.
 
-Done on branch `state-machine` (2026-09-05), stacked on `quick-wins`. Design: `docs/design-phase-6.md`. Every contract test now runs unwrapped (`make test-status` prints none); 6 new contract tests cover the queues.
+Done on branch `state-machine` (2026-09-05), stacked on `quick-wins`. Design: `docs/history/design-phase-6.md`. Every contract test now runs unwrapped (`make test-status` prints none); 6 new contract tests cover the queues.
 
-- [x] Write a short design note first. Get it agreed. — `docs/design-phase-6.md`, agreed 2026-09-05.
+- [x] Write a short design note first. Get it agreed. — `docs/history/design-phase-6.md`, agreed 2026-09-05.
 - [x] Move tasks under a `$.tasks` array in the Redis doc. — schema 2 document (`instanceDoc`); no migration of schema 1 docs, `make clean` to upgrade a dev stack (P4).
 - [x] Resolve tasks in Go. No string-built JSONPath. (#12, #13) — `readTaskIdentity` reads `$.tasks[*].topic`/`$.tasks[*].to`, plain string equality in `UpdateInstance`.
 - [x] Store payloads outside the searchable part of the doc. — payloads stay at `$.tasks[i].payload`; only explicit `$.tasks[*].{topic,from,to}` paths are indexed (P1).
@@ -200,17 +200,19 @@ Done 2026-09-05 on branch `state-machine`. Design and the threat-to-control tabl
 
 ## Phase 9 — Operations
 
-- [ ] Confirm Redis AOF persistence is on in compose and Helm. Deadlines must survive a restart.
-- [ ] Metrics: reaper lag, pending deadlines, archive failures, webhook failures.
-- [ ] Structured logging with instance ID on every line. Then drop `G706` from `GOSEC_EXCLUDE`.
-- [ ] Alerts on archive failures and reaper lag.
-- [ ] Runbook: what to do when Redis or Postgres is down.
-- [ ] Health checks reflect real state: reaper alive, DBs reachable.
+Done 2026-09-06 on branch `operations`. Runbook: `docs/runbook.md`; alerts: `deploy/alerts.yml`.
+
+- [x] Confirm Redis AOF persistence is on in compose and Helm. Deadlines must survive a restart. Compose: `REDIS_ARGS=--appendonly yes --appendfsync everysec` and a `redis_data` volume (it was off and unpersisted). Helm: the bundled Redis subchart already sets `appendonly yes` and a PVC; pinned as `redisAOF`. The binary now checks `CONFIG GET appendonly` at startup and exits on `no` (`SAGAWISE_REDIS_AOF=require`, default; `warn`, `off`), so a misconfigured store is caught wherever it was deployed; CI's Redis container got `REDIS_ARGS`. `TestStartup_RedisWithoutAOF`, `sagawise_redis_appendonly`.
+- [x] Metrics: reaper lag, pending deadlines, archive failures, webhook failures. OpenTelemetry instruments in `instance_engine/metrics.go`, exported by a Prometheus reader (`otel/otel.go`) on a separate listener `SAGAWISE_METRICS_ADDR` (default `:9464`), never on the API port. `sagawise_reaper_lag_seconds` (histogram, per timed-out task, from the deadline score `reap_batch` now returns), `sagawise_reaper_overdue_seconds`, `sagawise_reaper_last_tick_seconds`, `sagawise_deadlines_pending`, `sagawise_queue_pending{queue}`, `sagawise_queue_jobs_total{queue,result=done|failed|gave_up|dropped}`, `sagawise_reports_total{action,result}`, `sagawise_instances_*`, `sagawise_store_up{store}`, plus otelhttp, redisotel, Go runtime and process series. `TestOps_MetricsFollowASaga`, `TestOps_ArchiveFailureMetrics`, `TestStartup_ProbesMetricsAndLogs`.
+- [x] Structured logging with instance ID on every line. Then drop `G706` from `GOSEC_EXCLUDE`. `log/slog` JSON (`SAGAWISE_LOG_FORMAT`, `SAGAWISE_LOG_LEVEL`); `backend/logging` carries a request logger (`request_id`, `instance_id`, action/event/service names) through the context so engine lines inside a request have them; the reaper logs each `task timed out` with `instance_id`, `task_index`, `lag_ms`; worker lines carry the job's instance. Access log per request (probes at debug), `X-Request-Id` echoed. Query values only ever reach the log as attribute values, so G706 is gone from the Makefile and CI and gosec runs clean. `logging_test.go`, `TestOps_LogsCarryInstanceID`.
+- [x] Alerts on archive failures and reaper lag. `deploy/alerts.yml` (SagawiseReaperStalled, SagawiseReaperBehind, SagawiseReaperErrors, SagawiseArchiveFailing, SagawiseArchiveBacklog, SagawiseWebhookGaveUp, SagawiseStoreDown, SagawiseRedisPersistenceOff, SagawiseDown) and the same rules as the chart's `PrometheusRule` (`metrics.prometheusRule.enabled`) with a `ServiceMonitor`. `TestOps_AlertRulesReferenceExportedMetrics` fails the build if a rule names a series the binary does not export.
+- [x] Runbook: what to do when Redis or Postgres is down. `docs/runbook.md`: signals (probes, every metric, every log `msg`), then a section per failure (Redis down, Redis lost its data, Postgres down, reaper stalled or behind, webhook given up, archive backlog, unexpected 4xx, slow), restarts and upgrades, configuration.
+- [x] Health checks reflect real state: reaper alive, DBs reachable. `/live` = the reaper and both workers have ticked within 30 s (heartbeats, no store access, so an outage never restarts a healthy process); `/ready` and `/health` = that plus Redis (503 when down) and Postgres (200 `degraded`, since the API serves and archives queue up: A2, A3). JSON body naming each check, no error text. Chart probes use them; contract §9 updated. `TestLiveness`, `TestOps_ReadinessReflectsStores`.
 
 ## Phase 10 — Release
 
 - [ ] Publish Node SDK to npm.
 - [ ] Publish Python SDK to PyPI.
 - [ ] Version the HTTP API.
-- [ ] Update Postman collection and README.
+- [ ] Update the README and write the API reference (`docs/api.md`). The Postman collection was removed 2026-09-06: it described the pre-contract API (`task_name`, `workflow_version`, no auth).
 - [ ] Tag a release.

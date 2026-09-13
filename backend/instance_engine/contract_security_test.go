@@ -13,7 +13,7 @@ import (
 	"wtfsaga/webhooksig"
 )
 
-// Phase 8 (docs/threat-model.md). Authentication and CORS are middleware in
+// Phase 8 (docs/security.md). Authentication and CORS are middleware in
 // package httpsec with their own unit tests and a startup test against the
 // real binary; here are the pieces the engine itself owes the contract.
 

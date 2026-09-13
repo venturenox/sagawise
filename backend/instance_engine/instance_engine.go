@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -49,36 +49,39 @@ var codeStatus = map[string]int{
 
 // writeJSON writes v as the JSON response body with the given status. A
 // failed write means the client went away; it is only logged.
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(l *slog.Logger, w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("Error writing response: %v", err)
+		l.Warn("response write failed", "err", err)
 	}
 }
 
 // writeError writes {"error": code, "message": msg} with the status the code
-// implies. Unknown codes are a 500 so a bug here is never a silent 200.
-func writeError(w http.ResponseWriter, code, msg string) {
+// implies. Unknown codes are a 500 so a bug here is never a silent 200. The
+// logger is the request's (package logging), so the line carries the
+// request id and instance id; the message is an attribute value, never
+// part of the line's structure, whatever a query parameter contained.
+func writeError(l *slog.Logger, w http.ResponseWriter, code, msg string) {
 	status, ok := codeStatus[code]
 	if !ok {
 		status = http.StatusInternalServerError
 	}
-	log.Printf("%d %s: %s", status, code, msg)
-	writeJSON(w, status, map[string]string{"error": code, "message": msg})
+	l.Info("request refused", "status", status, "code", code, "message", msg)
+	writeJSON(l, w, status, map[string]string{"error": code, "message": msg})
 }
 
 // internalError logs the underlying error and answers 500 INTERNAL. The
 // client sees no detail: an infrastructure failure is not a business answer
 // and is never phrased as one (D5). (#7)
-func internalError(w http.ResponseWriter, what string, err error) {
-	log.Printf("%s: %v", what, err)
-	writeError(w, "INTERNAL", what+" failed; retry later")
+func internalError(l *slog.Logger, w http.ResponseWriter, what string, err error) {
+	l.Error(what+" failed", "err", err)
+	writeError(l, w, "INTERNAL", what+" failed; retry later")
 }
 
 // requireParams answers 400 MISSING_PARAM listing every absent query
 // parameter and returns false if any is missing.
-func requireParams(r *http.Request, w http.ResponseWriter, names ...string) bool {
+func requireParams(l *slog.Logger, r *http.Request, w http.ResponseWriter, names ...string) bool {
 	var missing []string
 	for _, n := range names {
 		if r.URL.Query().Get(n) == "" {
@@ -86,7 +89,7 @@ func requireParams(r *http.Request, w http.ResponseWriter, names ...string) bool
 		}
 	}
 	if len(missing) > 0 {
-		writeError(w, "MISSING_PARAM", "missing query parameter(s): "+strings.Join(missing, ", "))
+		writeError(l, w, "MISSING_PARAM", "missing query parameter(s): "+strings.Join(missing, ", "))
 		return false
 	}
 	return true
@@ -182,7 +185,8 @@ type instanceDoc struct {
 // workflow_version query parameter is ignored.
 func (e *Engine) StartInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if !requireParams(r, w, "workflow_name") {
+	l := e.logFrom(ctx)
+	if !requireParams(l, r, w, "workflow_name") {
 		return
 	}
 	name := r.URL.Query().Get("workflow_name")
@@ -190,11 +194,11 @@ func (e *Engine) StartInstance(w http.ResponseWriter, r *http.Request) {
 	var templates []utils.Workflow
 	err := e.jsonGet(ctx, "workflow_template:"+name, &templates, "$")
 	if errors.Is(err, errNotFound) || (err == nil && len(templates) == 0) {
-		writeError(w, "WORKFLOW_NOT_FOUND", "workflow "+strconv.Quote(name)+" does not exist")
+		writeError(l, w, "WORKFLOW_NOT_FOUND", "workflow "+strconv.Quote(name)+" does not exist")
 		return
 	}
 	if err != nil {
-		internalError(w, "read workflow template", err)
+		internalError(l, w, "read workflow template", err)
 		return
 	}
 	workflow := templates[0]
@@ -212,10 +216,12 @@ func (e *Engine) StartInstance(w http.ResponseWriter, r *http.Request) {
 
 	id := generateID()
 	if err := e.RDB.JSONSet(ctx, instanceKey(id), "$", doc).Err(); err != nil {
-		internalError(w, "create workflow instance", err)
+		internalError(l, w, "create workflow instance", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"workflow_instance_id": id})
+	e.Metrics.instancesStarted.Add(ctx, 1)
+	l.Info("instance started", "instance_id", id, "workflow", name)
+	writeJSON(l, w, http.StatusOK, map[string]string{"workflow_instance_id": id})
 }
 
 // updateResponse is the success body of /update_instance (contract §9).
@@ -233,7 +239,8 @@ type updateResponse struct {
 // task(s) in Go, run one atomic transition, answer. (design note §2)
 func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if !requireParams(r, w, "action_type", "workflow_instance_id", "event_name", "is_retry") {
+	l := e.logFrom(ctx)
+	if !requireParams(l, r, w, "action_type", "workflow_instance_id", "event_name", "is_retry") {
 		return
 	}
 	q := r.URL.Query()
@@ -243,15 +250,22 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	service := q.Get("service_name")
 	isRetry, ok := parseRetry(q.Get("is_retry"))
 	if !ok {
-		writeError(w, "INVALID_PARAM", "is_retry must be true or false")
+		writeError(l, w, "INVALID_PARAM", "is_retry must be true or false")
 		return
 	}
 	if action != "consume" && action != "publish" && action != "fail" {
-		writeError(w, "INVALID_PARAM", "action_type must be publish, consume or fail")
+		writeError(l, w, "INVALID_PARAM", "action_type must be publish, consume or fail")
 		return
 	}
-	if action != "publish" && !requireParams(r, w, "service_name") {
+	if action != "publish" && !requireParams(l, r, w, "service_name") {
 		return
+	}
+	// The outcome code is recorded once, whichever exit the handler takes.
+	result := "INTERNAL"
+	defer func() { e.Metrics.reports.Add(ctx, 1, actionResult(action, result)) }()
+	refuse := func(code, msg string) {
+		result = code
+		writeError(l, w, code, msg)
 	}
 
 	payload := ""
@@ -263,15 +277,15 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 			// The body cap is installed by main (SAGAWISE_MAX_BODY_BYTES);
 			// contract §9. The payload would be stored and replayed in the
 			// failure webhook, so it is bounded. (phase 8)
-			writeError(w, "PAYLOAD_TOO_LARGE", "publish body exceeds the limit of "+strconv.FormatInt(tooBig.Limit, 10)+" bytes")
+			refuse("PAYLOAD_TOO_LARGE", "publish body exceeds the limit of "+strconv.FormatInt(tooBig.Limit, 10)+" bytes")
 			return
 		}
 		if err != nil {
-			writeError(w, "INVALID_BODY", "could not read request body: "+err.Error())
+			refuse("INVALID_BODY", "could not read request body: "+err.Error())
 			return
 		}
 		if !isJSONObject(body) {
-			writeError(w, "INVALID_BODY", "publish body must be a JSON object")
+			refuse("INVALID_BODY", "publish body must be a JSON object")
 			return
 		}
 		payload = string(body)
@@ -282,11 +296,11 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	// query syntax, and payloads are never consulted. (T2; #12, #13)
 	tasks, err := e.readTaskIdentity(ctx, id)
 	if errors.Is(err, errNotFound) {
-		writeError(w, "INSTANCE_NOT_FOUND", "workflow instance "+strconv.Quote(id)+" does not exist")
+		refuse("INSTANCE_NOT_FOUND", "workflow instance "+strconv.Quote(id)+" does not exist")
 		return
 	}
 	if err != nil {
-		internalError(w, "read workflow instance", err)
+		internalError(l, w, "read workflow instance", err)
 		return
 	}
 	var indexes []int
@@ -297,29 +311,30 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(indexes) == 0 {
 		if action == "publish" {
-			writeError(w, "TASK_NOT_FOUND", "no task with topic "+strconv.Quote(topic))
+			refuse("TASK_NOT_FOUND", "no task with topic "+strconv.Quote(topic))
 		} else {
-			writeError(w, "TASK_NOT_FOUND", "no task with topic "+strconv.Quote(topic)+" consumed by "+strconv.Quote(service))
+			refuse("TASK_NOT_FOUND", "no task with topic "+strconv.Quote(topic)+" consumed by "+strconv.Quote(service))
 		}
 		return
 	}
 
 	res, err := e.transition(ctx, id, action, isRetry, indexes, payload)
 	if err != nil {
-		internalError(w, "update workflow instance", err)
+		internalError(l, w, "update workflow instance", err)
 		return
 	}
 
+	result = res.Code
 	switch res.Code {
 	case "OK", "IDEMPOTENT":
 	case "NOT_FOUND":
-		writeError(w, "INSTANCE_NOT_FOUND", "workflow instance "+strconv.Quote(id)+" does not exist")
+		refuse("INSTANCE_NOT_FOUND", "workflow instance "+strconv.Quote(id)+" does not exist")
 		return
 	case "INSTANCE_TERMINAL":
-		writeError(w, res.Code, fmt.Sprintf("instance %s is %s; it accepts no further reports", id, res.InstanceState))
+		refuse(res.Code, fmt.Sprintf("instance %s is %s; it accepts no further reports", id, res.InstanceState))
 		return
 	default:
-		writeError(w, res.Code, refusalMessage(res, tasks))
+		refuse(res.Code, refusalMessage(res, tasks))
 		return
 	}
 
@@ -329,8 +344,11 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 		e.Webhooks.Nudge()
 	}
 	if res.TerminalNow {
+		e.Metrics.instancesTerminal.Add(ctx, 1, stateAttr(res.InstanceState))
 		e.Archiver.Nudge()
 	}
+	l.Info("report applied", "instance_id", id, "action", action, "task_index", indexes,
+		"task_state", res.TaskStates, "workflow_state", res.InstanceState, "idempotent", res.Code == "IDEMPOTENT")
 
 	resp := updateResponse{
 		WorkflowInstanceID: id, WorkflowState: res.InstanceState, Idempotent: res.Code == "IDEMPOTENT",
@@ -340,7 +358,7 @@ func (e *Engine) UpdateInstance(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp.TaskIndex, resp.TaskState = indexes, res.TaskStates
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(l, w, http.StatusOK, resp)
 }
 
 // isJSONObject reports whether b is a JSON document whose top level is an
@@ -455,8 +473,8 @@ func (e *Engine) archiveJob(ctx context.Context, id string) error {
 	var docs []json.RawMessage
 	err := e.jsonGet(ctx, instanceKey(id), &docs, "$")
 	if errors.Is(err, errNotFound) || (err == nil && len(docs) == 0) {
-		log.Printf("archive: instance %s no longer exists; nothing to archive", id)
-		return nil
+		e.Log.Warn("archive: instance no longer exists; nothing to archive", "instance_id", id)
+		return errDropJob
 	}
 	if err != nil {
 		return err
@@ -473,7 +491,11 @@ func (e *Engine) archiveJob(ctx context.Context, id string) error {
 	_, err = e.DB.Exec(ctx, `INSERT INTO instance_history ("id", "name", "startedAt", "completedAt", "instance_data")
 		VALUES ($1, $2, TO_TIMESTAMP($3), TO_TIMESTAMP($4), $5)
 		ON CONFLICT ("id") DO NOTHING`, id, doc.Name, doc.StartedAt, doc.CompletedAt, string(docs[0]))
-	return err
+	if err != nil {
+		return err
+	}
+	e.Log.Info("instance archived", "instance_id", id, "workflow", doc.Name, "state", doc.State)
+	return nil
 }
 
 // webhookJob POSTs a failed task's payload to its publisher's failure_url
@@ -482,15 +504,16 @@ func (e *Engine) archiveJob(ctx context.Context, id string) error {
 func (e *Engine) webhookJob(ctx context.Context, member string) error {
 	id, index, ok := splitMember(member)
 	if !ok {
-		log.Printf("webhook: malformed job %q; dropping it", member)
-		return nil
+		e.Log.Warn("webhook: malformed job; dropping it", "job", member)
+		return errDropJob
 	}
+	l := e.Log.With("instance_id", id, "task_index", index)
 	task := "$.tasks[" + strconv.Itoa(index) + "]"
 	var got map[string][]json.RawMessage
 	err := e.jsonGet(ctx, instanceKey(id), &got, task+".from", task+".to", task+".payload")
 	if errors.Is(err, errNotFound) {
-		log.Printf("webhook: instance %s no longer exists; nothing to deliver", id)
-		return nil
+		l.Warn("webhook: instance no longer exists; nothing to deliver")
+		return errDropJob
 	}
 	if err != nil {
 		return err
@@ -503,8 +526,8 @@ func (e *Engine) webhookJob(ctx context.Context, member string) error {
 		_ = json.Unmarshal(v[0], &to)
 	}
 	if from == "" || to == "" {
-		log.Printf("webhook: %s task %d has no from/to; dropping it", id, index)
-		return nil
+		l.Warn("webhook: task has no from/to; dropping it")
+		return errDropJob
 	}
 	// A task that was never published has no payload (W2); report {}.
 	payload := json.RawMessage(`{}`)
@@ -519,8 +542,8 @@ func (e *Engine) webhookJob(ctx context.Context, member string) error {
 	if target == "" {
 		// Excluded by startup validation (W5); if it happens anyway there is
 		// nowhere to deliver to, and retrying will not change that.
-		log.Printf("webhook: no failure_url registered for %q; dropping %s", from, member)
-		return nil
+		l.Warn("webhook: no failure_url registered; dropping it", "service", from)
+		return errDropJob
 	}
 
 	// #nosec G704 -- target is operator configuration (the ServiceRegistry, e.g. services.json)
@@ -548,7 +571,7 @@ func (e *Engine) webhookJob(ctx context.Context, member string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("POST %s: %s", from, resp.Status)
 	}
-	log.Printf("webhook: delivered %s to %s (%s)", member, from, resp.Status)
+	l.Info("webhook delivered", "service", from, "consumer", to, "status", resp.StatusCode)
 	return nil
 }
 
@@ -563,16 +586,17 @@ func (e *Engine) webhookJob(ctx context.Context, member string) error {
 // gets a logged warning rather than a quietly short answer. (phase 7)
 func (e *Engine) ListWorkflows(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	l := e.logFrom(ctx)
 	res, err := e.RDB.FTSearchWithArgs(ctx, "workflow_templates_index", "*", &redis.FTSearchOptions{
 		Return:      []redis.FTSearchReturn{{FieldName: "workflow_name"}},
 		LimitOffset: 0, Limit: listMaxLimit,
 	}).Result()
 	if err != nil {
-		internalError(w, "search workflow templates", err)
+		internalError(l, w, "search workflow templates", err)
 		return
 	}
 	if res.Total > listMaxLimit {
-		log.Printf("ListWorkflows: %d templates registered, returning the first %d", res.Total, listMaxLimit)
+		l.Warn("more templates than one page", "registered", res.Total, "returned", listMaxLimit)
 	}
 
 	names := make([]string, 0, len(res.Docs))
@@ -581,7 +605,7 @@ func (e *Engine) ListWorkflows(w http.ResponseWriter, r *http.Request) {
 			names = append(names, name)
 		}
 	}
-	writeJSON(w, http.StatusOK, names)
+	writeJSON(l, w, http.StatusOK, names)
 }
 
 const (
@@ -628,12 +652,13 @@ func pageParam(v string, def, max int) (int, error) {
 // an index error is a 500. (#10)
 func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	l := e.logFrom(ctx)
 	q := r.URL.Query()
 	now := e.Clock.Now()
 
 	limit, err := pageParam(q.Get("limit"), listDefaultLimit, listMaxLimit)
 	if err != nil {
-		writeError(w, "INVALID_PARAM", "limit "+err.Error())
+		writeError(l, w, "INVALID_PARAM", "limit "+err.Error())
 		return
 	}
 	if limit == 0 {
@@ -641,7 +666,7 @@ func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 	}
 	offset, err := pageParam(q.Get("offset"), 0, 0)
 	if err != nil {
-		writeError(w, "INVALID_PARAM", "offset "+err.Error())
+		writeError(l, w, "INVALID_PARAM", "offset "+err.Error())
 		return
 	}
 
@@ -689,7 +714,7 @@ func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 		NoContent: true, LimitOffset: offset, Limit: limit,
 	}).Result()
 	if err != nil {
-		internalError(w, "search workflow instances", fmt.Errorf("%s: %w", query, err))
+		internalError(l, w, "search workflow instances", fmt.Errorf("%s: %w", query, err))
 		return
 	}
 
@@ -697,7 +722,7 @@ func (e *Engine) ListWorkflowInstances(w http.ResponseWriter, r *http.Request) {
 	for _, doc := range res.Docs {
 		ids = append(ids, strings.TrimPrefix(doc.ID, "workflow_instance:"))
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"ids": ids, "total": res.Total, "limit": limit, "offset": offset})
+	writeJSON(l, w, http.StatusOK, map[string]interface{}{"ids": ids, "total": res.Total, "limit": limit, "offset": offset})
 }
 
 // instanceIDPattern is the shape of a workflow_instance_id. Anything else is
@@ -709,24 +734,25 @@ var instanceIDPattern = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
 // addressed by workflow_instance_id.
 func (e *Engine) GetWorkflowInstance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if !requireParams(r, w, "workflow_instance_id") {
+	l := e.logFrom(ctx)
+	if !requireParams(l, r, w, "workflow_instance_id") {
 		return
 	}
 	id := r.URL.Query().Get("workflow_instance_id")
 	if !instanceIDPattern.MatchString(id) {
-		writeError(w, "INVALID_PARAM", "workflow_instance_id must be 1 to 64 letters or digits")
+		writeError(l, w, "INVALID_PARAM", "workflow_instance_id must be 1 to 64 letters or digits")
 		return
 	}
 
 	var docs []json.RawMessage
 	err := e.jsonGet(ctx, instanceKey(id), &docs, "$")
 	if errors.Is(err, errNotFound) || (err == nil && len(docs) == 0) {
-		writeError(w, "INSTANCE_NOT_FOUND", "workflow instance "+strconv.Quote(id)+" does not exist")
+		writeError(l, w, "INSTANCE_NOT_FOUND", "workflow instance "+strconv.Quote(id)+" does not exist")
 		return
 	}
 	if err != nil {
-		internalError(w, "read workflow instance", err)
+		internalError(l, w, "read workflow instance", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, docs[0])
+	writeJSON(l, w, http.StatusOK, docs[0])
 }

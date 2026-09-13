@@ -3,7 +3,7 @@ package db_connect
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"time"
@@ -39,17 +39,17 @@ func DBConnect(ctx context.Context) (*redis.Client, error) {
 	}
 
 	if err := redisotel.InstrumentTracing(rdb); err != nil {
-		log.Printf("Redis tracing instrumentation error: %v", err)
+		slog.Warn("redis tracing instrumentation error", "err", err)
 	}
 	if err := redisotel.InstrumentMetrics(rdb); err != nil {
-		log.Printf("Redis metrics instrumentation error: %v", err)
+		slog.Warn("redis metrics instrumentation error", "err", err)
 	}
 
 	if err := rdb.Ping(ctx).Err(); err != nil {
 		_ = rdb.Close()
 		return nil, fmt.Errorf("redis at %s: %w", rdb.Options().Addr, err)
 	}
-	log.Println("Redis connected Successfully")
+	slog.Info("redis connected", "addr", rdb.Options().Addr)
 	return rdb, nil
 }
 
@@ -69,7 +69,7 @@ func ConnectPostgres(ctx context.Context) (*pgxpool.Pool, error) {
 	for attempt := 1; ; attempt++ {
 		err := pool.Ping(ctx)
 		if err == nil {
-			log.Println("Postgres connected Successfully")
+			slog.Info("postgres connected", "host", os.Getenv("POSTGRES_HOST"), "attempt", attempt)
 			return pool, nil
 		}
 		if attempt >= attempts {

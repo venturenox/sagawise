@@ -51,7 +51,7 @@ securityContext:
     drop:
       - ALL
 
-# --- Sagawise security (phase 8, docs/threat-model.md) ---
+# --- Sagawise security (phase 8, docs/security.md) ---
 
 auth:
   # "api-key" (default): every request except the probes must carry
@@ -81,9 +81,44 @@ cors:
 # Largest accepted request body (publish payload). K/M suffixes allowed.
 maxBodyBytes: 1M
 
+# --- Operations (phase 9, docs/operations.md) ---
+
+logging:
+  # "json" (one object per line, for a log pipeline) or "text" (development).
+  format: json
+  # debug, info, warn or error. Access lines are info for 2xx, warn for
+  # 4xx and error for 5xx, so "warn" keeps the problems and drops the noise.
+  level: info
+
+metrics:
+  # Serve Prometheus metrics on a second container port (no API key; keep
+  # it off the Ingress). Set to false to run with SAGAWISE_METRICS_ADDR=off.
+  enabled: true
+  port: 9464
+  # Prometheus Operator objects. Both need the monitoring.coreos.com CRDs.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    # Labels the operator's serviceMonitorSelector matches, e.g. release: prometheus
+    labels: {}
+  prometheusRule:
+    # The alerts in deploy/alerts.yml (runbook: docs/operations.md).
+    enabled: false
+    labels: {}
+
+# Redis persistence. The binary checks `CONFIG GET appendonly` at startup:
+# "require" (default) refuses to start when it is "no", because armed task
+# deadlines and the archive/webhook queues live in Redis and would not
+# survive a restart; "warn" logs instead; "off" skips the check. The bundled
+# Redis subchart sets `appendonly yes` in redis.commonConfiguration and
+# persists to a PVC (redis.master.persistence.enabled), so the default
+# passes; an external Redis must be configured the same way.
+redisAOF: require
+
 networkPolicy:
   # Default-deny ingress to the Sagawise pods; only `ingress` may reach the
-  # API port. Needs a CNI that enforces NetworkPolicy.
+  # API port and only `metricsIngress` the metrics port. Needs a CNI that
+  # enforces NetworkPolicy.
   enabled: false
   # Peers allowed in, as NetworkPolicy `from` entries. Example: the
   # ingress-nginx namespace and the namespaces of the reporting services.
@@ -91,6 +126,12 @@ networkPolicy:
   #  - namespaceSelector:
   #      matchLabels:
   #        kubernetes.io/metadata.name: ingress-nginx
+  # Peers allowed to scrape the metrics port (the Prometheus namespace).
+  # Empty means the metrics port accepts no traffic when the policy is on.
+  metricsIngress: []
+  #  - namespaceSelector:
+  #      matchLabels:
+  #        kubernetes.io/metadata.name: monitoring
   # Egress rules; empty leaves egress open (webhooks go where services.json
   # points, and Redis/Postgres may be external).
   egress: []

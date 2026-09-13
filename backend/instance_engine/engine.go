@@ -5,10 +5,13 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
+	"wtfsaga/logging"
 	"wtfsaga/utils"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -134,7 +137,26 @@ type Engine struct {
 	Archiver *Worker
 	Webhooks *Worker
 
+	// Log is the engine's logger for lines outside a request (reaper,
+	// workers, startup). Inside a handler the request logger from the
+	// context is used instead, so those lines carry request_id and
+	// instance_id (package logging). Default: slog.Default().
+	Log *slog.Logger
+
+	// Metrics are the engine's instruments (metrics.go). New installs no-op
+	// instruments; UseMeterProvider swaps in the real ones.
+	Metrics *Metrics
+
+	// reaperBeat is the unix-nanosecond time of the reaper's last tick, for
+	// the liveness probe and the sagawise.reaper.last_tick gauge.
+	reaperBeat atomic.Int64
+
 	script *redis.Script
+}
+
+// logFrom returns the request logger carried by ctx, or the engine's.
+func (e *Engine) logFrom(ctx context.Context) *slog.Logger {
+	return logging.From(ctx, e.Log)
 }
 
 // New returns an Engine with production defaults: wall clock, services.json
@@ -147,6 +169,7 @@ func New(rdb *redis.Client, db *pgxpool.Pool) *Engine {
 		Clock:      RealClock{},
 		Services:   FileRegistry{Path: "services.json"},
 		HTTPClient: &http.Client{Timeout: WebhookTimeout},
+		Log:        slog.Default(),
 		script:     redis.NewScript(transitionSource),
 	}
 	e.Archiver = &Worker{
@@ -154,8 +177,10 @@ func New(rdb *redis.Client, db *pgxpool.Pool) *Engine {
 		Parallel: 1, Timeout: archiveTimeout,
 		Backoff: expBackoff(time.Second, 2, 30*time.Second),
 		Work:    e.archiveJob,
-		queue:   &zqueue{rdb: rdb, key: archiveQueueKey, attempts: archiveAttemptsKey},
-		wake:    make(chan struct{}, 1),
+		// An archive job is the instance id.
+		Describe: func(member string) []any { return []any{"instance_id", member} },
+		queue:    &zqueue{rdb: rdb, key: archiveQueueKey, attempts: archiveAttemptsKey},
+		wake:     make(chan struct{}, 1),
 	}
 	e.Webhooks = &Worker{
 		Name: "webhook", Interval: workerInterval, Lease: workerLease, Batch: workerBatch,
@@ -163,13 +188,28 @@ func New(rdb *redis.Client, db *pgxpool.Pool) *Engine {
 		Backoff:     expBackoff(2*time.Second, 3, 5*time.Minute),
 		MaxAttempts: webhookMaxAttempts,
 		Work:        e.webhookJob,
-		queue:       &zqueue{rdb: rdb, key: webhookQueueKey, attempts: webhookAttemptsKey},
-		wake:        make(chan struct{}, 1),
+		// A webhook job is "<instance id>:<task index>".
+		Describe: func(member string) []any {
+			if id, index, ok := splitMember(member); ok {
+				return []any{"instance_id", id, "task_index", index}
+			}
+			return []any{"job", member}
+		},
+		queue: &zqueue{rdb: rdb, key: webhookQueueKey, attempts: webhookAttemptsKey},
+		wake:  make(chan struct{}, 1),
 	}
-	// The workers read the clock through the engine so a test that swaps
-	// e.Clock after New still drives them.
-	e.Archiver.clock = clockFunc(func() time.Time { return e.Clock.Now() })
-	e.Webhooks.clock = e.Archiver.clock
+	// The workers read the clock, logger and metrics through the engine so
+	// a test that swaps e.Clock (or main setting e.Log) after New still
+	// reaches them.
+	for _, w := range []*Worker{e.Archiver, e.Webhooks} {
+		name := w.Name
+		w.clock = clockFunc(func() time.Time { return e.Clock.Now() })
+		w.log = func() *slog.Logger { return e.Log.With("component", "worker", "queue", name) }
+		w.onResult = func(ctx context.Context, result string) {
+			e.Metrics.queueJobs.Add(ctx, 1, queueResult(name, result))
+		}
+	}
+	e.noopMetrics()
 	return e
 }
 

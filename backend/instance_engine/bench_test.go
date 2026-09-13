@@ -13,7 +13,7 @@ import (
 //
 //	go test -tags integration -run '^$' -bench . -benchmem -count 6 ./instance_engine/
 //
-// `make bench` records them into docs/benchmarks/runs/<run>/go-bench.txt;
+// `make bench` records them into benchmarks/runs/<run>/go-bench.txt;
 // `make bench-compare` diffs two runs with benchstat.
 
 func BenchmarkStartInstance(b *testing.B) {

@@ -78,7 +78,7 @@ func xfail(t *testing.T, finding string, body func(T), strict bool) {
 
 	if len(failures) == 0 && !failed {
 		if strict {
-			t.Errorf("XFAIL %s now PASSES: the fix landed. Replace testx.XFail with testx.Run and tick %s in docs/TODO.md.", finding, finding)
+			t.Errorf("XFAIL %s now PASSES: the fix landed. Replace testx.XFail with testx.Run and tick %s in docs/history/TODO.md.", finding, finding)
 		} else {
 			t.Logf("XFAIL %s passed this run (flaky by nature); leave the wrapper until the fix lands.", finding)
 		}

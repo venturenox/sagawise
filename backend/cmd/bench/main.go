@@ -1,7 +1,7 @@
 // Command bench is the sagawise benchmark runner (roadmap phase 4).
 //
-//	go run ./cmd/bench run -label baseline -out ../docs/benchmarks/runs
-//	go run ./cmd/bench compare <runDirA> <runDirB> -out ../docs/benchmarks/comparisons
+//	go run ./cmd/bench run -label baseline -out ../benchmarks/runs
+//	go run ./cmd/bench compare <runDirA> <runDirB> -out ../benchmarks/comparisons
 //
 // `run` builds the server binary, launches it on a free port against the
 // Redis and Postgres named by REDIS_*/POSTGRES_* (defaults: localhost), and
@@ -28,7 +28,7 @@ func main() {
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
 		cfg := runConfig{}
 		fs.StringVar(&cfg.label, "label", "baseline", "run label, e.g. baseline, after-phase-5")
-		fs.StringVar(&cfg.out, "out", "../docs/benchmarks/runs", "directory that receives one sub-directory per run")
+		fs.StringVar(&cfg.out, "out", "../benchmarks/runs", "directory that receives one sub-directory per run")
 		fs.StringVar(&cfg.rates, "rates", "50,100,200", "saga start rates per second to test, comma separated")
 		fs.DurationVar(&cfg.duration, "duration", 20e9, "time to hold each rate")
 		fs.IntVar(&cfg.lagTasks, "lag-tasks", 200, "tasks to time out for the reaper-lag measurement")
@@ -46,7 +46,7 @@ func main() {
 		fs := flag.NewFlagSet("profile", flag.ExitOnError)
 		cfg := profileConfig{}
 		fs.StringVar(&cfg.label, "label", "baseline", "run label; the run is stored as profile-<label>")
-		fs.StringVar(&cfg.out, "out", "../docs/benchmarks/runs", "directory that receives one sub-directory per run")
+		fs.StringVar(&cfg.out, "out", "../benchmarks/runs", "directory that receives one sub-directory per run")
 		fs.Float64Var(&cfg.rampStart, "ramp-start", 200, "first ramp rate in sagas/s (×1.5 per step)")
 		fs.Float64Var(&cfg.rampMax, "ramp-max", 8000, "stop the ramp at this rate even if the SLO holds")
 		fs.DurationVar(&cfg.rampHold, "ramp-hold", 6e9, "time to hold each ramp step")
@@ -63,7 +63,7 @@ func main() {
 		fmt.Println(dir)
 	case "compare":
 		fs := flag.NewFlagSet("compare", flag.ExitOnError)
-		out := fs.String("out", "../docs/benchmarks/comparisons", "directory that receives the comparison report")
+		out := fs.String("out", "../benchmarks/comparisons", "directory that receives the comparison report")
 		// Accept flags before or after the two run paths.
 		_ = fs.Parse(os.Args[2:])
 		args := fs.Args()
