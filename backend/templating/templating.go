@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,7 +117,7 @@ func ParseDSL(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, dir st
 			return nil, fmt.Errorf("store template %q: %w", wf.Name, err)
 		}
 	}
-	log.Printf("Loaded %d workflow template(s) from %s", len(workflows), dir)
+	slog.Info("workflow templates loaded", "count", len(workflows), "dir", dir)
 
 	if err := ensureIndex(ctx, rdb, "workflow_templates_index", "workflow_template:",
 		"$.name", "AS", "workflow_name", "TEXT",
@@ -141,7 +141,7 @@ func ParseDSL(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, dir st
 	); err != nil {
 		return nil, err
 	}
-	log.Println("Redis Indexes Created Successfully")
+	slog.Info("redis indexes ready")
 
 	// The primary key is added only when missing, so this is safe to run on
 	// every start and by several processes at once.
@@ -160,7 +160,7 @@ func ParseDSL(ctx context.Context, rdb *redis.Client, conn *pgxpool.Pool, dir st
 	if _, err := conn.Exec(ctx, query); err != nil {
 		return nil, fmt.Errorf("create instance_history table: %w", err)
 	}
-	log.Println("PostgreSQL Table & Index Created Successfully")
+	slog.Info("postgres instance_history table ready")
 	return workflows, nil
 }
 
@@ -189,7 +189,7 @@ func ensureIndex(ctx context.Context, rdb *redis.Client, name, prefix string, sc
 		return nil
 	}
 	if exists {
-		log.Printf("Index %s has an outdated schema; recreating it", name)
+		slog.Info("index has an outdated schema; recreating it", "index", name)
 		if err := rdb.Do(ctx, "FT.DROPINDEX", name).Err(); err != nil && !isUnknownIndex(err) {
 			return fmt.Errorf("FT.DROPINDEX %s: %w", name, err)
 		}

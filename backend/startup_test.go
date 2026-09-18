@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +21,8 @@ import (
 
 	"wtfsaga/internal/testx"
 	"wtfsaga/utils"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Contract §7: the process serves only when its configuration is valid and
@@ -100,6 +103,9 @@ func launch(t testx.T, dslDir, servicesFile string, extra map[string]string) *pr
 		// Phase 8: the binary refuses to start without a key (see the
 		// TestStartup_Auth* cases); the default launch has one.
 		"SAGAWISE_API_KEYS": stKey,
+		// Phase 9: several binaries run at once here, so the metrics
+		// listener is off unless a test picks a port for it.
+		"SAGAWISE_METRICS_ADDR": "off",
 	}
 	for _, k := range []string{"REDIS_HOST", "REDIS_PORT", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USERNAME", "POSTGRES_PASSWORD", "POSTGRES_DATABASE"} {
 		if v := os.Getenv(k); v != "" {
@@ -300,7 +306,7 @@ func TestStartup_RedisUnreachableExits(t *testing.T) {
 	})
 }
 
-// ---- Phase 8: authentication is on by default (docs/threat-model.md T1) ----
+// ---- Phase 8: authentication is on by default (docs/security.md T1) ----
 
 // No key configured and no explicit opt-out: the binary must not serve.
 func TestStartup_NoAPIKeyExits(t *testing.T) {
@@ -360,6 +366,169 @@ func TestStartup_AuthOffServesOpen(t *testing.T) {
 		}
 		if !strings.Contains(p.out.String(), "SAGAWISE_AUTH=off") {
 			t.Errorf("no startup warning about the open API\n%s", tail(p.out))
+		}
+	})
+}
+
+// ---- Phase 9: operations (docs/operations.md) ----
+
+// getJSON fetches a path and decodes the body; the status is returned too.
+func (p *proc) getJSON(t testx.T, path string, out any) int {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+p.addr+path, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if out != nil {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			t.Fatalf("GET %s: body is not JSON: %v", path, err)
+		}
+	}
+	return resp.StatusCode
+}
+
+// The probes name their checks, the metrics endpoint serves the engine's
+// series on its own port, and every log line is a JSON object.
+func TestStartup_ProbesMetricsAndLogs(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		metricsAddr := freePort(t)
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()),
+			map[string]string{"SAGAWISE_METRICS_ADDR": metricsAddr})
+		if !p.serving(15 * time.Second) {
+			t.Fatalf("binary did not serve /live within 15s\n%s", tail(p.out))
+		}
+
+		var live struct {
+			Status string            `json:"status"`
+			Checks map[string]string `json:"checks"`
+		}
+		if code := p.getJSON(t, "/live", &live); code != 200 || live.Status != "ok" {
+			t.Errorf("/live = %d %+v", code, live)
+		}
+		for _, c := range []string{"reaper", "archive_worker", "webhook_worker"} {
+			if live.Checks[c] != "ok" {
+				t.Errorf("/live check %s = %q", c, live.Checks[c])
+			}
+		}
+		var ready struct {
+			Status string            `json:"status"`
+			Checks map[string]string `json:"checks"`
+		}
+		if code := p.getJSON(t, "/ready", &ready); code != 200 || ready.Status != "ok" ||
+			ready.Checks["redis"] != "ok" || ready.Checks["postgres"] != "ok" {
+			t.Errorf("/ready = %d %+v", code, ready)
+		}
+
+		// One real request, so the access log and a report line exist.
+		if resp := p.call(t, http.MethodPost, "/start_instance?workflow_name=st_flow", "Bearer "+stKey); resp.StatusCode != 200 {
+			t.Errorf("start_instance: %d", resp.StatusCode)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+metricsAddr+"/metrics", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("GET /metrics: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		for _, series := range []string{
+			"sagawise_reaper_last_tick_seconds", "sagawise_deadlines_pending", "sagawise_store_up{",
+			"sagawise_redis_appendonly", "sagawise_instances_started_total", "go_goroutines",
+			"http_server_request_duration_seconds",
+		} {
+			if !strings.Contains(string(body), series) {
+				t.Errorf("/metrics lacks %s\n%s", series, firstLines(string(body), 40))
+			}
+		}
+		// The API port does not serve metrics.
+		if resp := p.call(t, http.MethodGet, "/metrics", "Bearer "+stKey); resp.StatusCode != 404 {
+			t.Errorf("/metrics on the API port: %d, want 404", resp.StatusCode)
+		}
+
+		// Logs: JSON lines, the request line carrying the instance id.
+		_ = p.cmd.Process.Signal(syscall.SIGINT)
+		<-p.exited
+		sawStarted := false
+		for _, raw := range strings.Split(strings.TrimSpace(p.out.String()), "\n") {
+			var line map[string]any
+			if err := json.Unmarshal([]byte(raw), &line); err != nil {
+				t.Errorf("log line is not JSON: %q", raw)
+				continue
+			}
+			if line["msg"] == "instance started" {
+				sawStarted = true
+				if id, _ := line["instance_id"].(string); len(id) != 20 {
+					t.Errorf("instance started line has instance_id %v", line["instance_id"])
+				}
+				if line["request_id"] == nil {
+					t.Errorf("instance started line has no request_id: %v", line)
+				}
+			}
+		}
+		if !sawStarted {
+			t.Errorf("no \"instance started\" line\n%s", tail(p.out))
+		}
+	})
+}
+
+func firstLines(s string, n int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func TestStartup_BadLogLevelExits(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_LOG_LEVEL": "loud"})
+		p.expectExit(t, 5*time.Second)
+	})
+}
+
+func TestStartup_BadRedisAOFModeExits(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_REDIS_AOF": "maybe"})
+		p.expectExit(t, 5*time.Second)
+	})
+}
+
+// With AOF off the default mode refuses to serve; "warn" serves with a
+// warning. The test flips the shared Redis's setting and restores it.
+func TestStartup_RedisWithoutAOF(t *testing.T) {
+	testx.Run(t, func(t testx.T) {
+		ctx := context.Background()
+		rdb := redis.NewClient(&redis.Options{Addr: envOr("REDIS_HOST", "localhost") + ":" + envOr("REDIS_PORT", "6379")})
+		t.Cleanup(func() { _ = rdb.Close() })
+		was, err := rdb.ConfigGet(ctx, "appendonly").Result()
+		if err != nil {
+			t.Skipf("CONFIG GET not permitted on this Redis: %v", err)
+		}
+		if was["appendonly"] != "no" {
+			if err := rdb.ConfigSet(ctx, "appendonly", "no").Err(); err != nil {
+				t.Skipf("cannot turn AOF off on this Redis: %v", err)
+			}
+			t.Cleanup(func() { _ = rdb.ConfigSet(ctx, "appendonly", was["appendonly"]).Err() })
+		}
+
+		p := launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), nil)
+		p.expectExit(t, 10*time.Second)
+		if !strings.Contains(p.out.String(), "appendonly no") {
+			t.Errorf("exit reason does not name the AOF setting\n%s", tail(p.out))
+		}
+
+		p = launch(t, writeDSL(t, goodWorkflow()), writeServices(t, goodServices()), map[string]string{"SAGAWISE_REDIS_AOF": "warn"})
+		if !p.serving(15 * time.Second) {
+			t.Fatalf("SAGAWISE_REDIS_AOF=warn did not serve\n%s", tail(p.out))
+		}
+		if !strings.Contains(p.out.String(), "appendonly no") {
+			t.Errorf("no warning about AOF\n%s", tail(p.out))
 		}
 	})
 }

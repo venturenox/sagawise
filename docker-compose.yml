@@ -23,6 +23,13 @@ services:
     restart: always
     ports:
       - 6379:6379
+    # AOF persistence: task_deadlines and the archive/webhook queues live in
+    # Redis, so they must survive a restart (phase 9). The binary refuses to
+    # start against a Redis that reports appendonly no (SAGAWISE_REDIS_AOF).
+    environment:
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec"
+    volumes:
+      - redis_data:/data
     networks:
       - shared_network
 
@@ -54,6 +61,8 @@ services:
     restart: always
     ports:
       - 5000:5000
+      # Prometheus metrics (no API key; do not expose beyond the host).
+      - 9464:9464
     environment:
       REDIS_CONNECTION_STRING: $REDIS_CONNECTION_STRING
       REDIS_HOST: $REDIS_HOST
@@ -67,7 +76,13 @@ services:
       SAGAWISE_WEBHOOK_SECRET: $SAGAWISE_WEBHOOK_SECRET
       SAGAWISE_CORS_ORIGINS: $SAGAWISE_CORS_ORIGINS
       SAGAWISE_MAX_BODY_BYTES: $SAGAWISE_MAX_BODY_BYTES
+      SAGAWISE_LOG_FORMAT: $SAGAWISE_LOG_FORMAT
+      SAGAWISE_LOG_LEVEL: $SAGAWISE_LOG_LEVEL
+      SAGAWISE_METRICS_ADDR: $SAGAWISE_METRICS_ADDR
+      SAGAWISE_REDIS_AOF: $SAGAWISE_REDIS_AOF
     healthcheck:
+      # /ready is 503 only when Redis is down or a loop is stalled; Postgres
+      # down is "degraded" but still 200 (docs/operations.md).
       test:
         [
           "CMD-SHELL",
@@ -83,6 +98,9 @@ services:
     depends_on:
       - redis
       - postgres
+
+volumes:
+  redis_data:
 
 networks:
   shared_network:

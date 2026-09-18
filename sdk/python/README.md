@@ -1,10 +1,10 @@
 # Sagawise Python SDK
 
-![sagawise platform logo](https://raw.githubusercontent.com/venturenox/sagawise/main/sdk/sagawise-platform-logo.png)
+![sagawise platform logo](https://raw.githubusercontent.com/venturenox/sagawise/main/docs/assets/sagawise-platform-logo.png)
 
 Easy to adopt workflow tracking which instantly lets developers bring resilience into their implementations of saga patterns.
 
-[Website](https://venturenox.com/work/sagawise/) | [Documentation](https://github.com/venturenox/wtfsaga/tree/main)
+[Website](https://venturenox.com/work/sagawise/) | [Documentation](https://venturenox.github.io/sagawise/)
 
 ## Table of Contents
 
@@ -42,7 +42,7 @@ Failure webhooks are signed when the server has `SAGAWISE_WEBHOOK_SECRET`.
 Verify against the raw body before trusting a compensation request:
 
 ```python
-from sagawise.sagawise import verify_signature
+from sagawise import verify_signature
 
 @app.post('/failure_report')
 def failure_report():
@@ -71,7 +71,11 @@ and `X-Sagawise-Timestamp` is within 5 minutes of now (`tolerance_seconds`).
 
 ## Installing
 
-Sagawise will soon be published on `pip` (see Roadmap)
+Sagawise will soon be published on `pip` (see Roadmap). Until then, install it from a clone of the repository:
+
+```
+pip install /path/to/sagawise/sdk/python
+```
 
 <!-- ### Using Pip
 ```
@@ -137,7 +141,7 @@ The `publish_message` function **requires** the following keys:
 - workflow_instance_id (STRING)
 - workflow_version (STRING)
 - event_name (STRING)
-- payload (dict, non-empty)
+- payload (dict, non-empty), passed by keyword: `payload=...`
 
 Optional Key:
 
@@ -151,10 +155,10 @@ The `publish_message` function returns `None` on success. It **raises** when a r
 
 ```python
 sagawise_instance.publish_message(
-	workflow_instance_id,
-	'1.0',
-	payload.event,
-	payload
+    workflow_instance_id,
+    '1.0',
+    payload['event'],
+    payload=payload,
 )
 ```
 
@@ -185,10 +189,10 @@ The `consume_message` function returns `None` on success. It **raises** when a r
 
 ```python
 sagawise_instance.consume_message(
-	data.workflow_instance_id,
-	'1.0',
-	data.event,
-	'notification'
+    data['workflow_instance_id'],
+    '1.0',
+    data['event'],
+    'notification',
 )
 ```
 
@@ -219,9 +223,9 @@ The `fail_message` function returns `None` on success. It **raises** when a requ
 
 ```python
 sagawise_instance.fail_message(
-	data.workflow_instance_id,
-	'1.0',
-	data.event,
-	'payment'
+    data['workflow_instance_id'],
+    '1.0',
+    data['event'],
+    'payment',
 )
 ```

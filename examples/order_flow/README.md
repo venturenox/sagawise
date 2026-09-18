@@ -53,6 +53,9 @@ for you.
 make order_flow
 ```
 
+Run `make` from the repository root; the `docker compose` commands below run
+from this directory, `examples/order_flow/`.
+
 This example brings its own Kafka broker, so it does not depend on the
 `api_examples` stack. Both can run at once.
 
@@ -92,7 +95,7 @@ docker compose logs -f orders payments shipping
 ### Inspect the workflow state
 
 ```bash
-curl -s "http://localhost:5000/workflow_instances/get?workflow_instance_id=$ID" | python3 -m json.tool
+curl -s -H 'Authorization: Bearer dev-api-key-change-me' "http://localhost:5000/workflow_instances/get?workflow_instance_id=$ID" | python3 -m json.tool
 ```
 
 The document lists the tasks under `tasks[]`, each with its `state`, stamps and

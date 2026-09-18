@@ -23,6 +23,7 @@ import (
 
 	"wtfsaga/db_connect"
 	"wtfsaga/internal/testx"
+	"wtfsaga/logging"
 	"wtfsaga/templating"
 	"wtfsaga/utils"
 
@@ -167,7 +168,8 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 	t.Setenv("REDIS_CONNECTION_STRING", "")
 
 	// The engine logs every request; that noise swamps test and benchmark
-	// output. Restore the logger on cleanup.
+	// output. The engine's own logger is silenced below; the stdlib default
+	// (used by code outside the engine) is restored on cleanup.
 	prevOut := log.Writer()
 	log.SetOutput(io.Discard)
 	t.Cleanup(func() { log.SetOutput(prevOut) })
@@ -202,6 +204,7 @@ func newEnv(t testx.T, workflows ...utils.Workflow) *env {
 
 	e.hook = httptest.NewServer(e.sink)
 	e.eng = New(rdb, db)
+	e.eng.Log = logging.Discard()
 	e.eng.Clock = e.clock
 	e.eng.Services = MapRegistry{}
 	e.eng.HTTPClient = e.hook.Client()

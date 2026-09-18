@@ -1,307 +1,33 @@
-# Sagawise
+# api_examples
 
-## Example
-Let's take an example of this Workflow.
+Four Node services with their own databases, running the `user_creation` workflow. It is the larger of the two examples; read [order_flow](../order_flow/README.md) first for the protocol itself, since this one adds databases, migrations and a fan-out on top.
 
-![Sagawise Example Visualization](https://venturenox.com/wp-content/uploads/2024/05/Sagawise-architecture-1024x592.png)
+## The workflow
 
-## DSL File
-- 1 DSL file for this single Workflow.
-- 1 Workflow inside that DSL file
-- 4 tasks inside this workflow
-	1. Service A **-->** Service B
-	2. Service B **-->** Service C
-	3. Service C **-->** Service D
-	4. Service B **-->** Service D
+[`backend/sagawise/user_creation.json`](../../backend/sagawise/user_creation.json) declares four tasks:
 
-#### Example DSL file:
-```
-{
-	"workflow": {
-		"version": "1.0",
-		"schema_version": "1.0",
-		"name": "user_creation",
-		"tasks": [
-			{
-				"topic": "user_created",
-				"from": "service_a",
-				"to": "service_b",
-				"timeout": 1000
-			},
-			{
-				"topic": "user_created_saga",
-				"from": "service_b",
-				"to": "service_c",
-				"timeout": 1500
-			},
-			{
-				"topic": "user_created_saga_final",
-				"from": "service_c",
-				"to": "service_d",
-				"timeout": 2000
-			},
-			{
-				"topic": "user_created_saga",
-				"from": "service_b",
-				"to": "service_d",
-				"timeout": 2500
-			}
-		]
-	}
-}
+| Task | From | To | Topic |
+| --- | --- | --- | --- |
+| 0 | `auth` | `notification` | `user_created` |
+| 1 | `notification` | `final` | `user_created_saga` |
+| 2 | `notification` | `intermediate` | `user_created_saga` |
+| 3 | `intermediate` | `final` | `user_created_saga_final` |
+
+Tasks 1 and 2 share a topic with different receivers. One `publish` report from `notification` starts both; each is completed by its own receiver's `consume`. That fan-out is the one thing this example shows that `order_flow` does not.
+
+Each service does the same three things through the HTTP API: the first one calls `/start_instance`, every publisher reports `publish` before sending, every consumer reports `consume` after receiving. The publisher puts the `workflow_instance_id` inside the message so the consumer can report against it. Every service exposes the `failure_url` registered for it in [`services.json`](../../services.json), where it compensates when Sagawise reports a timeout.
+
+## Running it
+
+```bash
+make api_examples
 ```
 
-#### Example Services file of same Workflow:
-```
-[
-	{
-		"service_name": "auth",
-		"failure_url": "http://auth:4000/api/v1/failure_report"
-	},
-	{
-		"service_name": "notification",
-		"failure_url": "http://notification:4003/api/v1/failure_report"
-	},
-	{
-		"service_name": "intermediate",
-		"failure_url": "http://intermediate:4005/api/v1/failure_report"
-	},
-	{
-		"service_name": "final",
-		"failure_url": "http://final:4004/api/v1/failure_report"
-	}
-]
+That runs `make clean`, starts the core stack, then builds and starts the four services on the shared network. Their ports and environment are in [`docker-compose.yml`](docker-compose.yml); each service's code is in its own directory (`auth/`, `intermediate/`, `final/`, `notification/`). Trigger a run through the `auth` service's user-creation endpoint and follow it with:
+
+```bash
+curl -s -H "Authorization: Bearer dev-api-key-change-me" \
+  "http://localhost:5000/workflow_instances/list?workflow_name=user_creation"
 ```
 
-## Service A
-1. Create DB Record
-2. Start Workflow instance by sending API request to Sagawise service
-3. Use received `workflow_instance_id` and insert into message payload
-4. Publish Workflow Task by sending API request to Sagawise service
-5. Send Payload to your Pub/Sub host
-
-#### Example code:
-```javascript
-// Create DB Record etc
-
-// Start workflow
-const resp = await axios({
-	method: 'post',
-	url: process.env.SAGAWISE_URL+'/start_instance',
-	params: {
-		workflow_name: 'user_creation',
-		workflow_version: '1.0',
-	}
-});
-
-// Insert ID in payload
-const payload = {
-	time_stamp: Date.now(),
-	user_id,
-	tenant_id,
-	workflow_instance_id: resp.data.workflow_instance_id,
-	event: process.env.USER_CREATED,
-};
-
-// Publish event
-const resp2 = await axios({
-	method: 'post',
-	url: process.env.SAGAWISE_URL+'/update_instance',
-	params: {
-		workflow_instance_id: resp.data.workflow_instance_id,
-		workflow_version: '1.0',
-		event_name: payload.event,
-		action_type: 'publish',
-		is_retry: true,
-	},
-	data: payload
-});
-
-// Send Payload to Pub/Sub
-const value = Buffer.from(JSON.stringify(message));
-await this._producer.produce(
-	topic,
-	partition,
-	value,
-	key,
-);
-```
-
-## Service B
-1. Consume Event and get payload data
-2. Use received `workflow_instance_id` from payload data to refer to workflow
-3. In case of Success, Consume Workflow Task by sending API request to Sagawise service
-4. In case of Failure, Fail Workflow Task by sending API request to Sagawise service
-5. Publish second event by sending publish API request to Sagawise service again, with same workflow_instance_id
-6. Send Payload to your Pub/Sub host
-
-#### Example code:
-```
-// Message consuming inside Consumer
-
-// Consume Event
-const resp = await axios({
-	method: 'post',
-	url: process.env.SAGAWISE_URL+'/update_instance',
-	params: {
-		workflow_instance_id: data.workflow_instance_id,
-		workflow_version: '1.0',
-		event_name: data.event,
-		action_type: 'consume',
-		service_name: 'service_b',
-		is_retry: false,
-	}
-});
-
-// Publish Next Event
-const resp2 = await axios({
-	method: 'post',
-	url: process.env.SAGAWISE_URL+'/update_instance',
-	params: {
-		workflow_instance_id: data.workflow_instance_id,
-		workflow_version: '1.0',
-		event_name: 'user_created_saga',
-		action_type: 'publish',
-		is_retry: false,
-	},
-	data: {
-		...data,
-		event: 'user_created_saga',
-	},
-});
-
-// Send Payload to Pub/Sub
-const message = {
-	...data,
-	event: 'user_created_saga',
-},
-const value = Buffer.from(JSON.stringify(message));
-await this._producer.produce(
-	topic,
-	partition,
-	value,
-	key,
-);
-```
-
-
-## Service C
-1. Consume Event and get payload data
-2. Use received `workflow_instance_id` from payload data to refer to workflow
-3. In case of Success, Consume Workflow Task by sending API request to Sagawise service
-4. In case of Failure, Fail Workflow Task by sending API request to Sagawise service
-5. Publish second event by sending publish API request to Sagawise service again, with same workflow_instance_id
-6. Send Payload to your Pub/Sub host
-
-#### Example code:
-```
-// Message consuming inside Consumer
-
-if (fail) {
-	await axios({
-		method: 'post',
-		url: process.env.SAGAWISE_URL+'/update_instance',
-		params: {
-			workflow_instance_id: data.workflow_instance_id,
-			workflow_version: '1.0',
-			event_name: data.event,
-			action_type: 'fail',
-			service_name: 'service_c',
-			is_retry: false,
-		}
-	});
-} else {
-	
-	// Consume Event
-	const resp = await axios({
-		method: 'post',
-		url: process.env.SAGAWISE_URL+'/update_instance',
-		params: {
-			workflow_instance_id: data.workflow_instance_id,
-			workflow_version: '1.0',
-			event_name: data.event,
-			action_type: 'consume',
-			service_name: 'service_c',
-			is_retry: true,
-		}
-	});
-
-	// Publish Next Event
-	const resp2 = await axios({
-		method: 'post',
-		url: process.env.SAGAWISE_URL+'/update_instance',
-		params: {
-			workflow_instance_id: data.workflow_instance_id,
-			workflow_version: '1.0',
-			event_name: 'user_created_saga_final',
-			action_type: 'publish',
-			is_retry: false,
-		},
-		data: {
-			...data,
-			event: 'user_created_saga_final',
-		}
-	});
-
-	// Send Payload to Pub/Sub
-	const message = {
-		...data,
-		event: 'user_created_saga_final',
-	},
-	const value = Buffer.from(JSON.stringify(message));
-	
-	await this._producer.produce(
-		topic,
-		partition,
-		value,
-		key,
-	);
-}
-```
-
-
-## Service D
-1. Consume Event and get payload data
-2. Use received `workflow_instance_id` from payload data to refer to workflow
-3. In case of Success, Consume Workflow Task by sending API request to Sagawise service
-4. In case of Failure, Fail Workflow Task by sending API request to Sagawise service
-
-#### Example code:
-```
-// Message consuming inside Consumer
-
-if (event == 'user_created_saga') {
-
-	// Consume Event 1
-	const resp = await axios({
-		method: 'post',
-		url: process.env.SAGAWISE_URL+'/update_instance',
-		params: {
-			workflow_instance_id: data.workflow_instance_id,
-			workflow_version: '1.0',
-			event_name: data.event,
-			action_type: 'consume',
-			service_name: 'final',
-			is_retry: true,
-		}
-	});
-
-} else if (event == 'user_created_saga_final') {
-
-	// Consume Event 2
-	const resp = await axios({
-		method: 'post',
-		url: process.env.SAGAWISE_URL+'/update_instance',
-		params: {
-			workflow_instance_id: data.workflow_instance_id,
-			workflow_version: '1.0',
-			event_name: data.event,
-			action_type: 'consume',
-			service_name: 'final',
-			is_retry: true,
-		}
-	});
-}
-```
-
-<!-- Command for a clean start: make stop && docker image remove $(docker image ls -aq) && docker volume remove $(docker volume ls -q) && clear && make start -->
+then `/workflow_instances/get?workflow_instance_id=<id>` for the document. Stop a consumer to watch a task time out and its publisher's `failure_url` get called. Endpoint details are in the [API reference](../../docs/api.md).

@@ -1,0 +1,24 @@
+{{- /*
+Scrape target for the Prometheus Operator (phase 9). The metrics port is
+on the Service but not on the Ingress: /metrics needs no API key.
+*/ -}}
+{{- if and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "sagawise.fullname" . }}
+  namespace: {{ include "relname" . }}
+  labels:
+    {{- include "sagawise.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sagawise.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+{{- end }}

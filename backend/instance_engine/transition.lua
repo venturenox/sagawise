@@ -31,8 +31,10 @@
 -- and reaps every one of them in this single call, so a tick costs one
 -- round-trip instead of one per expired task. ARGV[3] is the batch limit
 -- and ARGV[8] the key prefix used to rebuild an instance key from a member.
--- It returns {reaped, webhooks_queued, archives_queued, dropped} counts;
--- the reaper logs those rather than acting per task. (phase 7)
+-- It returns {reaped, webhooks_queued, archives_queued, dropped, reaped_list}
+-- where reaped_list is a flat [member, deadline_ms, ...] list of the tasks it
+-- marked FAILED, so the reaper can log each timeout with its instance and
+-- measure how late it fired. (phase 7, phase 9)
 
 local key, deadlines, archive, webhooks = KEYS[1], KEYS[2], KEYS[3], KEYS[4]
 local action, retry = ARGV[1], ARGV[2] == '1'
@@ -204,10 +206,12 @@ end
 
 -- reap_batch: read the overdue deadlines and reap each, all in this call.
 local limit, prefix = tonumber(ARGV[3]), ARGV[8]
-local due = redis.call('ZRANGEBYSCORE', deadlines, '-inf', now_ms, 'LIMIT', 0, limit)
+local due = redis.call('ZRANGEBYSCORE', deadlines, '-inf', now_ms, 'WITHSCORES', 'LIMIT', 0, limit)
 local reaped, hooks, archives, dropped = 0, 0, 0, 0
+local reaped_list = {}
 
-for _, m in ipairs(due) do
+for n = 1, #due, 2 do
+  local m, score = due[n], due[n + 1]
   local sep = string.find(m, ':[^:]*$')
   local id_part = sep and string.sub(m, 1, sep - 1)
   local idx_part = sep and string.sub(m, sep + 1)
@@ -221,6 +225,8 @@ for _, m in ipairs(due) do
     local code = r[1]
     if code == 'OK' then
       reaped = reaped + 1
+      reaped_list[#reaped_list + 1] = m
+      reaped_list[#reaped_list + 1] = score
       if r[5] == 1 then hooks = hooks + 1 end
       if r[4] == 1 then archives = archives + 1 end
     elseif code == 'NOT_FOUND' or code == 'BAD_SCHEMA' or code == 'TASK_NOT_FOUND' then
@@ -232,4 +238,4 @@ for _, m in ipairs(due) do
   end
 end
 
-return {reaped, hooks, archives, dropped}
+return {reaped, hooks, archives, dropped, reaped_list}

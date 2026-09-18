@@ -1,7 +1,8 @@
 {{- /*
 Default-deny ingress for the Sagawise pods (phase 8, threat model T1/T6).
-Only the selectors listed in networkPolicy.ingress may reach the API port;
-the ingress controller is the usual entry. Egress is left open by default
+Only the selectors listed in networkPolicy.ingress may reach the API port
+(the ingress controller is the usual entry) and only networkPolicy.metricsIngress
+the metrics port (phase 9). Egress is left open by default
 because failure webhooks go wherever services.json points; narrow it with
 networkPolicy.egress once the receivers are known.
 */ -}}
@@ -30,6 +31,13 @@ spec:
       from:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+    {{- if and .Values.metrics.enabled .Values.networkPolicy.metricsIngress }}
+    - ports:
+        - port: {{ .Values.metrics.port }}
+          protocol: TCP
+      from:
+        {{- toYaml .Values.networkPolicy.metricsIngress | nindent 8 }}
+    {{- end }}
   {{- with .Values.networkPolicy.egress }}
   egress:
     {{- toYaml . | nindent 4 }}

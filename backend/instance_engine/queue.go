@@ -3,7 +3,7 @@ package instance_engine
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -79,14 +79,47 @@ type Worker struct {
 	Backoff     func(attempts int64) time.Duration
 	MaxAttempts int64
 	Work        func(ctx context.Context, member string) error
+	// Describe turns a job member into the log attributes that identify it
+	// (instance_id, task_index), so every line about a job names its
+	// instance.
+	Describe func(member string) []any
 
-	queue *zqueue
-	clock Clock
-	wake  chan struct{}
-	wg    sync.WaitGroup
+	queue    *zqueue
+	clock    Clock
+	log      func() *slog.Logger
+	onResult func(ctx context.Context, result string) // metrics hook, see New
+	wake     chan struct{}
+	wg       sync.WaitGroup
 
-	// GiveUps counts jobs dropped after MaxAttempts (a phase 9 metric).
+	// lastBeat is the unix-nanosecond time of the last tick or finished job:
+	// the liveness signal (health.go).
+	lastBeat atomic.Int64
+
+	// GiveUps counts jobs dropped after MaxAttempts; also on the
+	// sagawise.queue.jobs metric as result="gave_up".
 	GiveUps atomic.Int64
+}
+
+func (w *Worker) beat() { w.lastBeat.Store(w.clock.Now().UnixNano()) }
+
+func (w *Worker) logger() *slog.Logger {
+	if w.log != nil {
+		return w.log()
+	}
+	return slog.Default()
+}
+
+func (w *Worker) jobAttrs(member string) []any {
+	if w.Describe != nil {
+		return w.Describe(member)
+	}
+	return []any{"job", member}
+}
+
+func (w *Worker) result(ctx context.Context, r string) {
+	if w.onResult != nil {
+		w.onResult(ctx, r)
+	}
 }
 
 // Nudge asks the worker to run a tick now rather than at the next interval.
@@ -106,11 +139,12 @@ func (w *Worker) Start(ctx context.Context) {
 		defer w.wg.Done()
 		ticker := time.NewTicker(w.Interval)
 		defer ticker.Stop()
-		log.Printf("%s worker started", w.Name)
+		w.beat()
+		w.logger().Info("worker started")
 		for {
 			select {
 			case <-ctx.Done():
-				log.Printf("%s worker stopped", w.Name)
+				w.logger().Info("worker stopped")
 				return
 			case <-ticker.C:
 			case <-w.wake:
@@ -132,9 +166,10 @@ func (w *Worker) Pending(ctx context.Context) (int64, error) {
 // tick claims one batch and runs it. It is safe to call concurrently with
 // itself: the claim is atomic and every job is leased to one caller.
 func (w *Worker) tick(ctx context.Context) {
+	w.beat()
 	members, err := w.queue.claim(ctx, w.clock.Now(), w.Lease, w.Batch)
 	if err != nil {
-		log.Printf("%s worker: claim: %v", w.Name, err)
+		w.logger().Error("claim failed", "err", err)
 		return
 	}
 	if len(members) == 0 {
@@ -163,33 +198,49 @@ func (w *Worker) run(loopCtx context.Context, member string) {
 	// an insert or a delivery in progress is not cut off mid-way.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(loopCtx), w.Timeout)
 	defer cancel()
+	defer w.beat()
+	l := w.logger().With(w.jobAttrs(member)...)
 
-	if err := w.Work(ctx, member); err != nil {
+	err := w.Work(ctx, member)
+	if errors.Is(err, errDropJob) {
+		// Unresolvable, not failed: removed without a retry and counted apart.
+		w.result(ctx, jobDropped)
+		err = nil
+	}
+	if err != nil {
+		w.result(ctx, jobFailed)
 		n, berr := w.queue.bump(ctx, member)
 		if berr != nil {
 			// The lease still expires; the job comes back on its own.
-			log.Printf("%s worker: %s failed (%v); attempt count not recorded: %v", w.Name, member, err, berr)
+			l.Error("job failed; attempt count not recorded", "err", err, "bump_err", berr)
 			return
 		}
 		if w.MaxAttempts > 0 && n >= w.MaxAttempts {
 			w.GiveUps.Add(1)
-			log.Printf("%s worker: giving up on %s after %d attempts: %v", w.Name, member, n, err)
+			w.result(ctx, jobGaveUp)
+			l.Error("giving up on job", "attempts", n, "err", err)
 			if derr := w.queue.done(ctx, member); derr != nil {
-				log.Printf("%s worker: drop %s: %v", w.Name, member, derr)
+				l.Error("drop failed", "err", derr)
 			}
 			return
 		}
 		delay := w.Backoff(n)
 		if rerr := w.queue.reschedule(ctx, member, w.clock.Now().Add(delay)); rerr != nil {
-			log.Printf("%s worker: reschedule %s: %v", w.Name, member, rerr)
+			l.Error("reschedule failed", "err", rerr)
 		}
-		log.Printf("%s worker: %s failed (attempt %d), retrying in %s: %v", w.Name, member, n, delay, err)
+		l.Warn("job failed; will retry", "attempt", n, "retry_in", delay.String(), "err", err)
 		return
 	}
+	w.result(ctx, jobDone)
 	if err := w.queue.done(ctx, member); err != nil {
-		log.Printf("%s worker: ack %s: %v", w.Name, member, err)
+		l.Error("ack failed", "err", err)
 	}
 }
+
+// errDropJob is returned (wrapped) by a Work function for a job that can
+// never succeed and should be removed without counting as a failure: an
+// instance that no longer exists, a malformed member.
+var errDropJob = errors.New("drop job")
 
 // expBackoff returns base × factor^(attempts-1), capped.
 func expBackoff(base time.Duration, factor float64, cap time.Duration) func(int64) time.Duration {
